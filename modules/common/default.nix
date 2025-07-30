@@ -42,7 +42,6 @@ in {
       
       # Network tools
       dig
-      nslookup
       traceroute
     ];
     

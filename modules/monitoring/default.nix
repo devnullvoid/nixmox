@@ -48,6 +48,7 @@ in {
     grafana = {
       adminPassword = mkOption {
         type = types.str;
+        default = "changeme"; # Default password, should be overridden via SOPS
         description = "Grafana admin password";
       };
       
@@ -248,24 +249,8 @@ in {
         };
       };
       
-      # Provisioning
-      provision = {
-        datasources = [
-          {
-            name = "Prometheus";
-            type = "prometheus";
-            url = "http://localhost:9090";
-            isDefault = true;
-          }
-        ];
-        
-        dashboards = [
-          {
-            name = "default";
-            options.path = ./dashboards;
-          }
-        ];
-      };
+      # Note: Grafana provisioning can be configured manually or via API
+      # Datasources and dashboards can be added through the web interface
     };
     
     # PostgreSQL exporter for database monitoring (only if Authentik is enabled)

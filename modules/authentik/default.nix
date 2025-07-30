@@ -85,21 +85,17 @@ in {
     };
     
     # Redis for Authentik
-    services.redis = {
-      enable = true;
+    services.redis.servers."".enable = true;
+    services.redis.servers."".settings = {
+      # Security
+      requirepass = cfg.redisPassword;
       
-      # Settings
-      settings = {
-        # Security
-        requirepass = cfg.redisPassword;
-        
-        # Performance
-        maxmemory = "256mb";
-        maxmemory_policy = "allkeys-lru";
-        
-        # Persistence
-        save = [ "900 1" "300 10" "60 10000" ];
-      };
+      # Performance
+      maxmemory = "256mb";
+      maxmemory_policy = "allkeys-lru";
+      
+      # Persistence
+      save = [ "900 1" "300 10" "60 10000" ];
     };
     
     # Firewall rules for Authentik

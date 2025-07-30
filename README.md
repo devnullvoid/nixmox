@@ -6,6 +6,8 @@ NixMox is a highly automated self-hosting platform using NixOS containers on Pro
 
 This is the initial scaffolding phase. The core NixOS flake implementation is being built with the following components:
 
+**📊 Progress Tracking**: See [TODO.md](TODO.md) for detailed progress tracking and upcoming tasks.
+
 ### ✅ Completed
 - Basic flake structure with multi-container support
 - Common module for shared configuration
