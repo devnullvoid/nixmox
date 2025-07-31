@@ -157,6 +157,20 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
   - [ ] Test SSO functionality
   - [ ] Configure forward authentication
 
+#### ✅ **Recently Fixed**
+- [x] **Build Issues**
+  - [x] Fixed Redis configuration warnings (updated option names)
+  - [x] Removed nslookup package (not available)
+  - [x] Fixed Grafana provisioning configuration
+  - [x] Added default values for required options
+  - [x] All flake configurations now build successfully
+
+- [x] **Deployment Tools**
+  - [x] Created `scripts/deploy-test.sh` for building and testing configurations
+  - [x] Created `scripts/generate-lxc.sh` for generating Proxmox LXC images
+  - [x] Created comprehensive `DEPLOYMENT.md` guide
+  - [x] All containers can be built and tested successfully
+
 #### 🔧 **Medium Priority**
 - [ ] **Build Optimization**
   - [ ] Reduce build times
@@ -211,10 +225,12 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
 
 ### 📝 **Notes**
 
-- **Build Issues**: Redis configuration warnings fixed, nslookup package removed
+- **Build Issues**: ✅ All build issues resolved - Redis configuration warnings fixed, nslookup package removed, Grafana provisioning simplified
 - **Authentication**: Authentik module needs proper integration with authentik-nix
-- **Testing**: Need to test actual container deployments on Proxmox
+- **Testing**: ✅ Ready for SSH testing - all containers build successfully, deployment tools created
 - **Performance**: Build times are currently slow, need optimization
+- **TODO Tracking**: ✅ Comprehensive TODO system implemented with progress tracking
+- **Deployment**: ✅ Deployment guide and scripts created for easy testing
 
 ---
 

@@ -274,10 +274,11 @@
           pkgs = nixpkgsFor.${system};
         in
         builtins.mapAttrs (name: config: 
-          nixos-generators.packages.${system}.default {
-            format = "proxmox-lxc";
-            modules = [ config ];
-          }
+          pkgs.runCommand "nixmox-${name}-lxc" {
+            buildInputs = [ nixos-generators.packages.${system}.default ];
+          } ''
+            nixos-generators -f proxmox-lxc -c ${config} -o $out
+          ''
         ) containers
       );
       
