@@ -60,12 +60,12 @@
         nix.settings.sandbox = false;
         
         # Basic networking (Proxmox handles the actual network config)
-        networking = {
-          firewall.enable = true;
-          # Let Proxmox manage network interfaces
-          useDHCP = lib.mkForce false;
-          useNetworkd = lib.mkForce false;
-        };
+networking = {
+  firewall.enable = true;
+  # Keep networking services enabled but let Proxmox manage the config
+  useDHCP = lib.mkForce true;
+  useNetworkd = lib.mkForce true;
+};
         
         # Enable SSH for management
         services.openssh = {
@@ -93,10 +93,17 @@
         };
         
         # SOPS configuration
-        sops = {
-          defaultSopsFile = ./secrets/default.yaml;
-          age.keyFile = "/etc/ssh/ssh_host_ed25519_key";
-        };
+sops = {
+  defaultSopsFile = ./secrets/default.yaml;
+  # age.keyFile will be set per-container or use default location
+  # age.keyFile = "/path/to/age/key.txt";
+  
+  # SOPS secrets
+secrets.nixmox_ssh_authorized_keys = {
+  sopsFile = ./secrets/default.yaml;
+  key = "nixmox.ssh_authorized_keys";
+};
+};
       };
       
       # Container configurations

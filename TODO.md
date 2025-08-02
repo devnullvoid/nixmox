@@ -168,8 +168,10 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
 - [x] **Deployment Tools**
   - [x] Created `scripts/deploy-test.sh` for building and testing configurations
   - [x] Created `scripts/generate-lxc.sh` for generating Proxmox LXC images
+  - [x] Created `scripts/deploy-remote.sh` for deploying to existing NixOS containers
   - [x] Created comprehensive `DEPLOYMENT.md` guide
   - [x] All containers can be built and tested successfully
+  - [x] Remote deployment via SCP + nixos-rebuild switch
 
 #### 🔧 **Medium Priority**
 - [ ] **Build Optimization**
@@ -177,6 +179,13 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
   - [ ] Optimize container images
   - [ ] Parallel builds
   - [ ] Caching strategies
+
+#### 🚨 **Critical Issues to Fix**
+- [ ] **Networking Configuration**
+  - [x] Fixed networking services being disabled in flake.nix
+  - [ ] Test networking after deployment
+  - [ ] Add network validation to deployment script
+  - [ ] Create emergency recovery guide
 
 - [ ] **Documentation**
   - [ ] Deployment guide
@@ -227,7 +236,7 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
 
 - **Build Issues**: ✅ All build issues resolved - Redis configuration warnings fixed, nslookup package removed, Grafana provisioning simplified
 - **Authentication**: Authentik module needs proper integration with authentik-nix
-- **Testing**: ✅ Ready for SSH testing - all containers build successfully, deployment tools created
+- **Testing**: ✅ Ready for SSH testing - all containers build successfully, deployment tools created, remote deployment script available
 - **Performance**: Build times are currently slow, need optimization
 - **TODO Tracking**: ✅ Comprehensive TODO system implemented with progress tracking
 - **Deployment**: ✅ Deployment guide and scripts created for easy testing

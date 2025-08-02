@@ -27,9 +27,55 @@ This guide explains how to deploy and test NixMox containers on Proxmox VE.
 ./scripts/generate-lxc.sh -l
 ```
 
-## 🔧 Manual LXC Deployment
+### 3. Deploy to Existing NixOS Container (Recommended for Testing)
 
-### Step 1: Create LXC Container on Proxmox
+```bash
+# Deploy authentik to existing NixOS container
+./scripts/deploy-remote.sh authentik 192.168.1.100
+
+# Deploy with custom SSH settings
+./scripts/deploy-remote.sh -u nixmox -p 2222 caddy 192.168.1.101
+
+# Deploy with SSH key
+./scripts/deploy-remote.sh -k ~/.ssh/id_rsa monitoring 192.168.1.102
+
+# Test SSH connection first
+./scripts/deploy-remote.sh -t authentik 192.168.1.100
+
+# List available containers
+./scripts/deploy-remote.sh -l
+```
+
+**What this does:**
+1. Copies only essential flake files (`flake.nix`, `flake.lock`, `modules/`) to `/tmp/nixmox-deploy/` on the remote host
+2. Runs `nixos-rebuild switch --flake /tmp/nixmox-deploy#CONTAINER_NAME`
+3. Builds and applies the configuration directly on the remote NixOS container
+
+## 🔧 Deployment Options
+
+### Option 1: Deploy to Existing NixOS Container (Recommended for Testing)
+
+**⚠️ Important**: The NixMox configuration is designed to work with Proxmox LXC containers where Proxmox manages the network configuration. The flake keeps networking services enabled but disables systemd-networkd management to avoid conflicts.
+
+This is the easiest way to test our configurations:
+
+```bash
+# Deploy authentik to existing NixOS container
+./scripts/deploy-remote.sh authentik 192.168.1.100
+
+# The script will:
+# 1. Test SSH connection
+# 2. Verify NixOS environment
+# 3. Copy only essential flake files to remote host
+# 4. Run nixos-rebuild switch with flake reference
+# 5. Build and apply the configuration directly on remote host
+```
+
+### Option 2: Manual LXC Deployment
+
+For creating new containers from scratch:
+
+#### Step 1: Create LXC Container on Proxmox
 
 1. **Create a new LXC container** in Proxmox VE
 2. **Use a minimal template** (Ubuntu 22.04 or similar)
@@ -39,7 +85,7 @@ This guide explains how to deploy and test NixMox containers on Proxmox VE.
    - Storage: 10GB
    - Network: Bridge with static IP
 
-### Step 2: Upload and Extract NixOS System
+#### Step 2: Upload and Extract NixOS System
 
 ```bash
 # On your development machine
@@ -54,7 +100,7 @@ cd /var/lib/lxc/YOUR_CONTAINER_ID/rootfs
 tar -xzf /tmp/authentik-system.tar.gz
 ```
 
-### Step 3: Configure Container for NixOS
+#### Step 3: Configure Container for NixOS
 
 ```bash
 # On Proxmox host, inside container rootfs
@@ -265,6 +311,49 @@ sudo systemctl restart caddy
 # Check service status
 sudo systemctl status postgresql redis caddy
 ```
+
+## 🔧 Troubleshooting
+
+### Network Connectivity Issues
+
+If the container loses network connectivity after deployment:
+
+1. **Access container console from Proxmox**:
+   ```bash
+   pct enter YOUR_CONTAINER_ID
+   ```
+
+2. **Restore networking**:
+   ```bash
+   systemctl start systemd-networkd
+   systemctl start systemd-resolved
+   ip link set eth0 up
+   dhclient eth0
+   ```
+
+3. **Rollback to previous generation**:
+   ```bash
+   nixos-rebuild switch --rollback
+   ```
+
+4. **Redeploy with fixed configuration**:
+   ```bash
+   ./scripts/deploy-remote.sh CONTAINER_NAME CONTAINER_IP
+   ```
+
+### Flake Build Issues
+
+If you encounter flake-related errors:
+
+1. **Enable flakes on remote host**:
+   ```bash
+   echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+   ```
+
+2. **Check flake syntax**:
+   ```bash
+   nix flake check
+   ```
 
 ---
 

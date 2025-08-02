@@ -130,14 +130,14 @@ in {
     };
     
     # Common users and groups
-    users.users.nixmox = {
-      isNormalUser = true;
-      extraGroups = [ "wheel" "systemd-journal" ];
-      openssh.authorizedKeys.keys = [
-        # Add your SSH public key here
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... nixmox@development"
-      ];
-    };
+users.users.nixmox = {
+  isNormalUser = true;
+  extraGroups = [ "wheel" "systemd-journal" ];
+  openssh.authorizedKeys.keys =
+    builtins.filter (x: x != "")
+      (builtins.splitString "\n"
+        (builtins.readFile config.sops.secrets.nixmox_ssh_authorized_keys.path));
+};
     
     # Allow wheel group to use sudo
     users.groups.wheel.members = [ "nixmox" ];
