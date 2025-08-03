@@ -151,11 +151,22 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
 ### 🐛 **Current Issues to Fix**
 
 #### 🔥 **Critical**
+- [ ] **SOPS Integration**
+  - [ ] Fix SSH authorized keys integration with SOPS
+  - [ ] Research proper SOPS patterns for SSH keys
+  - [ ] Test SOPS deployment on remote containers
+  - [ ] Configure age keys for remote deployment
+
 - [ ] **Authentik Integration**
   - [ ] Fix authentik-nix module import
   - [ ] Complete Authentik service configuration
   - [ ] Test SSO functionality
   - [ ] Configure forward authentication
+
+- [ ] **Redis Service Issues**
+  - [ ] Fix Redis configuration in Authentik module
+  - [ ] Resolve "Module Configuration detected without loadmodule directive" error
+  - [ ] Test Redis service startup
 
 #### ✅ **Recently Fixed**
 - [x] **Build Issues**
@@ -186,6 +197,11 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
   - [ ] Test networking after deployment
   - [ ] Add network validation to deployment script
   - [ ] Create emergency recovery guide
+
+- [ ] **SOPS Deployment Disk Space**
+  - [ ] Remote LXC containers running out of disk space when building SOPS dependencies
+  - [ ] Options: increase container disk space, use pre-built SOPS binaries, or deploy without SOPS initially
+  - [ ] Test deployment without SOPS first, then add SOPS integration later
 
 - [ ] **Documentation**
   - [ ] Deployment guide

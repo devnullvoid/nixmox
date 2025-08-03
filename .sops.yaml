@@ -1,3 +1,10 @@
+keys:
+  - &age1 age1k9n9pj7y46nk4sta3ghsvd5x9785yrh6fkga4glyex54y2es045qxqpzm3
+  - &age2 age1jm3etsdme8hwh50sxyzx33gpemt70vqn4zwlsgyscgh86wey4vmsd6lq2s
+
 creation_rules:
   - path_regex: \.yaml$
-    age: age1k9n9pj7y46nk4sta3ghsvd5x9785yrh6fkga4glyex54y2es045qxqpzm3 
+    key_groups:
+      - age:
+          - *age1
+          - *age2

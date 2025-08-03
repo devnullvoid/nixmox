@@ -222,6 +222,8 @@ mkdir -p "$NIXMOX_DIR/modules"
 cp "$PROJECT_ROOT/flake.nix" "$NIXMOX_DIR/"
 cp "$PROJECT_ROOT/flake.lock" "$NIXMOX_DIR/"
 cp -r "$PROJECT_ROOT/modules" "$NIXMOX_DIR/"
+cp -r "$PROJECT_ROOT/secrets" "$NIXMOX_DIR/"
+cp "$PROJECT_ROOT/.sops.yaml" "$NIXMOX_DIR/"
 
 # Copy flake files to remote host
 print_status "Copying essential flake files to $REMOTE_HOST..."

@@ -75,6 +75,14 @@ networking = {
             PasswordAuthentication = lib.mkForce true; # Temporary for bootstrapping
           };
         };
+
+        # Configure root user with SSH keys
+        users.users.root = {
+          openssh.authorizedKeys.keys = [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkkp4yJcYNvDdzWfpHH5ZCeRrGRvL7fT18IJprgImVq jon@procyon"
+            "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDGV1JMc1cv8KrXdgXWrz5CwoKvNqZbVr7Mf4xLv7QJBcDiGeAOapgVPGHQ98Yzde+Yytrg65D66gPN8f/CVm+1nIsiLl4EEyzJ4WOQaDoiaNMfsfwpnZs5c5k15wwVMJyx/rLp6Q8ZZUl0drQ3m9BfKLHi+Y6DPNkmif9AE1GgXH0J+bYcWCjWhy67URcDQl8i6cmBYjnvbmpsbDEw+/chQ5LFutksIE9wZSyWRIHL5gmNQMJ/lP/iafRzWo/RuqJHdQio39qLzl2/r1shBU7T5zG/PBGltrpE1EVOsP42EdldGkdbgBHOu5nMKB4orc0dTEf24cA+tj2DwFOgVmHKMUO0YxSLJzoBJoc8im+ka0JhNpykPeoEjblrUtxAkWxVl8Z1Iaa1Uolx9+PeG7ZXAzRoXHa+deW6sYxZWMa52DLR/VZCA2JwVdHO0ZP4P4OLQlmVsw9Zjw2M9u68++3VIiAf0oV/IY81Fbg4527fvtRtdkQMVKcNmSBcQAANiPpBhL7RJ5gVz6e1P382+cV2c6ILe0pP8+MSs9/WLEGl6z9ftdJxyEl4I279+zFLAUsqmbcn47780c0xPGJU8NKY76H93jKt00wNqdFLmlWPLvAOXuURkjJIadwDRM7LrCzrxrGSoFRebiU9LNV4jsiq8PP0VaqTPyETpMQYUpd9w== jon@l33tbuntu"
+          ];
+        };
         
         # Create a basic user for management
         users.users.nixmox = {
@@ -98,11 +106,12 @@ sops = {
   # age.keyFile will be set per-container or use default location
   # age.keyFile = "/path/to/age/key.txt";
   
-  # SOPS secrets
-secrets.nixmox_ssh_authorized_keys = {
-  sopsFile = ./secrets/default.yaml;
-  key = "nixmox.ssh_authorized_keys";
-};
+  # SOPS secrets - temporarily disabled for testing
+  # secrets.nixmox_password = {
+  #   sopsFile = ./secrets/default.yaml;
+  #   key = "nixmox.password";
+  #   mode = "0400";
+  # };
 };
       };
       
