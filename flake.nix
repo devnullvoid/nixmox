@@ -40,15 +40,15 @@
         ];
       });
       
-      # Common configuration for all containers
-      commonConfig = { config, pkgs, lib, ... }: {
-        imports = [
-          # SOPS for secrets management
-          sops-nix.nixosModules.sops
-          
-          # Common modules
-          ./modules/common
-        ];
+              # Common configuration for all containers
+        commonConfig = { config, pkgs, lib, ... }: {
+          imports = [
+            # SOPS for secrets management
+            sops-nix.nixosModules.sops
+            
+            # Common modules
+            ./modules/common
+          ];
         
         # Enable common services
         services.nixmox.enable = true;
@@ -169,7 +169,7 @@ sops = {
           networking.hostName = "mail";
           
           # Mail server configuration
-          # Will be added in the mail module
+          services.nixmox.mail.enable = true;
         };
         
         # Media server container (Jellyfin + Arr stack)
@@ -182,10 +182,7 @@ sops = {
           networking.hostName = "media";
           
           # Media services
-          services.jellyfin = {
-            enable = true;
-            # Configuration will be added in the media module
-          };
+          services.nixmox.media.enable = true;
         };
         
         # Nextcloud container
@@ -198,10 +195,7 @@ sops = {
           networking.hostName = "nextcloud";
           
           # Nextcloud configuration
-          services.nextcloud = {
-            enable = true;
-            # Configuration will be added in the nextcloud module
-          };
+          services.nixmox.nextcloud.enable = true;
         };
         
         # Vaultwarden container
@@ -214,10 +208,7 @@ sops = {
           networking.hostName = "vaultwarden";
           
           # Vaultwarden configuration
-          services.vaultwarden = {
-            enable = true;
-            # Configuration will be added in the vaultwarden module
-          };
+          services.nixmox.vaultwarden.enable = true;
         };
         
         # DNS container (Unbound)
@@ -230,10 +221,7 @@ sops = {
           networking.hostName = "dns";
           
           # DNS configuration
-          services.unbound = {
-            enable = true;
-            # Configuration will be added in the dns module
-          };
+          services.nixmox.dns.enable = true;
         };
       };
       

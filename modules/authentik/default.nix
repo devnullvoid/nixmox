@@ -46,14 +46,13 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # TODO: Import Authentik from the community flake
-    # For now, just enable basic services
+    # Install Authentik packages
+    environment.systemPackages = with pkgs; [
+      # Add any Authentik-related packages here
+    ];
     
-    # TODO: Authentik service configuration
-    # services.authentik = {
-    #   enable = true;
-    #   # Configuration will be added when authentik-nix is properly integrated
-    # };
+    # For now, we'll set up the infrastructure and add Authentik later
+    # The authentik-nix flake has Git dependency issues, so we'll use a different approach
     
     # PostgreSQL for Authentik
     services.postgresql = {
@@ -85,17 +84,18 @@ in {
     };
     
     # Redis for Authentik
-    services.redis.servers."".enable = true;
-    services.redis.servers."".settings = {
-      # Security
-      requirepass = cfg.redisPassword;
-      
-      # Performance
-      maxmemory = "256mb";
-      maxmemory_policy = "allkeys-lru";
-      
-      # Persistence
-      save = [ "900 1" "300 10" "60 10000" ];
+    services.redis.servers.authentik = {
+      enable = true;
+      settings = {
+        # Security
+        requirepass = cfg.redisPassword;
+        
+        # Performance
+        maxmemory = "256mb";
+        
+        # Persistence
+        save = [ "900 1" "300 10" "60 10000" ];
+      };
     };
     
     # Firewall rules for Authentik
@@ -173,18 +173,18 @@ in {
       };
     };
     
-    # Health check for Authentik
-    systemd.services.authentik-health = {
-      description = "Authentik health check";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "authentik.service" ];
-      
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:9000/health/";
-        Restart = "on-failure";
-        RestartSec = "30s";
-      };
-    };
+    # Health check for Authentik (disabled until Authentik is properly configured)
+    # systemd.services.authentik-health = {
+    #   description = "Authentik health check";
+    #   wantedBy = [ "multi-user.target" ];
+    #   after = [ "authentik.service" ];
+    #   
+    #   serviceConfig = {
+    #     Type = "oneshot";
+    #     ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:9000/health/";
+    #     Restart = "on-failure";
+    #     RestartSec = "30s";
+    #   };
+    # };
   };
 } 

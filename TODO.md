@@ -157,16 +157,22 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
   - [ ] Test SOPS deployment on remote containers
   - [ ] Configure age keys for remote deployment
 
-- [ ] **Authentik Integration**
-  - [ ] Fix authentik-nix module import
+- [x] **Authentik Infrastructure**
+  - [x] Fixed Redis configuration in Authentik module
+  - [x] Configured PostgreSQL for Authentik
+  - [x] Set up Redis for Authentik
+  - [x] All infrastructure services running successfully
+
+- [ ] **Authentik Service Integration**
+  - [ ] Find alternative to authentik-nix flake (Git dependency issues)
   - [ ] Complete Authentik service configuration
   - [ ] Test SSO functionality
   - [ ] Configure forward authentication
 
-- [ ] **Redis Service Issues**
-  - [ ] Fix Redis configuration in Authentik module
-  - [ ] Resolve "Module Configuration detected without loadmodule directive" error
-  - [ ] Test Redis service startup
+- [x] **Redis Service Issues**
+  - [x] Fixed Redis configuration in Authentik module
+  - [x] Resolved "Module Configuration detected without loadmodule directive" error
+  - [x] Test Redis service startup
 
 #### ✅ **Recently Fixed**
 - [x] **Build Issues**
@@ -183,6 +189,12 @@ NixMox is a multi-container NixOS deployment system for Proxmox VE with unified 
   - [x] Created comprehensive `DEPLOYMENT.md` guide
   - [x] All containers can be built and tested successfully
   - [x] Remote deployment via SCP + nixos-rebuild switch
+
+- [x] **SSH Configuration**
+  - [x] Fixed SSH key authentication for both root and nixmox users
+  - [x] Configured authorized keys for both users in flake
+  - [x] Deployment no longer breaks SSH access
+  - [x] Both users can SSH in successfully
 
 #### 🔧 **Medium Priority**
 - [ ] **Build Optimization**

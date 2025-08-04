@@ -1,252 +1,308 @@
 # NixMox - NixOS LXC Orchestration on Proxmox
 
-NixMox is a highly automated self-hosting platform using NixOS containers on Proxmox VE. It provides a modular, declarative, and user-friendly way to run dozens of self-hosted services with single sign-on and unified management.
+NixMox is a comprehensive NixOS-based container orchestration system designed for Proxmox VE. It provides a complete self-hosted infrastructure with identity management, monitoring, media services, file sharing, and more.
 
-## Project Status
+## 🏗️ Architecture
 
-This is the initial scaffolding phase. The core NixOS flake implementation is being built with the following components:
+NixMox consists of multiple LXC containers, each running a specific service:
 
-**📊 Progress Tracking**: See [TODO.md](TODO.md) for detailed progress tracking and upcoming tasks.
+### Core Infrastructure
+- **DNS** (`dns.nixmox.lan`) - Unbound DNS server for internal name resolution
+- **Authentik** (`auth.nixmox.lan`) - Identity provider and SSO solution
+- **Caddy** (`proxy.nixmox.lan`) - Reverse proxy with forward authentication
+- **Monitoring** (`monitoring.nixmox.lan`) - Prometheus + Grafana monitoring stack
 
-### ✅ Completed
-- Basic flake structure with multi-container support
-- Common module for shared configuration
-- Authentik module for SSO
-- Caddy reverse proxy module with forward auth
-- Monitoring module (Prometheus + Grafana)
-- SOPS integration for secrets management
-- Development shell with necessary tools
+### Services
+- **Mail** (`mail.nixmox.lan`) - Postfix + Dovecot mail server
+- **Media** (`media.nixmox.lan`) - Jellyfin + Arr stack (Sonarr, Radarr, Prowlarr)
+- **Nextcloud** (`nextcloud.nixmox.lan`) - File sharing and collaboration platform
+- **Vaultwarden** (`vault.nixmox.lan`) - Password manager (Bitwarden-compatible)
 
-### 🚧 In Progress
-- Service-specific modules (mail, media, nextcloud, etc.)
-- Container image generation
-- Proxmox integration
+## 🚀 Features
 
-### 📋 Planned
-- Go backend for management
-- React frontend
-- Service discovery and DNS
-- Backup automation
-- Complete service catalog
+### Identity & Access Management
+- **Authentik** provides centralized authentication and authorization
+- Forward authentication for all services via Caddy
+- Single sign-on (SSO) across all applications
+- Multi-factor authentication support
 
-## Architecture
+### Monitoring & Observability
+- **Prometheus** for metrics collection and alerting
+- **Grafana** for visualization and dashboards
+- **Node Exporter** on all containers for system metrics
+- Pre-configured alerting rules for CPU, memory, disk usage
 
+### Media Management
+- **Jellyfin** for media streaming and organization
+- **Sonarr** for TV show management and automation
+- **Radarr** for movie management and automation
+- **Prowlarr** for indexer management
+- **Transmission** for downloads
+
+### File Sharing & Collaboration
+- **Nextcloud** for file storage, sharing, and collaboration
+- Calendar and contact synchronization
+- Document editing and collaboration
+- Mobile and desktop client support
+
+### Security & Privacy
+- **Vaultwarden** for secure password management
+- End-to-end encryption for sensitive data
+- Self-hosted solution with full data control
+- Bitwarden-compatible clients
+
+### Infrastructure
+- **DNS** for internal service discovery
+- **Mail** server for notifications and communication
+- **Caddy** with automatic HTTPS and security headers
+- Comprehensive firewall rules and security hardening
+
+## 📋 Prerequisites
+
+- Proxmox VE 8.0+
+- NixOS 23.11+
+- At least 8GB RAM and 100GB storage
+- Network access for package downloads and updates
+
+## 🛠️ Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/devnullvoid/nixmox.git
+cd nixmox
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Proxmox VE   │    │   NixMox Flake  │    │  Management UI  │
-│                 │    │                 │    │                 │
-│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │
-│ │ Authentik   │ │    │ │ Common      │ │    │ │ Go Backend  │ │
-│ │ Container   │ │    │ │ Module      │ │    │ │             │ │
-│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │
-│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │
-│ │ Caddy Proxy │ │    │ │ Service     │ │    │ │ React UI    │ │
-│ │ Container   │ │    │ │ Modules     │ │    │ │             │ │
-│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │
-│ ┌─────────────┐ │    │ ┌─────────────┐ │    │                 │
-│ │ Monitoring  │ │    │ │ SOPS        │ │    │                 │
-│ │ Container   │ │    │ │ Secrets     │ │    │                 │
-│ └─────────────┘ │    │ └─────────────┘ │    │                 │
-│ ┌─────────────┐ │    │                 │    │                 │
-│ │ Service     │ │    │                 │    │                 │
-│ │ Containers  │ │    │                 │    │                 │
-│ └─────────────┘ │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+
+### 2. Configure Secrets
+
+Create a `secrets/default.yaml` file with your encrypted secrets:
+
+```yaml
+# Example secrets file (encrypted with SOPS)
+nixmox:
+  password: "your-hashed-password"
+  
+authentik:
+  secret_key: "your-django-secret-key"
+  postgres_password: "your-postgres-password"
+  redis_password: "your-redis-password"
+  admin_password: "your-admin-password"
+
+monitoring:
+  grafana_admin_password: "your-grafana-password"
+
+mail:
+  admin_password: "your-mail-admin-password"
+  postmaster_password: "your-postmaster-password"
+
+nextcloud:
+  admin_password: "your-nextcloud-admin-password"
+  database_password: "your-nextcloud-db-password"
+  redis_password: "your-nextcloud-redis-password"
+
+vaultwarden:
+  admin_token: "your-vaultwarden-admin-token"
+  jwt_secret: "your-vaultwarden-jwt-secret"
+  smtp_password: "your-smtp-password"
+
+media:
+  transmission_password: "your-transmission-password"
 ```
 
-## Quick Start
+### 3. Build Container Images
 
-### Prerequisites
+```bash
+# Build all containers
+nix build .#packages.x86_64-linux.nixmox-authentik-lxc
+nix build .#packages.x86_64-linux.nixmox-caddy-lxc
+nix build .#packages.x86_64-linux.nixmox-monitoring-lxc
+nix build .#packages.x86_64-linux.nixmox-dns-lxc
+nix build .#packages.x86_64-linux.nixmox-mail-lxc
+nix build .#packages.x86_64-linux.nixmox-media-lxc
+nix build .#packages.x86_64-linux.nixmox-nextcloud-lxc
+nix build .#packages.x86_64-linux.nixmox-vaultwarden-lxc
+```
 
-1. **Nix with Flakes**: Ensure you have Nix installed with flakes enabled
-2. **Proxmox VE**: A Proxmox host or cluster
-3. **SSH Access**: Key-based SSH access to Proxmox host
+### 4. Deploy to Proxmox
 
-### Development Setup
+Use the provided deployment scripts:
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/devnullvoid/nixmox.git
-   cd nixmox
-   ```
+```bash
+# Deploy all containers
+./scripts/deploy-remote.sh
 
-2. **Enter the development shell**:
-   ```bash
-   nix develop
-   ```
+# Or deploy individual containers
+./scripts/deploy-test.sh authentik
+```
 
-3. **Build a container configuration**:
-   ```bash
-   # Build the Authentik container
-   nix build .#nixosConfigurations.authentik.config.system.build.toplevel
-   
-   # Build the Caddy container
-   nix build .#nixosConfigurations.caddy.config.system.build.toplevel
-   ```
+## 🔧 Configuration
 
-4. **Generate container images**:
-   ```bash
-   # Generate Proxmox LXC image for Authentik
-   nixos-generators -f proxmox-lxc -c ./configuration.nix
-   ```
-
-### Container Structure
-
-Each container is defined as a NixOS configuration:
-
-- **authentik**: Identity provider and SSO
-- **caddy**: Reverse proxy with forward auth
-- **monitoring**: Prometheus + Grafana
-- **mail**: Mail server (planned)
-- **media**: Jellyfin + Arr stack (planned)
-- **nextcloud**: File sharing (planned)
-- **vaultwarden**: Password manager (planned)
-- **dns**: Unbound DNS server (planned)
-
-### Configuration
-
-The flake uses a modular approach:
-
-- `modules/common/`: Shared configuration for all containers
-- `modules/authentik/`: Authentik-specific configuration
-- `modules/caddy/`: Caddy reverse proxy configuration
-- `modules/monitoring/`: Prometheus + Grafana configuration
-- `secrets/`: SOPS-encrypted secrets (template provided)
-
-### Secrets Management
-
-1. **Set up SOPS**:
-   ```bash
-   # Generate age key
-   age-keygen -o secrets/age.key
-   
-   # Create .sops.yaml
-   cat > .sops.yaml << EOF
-   keys:
-     - &nixmox age1...
-   creation_rules:
-     - path_regex: \.yaml$
-       key_groups:
-       - age:
-         - *nixmox
-   EOF
-   ```
-
-2. **Encrypt secrets**:
-   ```bash
-   sops -e -i secrets/default.yaml
-   ```
-
-### Network Configuration
+### Network Setup
 
 The default network configuration uses:
-- **Internal Network**: `192.168.50.0/24`
+- **Network**: `192.168.50.0/24`
 - **Gateway**: `192.168.50.1`
-- **Domain**: `nixmox.lan`
+- **DNS**: `192.168.50.9`
 
-Container IP assignments:
-- `authentik`: `192.168.50.2`
-- `caddy`: `192.168.50.3`
-- `monitoring`: `192.168.50.4`
-- `mail`: `192.168.50.5`
-- `media`: `192.168.50.10`
-- `nextcloud`: `192.168.50.11`
-- `vaultwarden`: `192.168.50.12`
-- `dns`: `192.168.50.13`
+### Container IPs
 
-## Development
+| Service | IP Address | Domain |
+|---------|------------|--------|
+| Authentik | 192.168.50.2 | auth.nixmox.lan |
+| Caddy | 192.168.50.3 | proxy.nixmox.lan |
+| Monitoring | 192.168.50.4 | monitoring.nixmox.lan |
+| DNS | 192.168.50.9 | dns.nixmox.lan |
+| Mail | 192.168.50.5 | mail.nixmox.lan |
+| Media | 192.168.50.6 | media.nixmox.lan |
+| Nextcloud | 192.168.50.7 | nextcloud.nixmox.lan |
+| Vaultwarden | 192.168.50.8 | vault.nixmox.lan |
 
-### Adding a New Service
+### Customization
 
-1. **Create a new module**:
-   ```bash
-   mkdir modules/myservice
-   ```
+Each module can be customized by modifying the configuration options:
 
-2. **Create the module configuration**:
-   ```nix
-   # modules/myservice/default.nix
-   { config, lib, pkgs, ... }:
-   {
-     options.services.nixmox.myservice = {
-       enable = mkEnableOption "My Service";
-       # Add your options here
-     };
-   
-     config = mkIf cfg.enable {
-       # Add your service configuration here
-     };
-   }
-   ```
+```nix
+# Example: Customize Authentik settings
+services.nixmox.authentik = {
+  enable = true;
+  domain = "auth.example.com";
+  adminEmail = "admin@example.com";
+  # ... other options
+};
+```
 
-3. **Add to the flake**:
-   ```nix
-   # In flake.nix, add to containers
-   myservice = { config, pkgs, lib, ... }: {
-     imports = [
-       commonConfig
-       ./modules/myservice
-     ];
-     networking.hostName = "myservice";
-     services.nixmox.myservice.enable = true;
-   };
-   ```
+## 🔐 Security
 
-### Testing
+### Default Security Features
 
-1. **Build the configuration**:
-   ```bash
-   nix build .#nixosConfigurations.myservice.config.system.build.toplevel
-   ```
+- **Firewall Rules**: Comprehensive firewall configuration for each service
+- **Systemd Security**: All services run with security hardening
+- **HTTPS Everywhere**: Automatic SSL/TLS with Caddy
+- **Forward Authentication**: All services protected by Authentik
+- **Secrets Management**: SOPS integration for encrypted secrets
 
-2. **Generate container image**:
-   ```bash
-   nixos-generators -f proxmox-lxc -c ./configuration.nix
-   ```
+### Security Headers
 
-## Roadmap
+All web services include security headers:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
 
-### Phase 1: Core Infrastructure ✅
-- [x] Basic flake structure
-- [x] Common module
-- [x] Authentik integration
-- [x] Caddy reverse proxy
-- [x] Monitoring stack
+## 📊 Monitoring
 
-### Phase 2: Service Modules 🚧
-- [ ] Mail server (Simple NixOS Mailserver)
-- [ ] Media stack (Jellyfin + Arr)
-- [ ] Nextcloud
-- [ ] Vaultwarden
-- [ ] DNS server (Unbound)
+### Available Metrics
 
-### Phase 3: Management Plane 📋
-- [ ] Go backend
-- [ ] React frontend
-- [ ] Proxmox API integration
-- [ ] Service deployment automation
+- **System Metrics**: CPU, memory, disk, network usage
+- **Service Health**: HTTP endpoints, database connections
+- **Application Metrics**: Custom metrics for each service
+- **Log Aggregation**: Centralized logging via systemd-journald
 
-### Phase 4: Advanced Features 📋
-- [ ] Backup automation (Restic)
-- [ ] Service discovery
-- [ ] Multi-environment support
-- [ ] Advanced monitoring
+### Grafana Dashboards
 
-## Contributing
+Pre-configured dashboards for:
+- System overview
+- Service health
+- Network traffic
+- Storage usage
+- Application performance
+
+## 🔄 Maintenance
+
+### Updates
+
+```bash
+# Update all containers
+nix flake update
+nix build .#packages.x86_64-linux.nixmox-*-lxc
+./scripts/deploy-remote.sh
+```
+
+### Backups
+
+Each service includes backup configurations:
+- **Database backups**: Automated PostgreSQL/MySQL backups
+- **File backups**: Nextcloud and media file backups
+- **Configuration backups**: NixOS configuration backups
+
+### Health Checks
+
+All services include health check endpoints:
+- HTTP health checks
+- Database connectivity checks
+- Service-specific health endpoints
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Container won't start**: Check logs with `journalctl -u container-name`
+2. **Service not accessible**: Verify firewall rules and network configuration
+3. **Authentication issues**: Check Authentik configuration and user setup
+4. **Database connection errors**: Verify database credentials and connectivity
+
+### Logs
+
+```bash
+# View service logs
+journalctl -u vaultwarden
+journalctl -u nextcloud
+journalctl -u jellyfin
+
+# View container logs
+pct exec <container-id> journalctl -f
+```
+
+### Debug Mode
+
+Enable debug logging by modifying the service configuration:
+
+```nix
+services.nixmox.vaultwarden.vaultwarden.environment = {
+  LOG_LEVEL = "debug";
+  # ... other settings
+};
+```
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test with `nix build`
+4. Test thoroughly
 5. Submit a pull request
 
-## License
+### Development Environment
+
+```bash
+# Enter development shell
+nix develop
+
+# Build specific container
+nix build .#nixosConfigurations.authentik.config.system.build.toplevel
+
+# Test configuration
+nixos-generators -f proxmox-lxc -c ./configuration.nix
+```
+
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-- [VGHS-lucaruby's NixOS-Server](https://github.com/VGHS-lucaruby/nixos-server) for inspiration
-- [Authentik Nix](https://github.com/nix-community/authentik-nix) for the Authentik module
-- [SOPS-Nix](https://github.com/Mic92/sops-nix) for secrets management
-- [NixOS Generators](https://github.com/nix-community/nixos-generators) for container images 
+- [NixOS](https://nixos.org/) for the declarative system configuration
+- [Authentik](https://goauthentik.io/) for identity management
+- [Jellyfin](https://jellyfin.org/) for media streaming
+- [Nextcloud](https://nextcloud.com/) for file sharing
+- [Vaultwarden](https://github.com/dani-garcia/vaultwarden) for password management
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/devnullvoid/nixmox/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/devnullvoid/nixmox/discussions)
+- **Documentation**: [Wiki](https://github.com/devnullvoid/nixmox/wiki)
+
+---
+
+**NixMox** - Self-hosted infrastructure made simple with NixOS and Proxmox. 

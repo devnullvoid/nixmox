@@ -37,6 +37,9 @@ environment.systemPackages = with pkgs; [
   htop
   tmux
   
+  # Development tools
+  git
+  
   # Monitoring tools
   prometheus-node-exporter
   
