@@ -103,8 +103,7 @@ networking = {
         # SOPS configuration
 sops = {
   defaultSopsFile = ./secrets/default.yaml;
-  # age.keyFile will be set per-container or use default location
-  # age.keyFile = "/path/to/age/key.txt";
+  age.keyFile = "/etc/sops/age/keys.txt";
   
   # SOPS secrets - temporarily disabled for testing
   # secrets.nixmox_password = {
