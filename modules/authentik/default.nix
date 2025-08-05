@@ -1,4 +1,4 @@
-{ config, lib, pkgs, authentik-nix, ... }:
+{ config, lib, pkgs, ... }:
 
 with lib;
 
@@ -20,171 +20,104 @@ in {
       description = "Admin email for Authentik";
     };
     
-    secretKey = mkOption {
-      type = types.str;
-      default = "changeme"; # Default secret key, should be overridden via SOPS
-      description = "Django secret key for Authentik";
-    };
-    
-    postgresPassword = mkOption {
-      type = types.str;
-      default = "changeme"; # Default password, should be overridden via SOPS
-      description = "PostgreSQL password for Authentik";
-    };
-    
-    redisPassword = mkOption {
-      type = types.str;
-      default = "changeme"; # Default password, should be overridden via SOPS
-      description = "Redis password for Authentik";
-    };
-    
-    adminPassword = mkOption {
-      type = types.str;
-      default = "changeme"; # Default password, should be overridden via SOPS
-      description = "Admin password for Authentik";
+    environmentFile = mkOption {
+      type = types.path;
+      default = "/run/secrets/authentik/env";
+      description = "Path to environment file for Authentik secrets";
     };
   };
 
   config = mkIf cfg.enable {
-    # Install Authentik packages
-    environment.systemPackages = with pkgs; [
-      # Add any Authentik-related packages here
-    ];
-    
-    # For now, we'll set up the infrastructure and add Authentik later
-    # The authentik-nix flake has Git dependency issues, so we'll use a different approach
-    
-    # PostgreSQL for Authentik
-    services.postgresql = {
-      enable = true;
-      
-      # Create database and user
-      ensureDatabases = [ "authentik" ];
-      ensureUsers = [
-        {
-          name = "authentik";
-          # Optionally set a password here if needed
-        }
-      ];
-      # Settings
-      settings = {
-        # Performance settings
-        shared_buffers = "256MB";
-        effective_cache_size = "1GB";
-        maintenance_work_mem = "64MB";
-        checkpoint_completion_target = "0.9";
-        wal_buffers = "16MB";
-        default_statistics_target = "100";
-        random_page_cost = "1.1";
-        effective_io_concurrency = "200";
-        work_mem = "4MB";
-        min_wal_size = "1GB";
-        max_wal_size = "4GB";
-      };
-    };
-    
-    # Redis for Authentik
-    services.redis.servers.authentik = {
-      enable = true;
-      settings = {
-        # Security
-        requirepass = cfg.redisPassword;
-        
-        # Performance
-        maxmemory = "256mb";
-        
-        # Persistence
-        save = [ "900 1" "300 10" "60 10000" ];
-      };
-    };
-    
-    # Firewall rules for Authentik
-    networking.firewall = {
-      allowedTCPPorts = [
-        9000  # Authentik web interface
-        9001  # Authentik outpost
-      ];
-    };
-    
-    # Systemd services
-    systemd.services = {
-      # Ensure PostgreSQL starts before Authentik
-      "authentik" = {
-        after = [ "postgresql.service" "redis.service" ];
-        requires = [ "postgresql.service" "redis.service" ];
-      };
-      
-      # PostgreSQL settings
-      "postgresql" = {
-        wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" ];
-      };
-      
-      # Redis settings
-      "redis" = {
-        wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" ];
-      };
-    };
-    
-    # Create Authentik admin user on first boot
-    systemd.services.authentik-init = {
-      description = "Initialize Authentik admin user";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "authentik.service" ];
-      requires = [ "authentik.service" ];
+    # Create environment file for Authentik
+    systemd.services.authentik-env = {
+      description = "Create Authentik environment file";
+      wantedBy = [ "authentik.service" ];
+      before = [ "authentik.service" ];
       
       serviceConfig = {
         Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = [
-          "${pkgs.writeShellScript "authentik-init" ''
-            #!/bin/sh
-            set -e
-            
-            # Wait for Authentik to be ready
-            until curl -f http://localhost:9000/api/v3/core/applications/ >/dev/null 2>&1; do
-              echo "Waiting for Authentik to be ready..."
-              sleep 5
-            done
-            
-            # Create admin user if it doesn't exist
-            if ! curl -f http://localhost:9000/api/v3/core/users/ -H "Authorization: Bearer $AUTHENTIK_TOKEN" | grep -q "admin"; then
-              echo "Creating Authentik admin user..."
-              curl -X POST http://localhost:9000/api/v3/core/users/ \
-                -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $AUTHENTIK_TOKEN" \
-                -d '{
-                  "username": "admin",
-                  "email": "${cfg.adminEmail}",
-                  "name": "Admin",
-                  "is_active": true,
-                  "is_superuser": true,
-                  "password": "${cfg.adminPassword}"
-                }'
-            fi
-            
-            echo "Authentik initialization complete"
-          ''}"
-        ];
-        Environment = [
-          "AUTHENTIK_TOKEN=${cfg.secretKey}"
-        ];
+        ExecStart = pkgs.writeShellScript "create-authentik-env" ''
+          set -e
+          mkdir -p /run/secrets/authentik
+          cat > /run/secrets/authentik/env << EOF
+          AUTHENTIK_SECRET_KEY=changeme
+          AUTHENTIK_POSTGRESQL__PASSWORD=changeme
+          AUTHENTIK_REDIS__PASSWORD=changeme
+          AUTHENTIK_BOOTSTRAP_PASSWORD=changeme
+          AUTHENTIK_EMAIL__PASSWORD=changeme
+          EOF
+          chmod 600 /run/secrets/authentik/env
+        '';
       };
     };
-    
-    # Health check for Authentik (disabled until Authentik is properly configured)
-    # systemd.services.authentik-health = {
-    #   description = "Authentik health check";
-    #   wantedBy = [ "multi-user.target" ];
-    #   after = [ "authentik.service" ];
-    #   
-    #   serviceConfig = {
-    #     Type = "oneshot";
-    #     ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:9000/health/";
-    #     Restart = "on-failure";
-    #     RestartSec = "30s";
-    #   };
-    # };
+
+    # PostgreSQL for Authentik
+    services.postgresql = {
+      enable = true;
+      ensureDatabases = [ "authentik" ];
+      ensureUsers = [{
+        name = "authentik";
+        ensureDBOwnership = true;
+      }];
+    };
+
+    # Redis for Authentik
+    services.redis.servers."".enable = true;
+
+    # Authentik service using pre-built package
+    systemd.services.authentik = {
+      description = "Authentik Identity Provider";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "postgresql.service" "redis.service" "authentik-env.service" ];
+      requires = [ "postgresql.service" "redis.service" "authentik-env.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/var/lib/authentik";
+        ExecStart = "${pkgs.authentik}/bin/ak server";
+        EnvironmentFile = cfg.environmentFile;
+        Environment = [
+          "AUTHENTIK_HOST=${cfg.domain}"
+          "AUTHENTIK_LISTEN__HTTP=0.0.0.0:9000"
+          "AUTHENTIK_LISTEN__HTTPS=0.0.0.0:9443"
+          "AUTHENTIK_BOOTSTRAP__EMAIL=${cfg.adminEmail}"
+          "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
+          "AUTHENTIK_POSTGRESQL__HOST=127.0.0.1"
+          "AUTHENTIK_POSTGRESQL__PORT=5432"
+          "AUTHENTIK_POSTGRESQL__USER=authentik"
+          "AUTHENTIK_POSTGRESQL__NAME=authentik"
+          "AUTHENTIK_REDIS__HOST=127.0.0.1"
+          "AUTHENTIK_REDIS__PORT=6379"
+        ];
+        Restart = "always";
+        RestartSec = "10s";
+      };
+    };
+
+    # Create authentik user
+    users.users.authentik = {
+      isSystemUser = true;
+      group = "authentik";
+      home = "/var/lib/authentik";
+      createHome = true;
+    };
+
+    users.groups.authentik = {};
+
+    # Health check for Authentik
+    systemd.services.authentik-health = {
+      description = "Authentik health check";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "authentik.service" ];
+      
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:9000/health/";
+        Restart = "on-failure";
+        RestartSec = "30s";
+      };
+    };
   };
 } 

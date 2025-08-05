@@ -63,7 +63,7 @@ environment.systemPackages = with pkgs; [
       };
       
       # State version for NixOS upgrades
-      stateVersion = "23.11";
+      stateVersion = "25.11";
     };
     
     # Common networking settings

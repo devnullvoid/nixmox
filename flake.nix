@@ -122,6 +122,7 @@ sops = {
           imports = [
             commonConfig
             ./modules/authentik
+            authentik-nix.nixosModules.default
           ];
           
           networking.hostName = "authentik";
@@ -279,9 +280,9 @@ sops = {
         in
         builtins.mapAttrs (name: config: 
           pkgs.runCommand "nixmox-${name}-lxc" {
-            buildInputs = [ nixos-generators.packages.${system}.default ];
+            buildInputs = [ nixos-generators.packages.${system}.default pkgs.nix ];
           } ''
-            nixos-generators -f proxmox-lxc -c ${config} -o $out
+            ${nixos-generators.packages.${system}.default}/bin/nixos-generate -f proxmox-lxc -c ${nixosConfigurations.${name}.config.system.build.toplevel} -o $out
           ''
         ) containers
       );
