@@ -13,13 +13,6 @@ entries:
       search_mode: direct
       mfa_support: true
 
-  - identifier: ldap-outpost-token
-    model: authentik_core.token
-    attrs:
-      identifier: ldap-outpost-token
-      key: 28d9edfd2f6bfcab0c5305e30fb4ac4a4f10dc417843359f1dae1515ab12b03e
-      intent: api
-
   - identifier: ldap-outpost
     model: authentik_outposts.outpost
     attrs:
@@ -27,7 +20,6 @@ entries:
       type: authentik.outposts.ldap.LDAPOutpost
     depends_on:
       - ldap-provider
-      - ldap-outpost-token
     relations:
       providers:
         - ldap-provider 

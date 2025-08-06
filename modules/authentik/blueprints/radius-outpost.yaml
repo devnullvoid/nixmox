@@ -10,13 +10,6 @@ entries:
       name: RADIUS Provider
       shared_secret: test-secret
 
-  - identifier: radius-outpost-token
-    model: authentik_core.token
-    attrs:
-      identifier: radius-outpost-token
-      key: f66bf6e4cc87eafe4056ba926773c0cd53082771fd4061fc820562eee32e5dce
-      intent: api
-
   - identifier: radius-outpost
     model: authentik_outposts.outpost
     attrs:
@@ -24,7 +17,6 @@ entries:
       type: authentik.outposts.radius.RadiusOutpost
     depends_on:
       - radius-provider
-      - radius-outpost-token
     relations:
       providers:
         - radius-provider 

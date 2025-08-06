@@ -10,13 +10,6 @@ entries:
       name: Proxy Provider
       external_host: http://localhost:8080
 
-  - identifier: proxy-outpost-token
-    model: authentik_core.token
-    attrs:
-      identifier: proxy-outpost-token
-      key: 4a79862a02aa0081c55f865d3ea7fba71ea881c643a762fc898381d67d937dea
-      intent: api
-
   - identifier: proxy-outpost
     model: authentik_outposts.outpost
     attrs:
@@ -24,7 +17,6 @@ entries:
       type: authentik.outposts.proxy.ProxyOutpost
     depends_on:
       - proxy-provider
-      - proxy-outpost-token
     relations:
       providers:
         - proxy-provider 
