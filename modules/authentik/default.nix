@@ -24,26 +24,26 @@ in {
   config = mkIf cfg.enable {
     # SOPS secrets for Authentik
     sops.secrets = {
-      "authentik/env" = {
-        owner = "authentik";
-        group = "authentik";
-        mode = "0400";
-      };
-      "authentik-ldap/env" = {
-        owner = "authentik";
-        group = "authentik";
-        mode = "0400";
-      };
-      "authentik-radius/env" = {
-        owner = "authentik";
-        group = "authentik";
-        mode = "0400";
-      };
-      "authentik-proxy/env" = {
-        owner = "authentik";
-        group = "authentik";
-        mode = "0400";
-      };
+                    "authentik/env" = {
+                owner = "authentik";
+                group = "authentik";
+                mode = "0400";
+              };
+              "authentik-ldap/env" = {
+                owner = "authentik";
+                group = "authentik";
+                mode = "0400";
+              };
+              "authentik-radius/env" = {
+                owner = "authentik";
+                group = "authentik";
+                mode = "0400";
+              };
+              "authentik-proxy/env" = {
+                owner = "authentik";
+                group = "authentik";
+                mode = "0400";
+              };
     };
 
     # Use the official authentik-nix module
@@ -105,19 +105,37 @@ in {
       };
     };
 
-    # Authentik LDAP outpost
+    # Add blueprints directory for declarative configuration
+    services.authentik.settings.blueprints_dir = "/etc/authentik/blueprints";
+
+    # Copy blueprint files to authentik directory
+    systemd.services.authentik-blueprints = {
+      description = "Copy Authentik blueprints";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "authentik.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "copy-blueprints" ''
+          mkdir -p /etc/authentik/blueprints
+          cp ${./blueprints}/*.yaml /etc/authentik/blueprints/
+          chown -R authentik:authentik /etc/authentik/blueprints
+          chmod -R 755 /etc/authentik/blueprints
+        '';
+      };
+    };
+
+    # Authentik outpost services (using authentik-nix module with SOPS environment files)
     services.authentik-ldap = {
       enable = true;
       environmentFile = config.sops.secrets."authentik-ldap/env".path;
     };
 
-    # Authentik RADIUS outpost
     services.authentik-radius = {
       enable = true;
       environmentFile = config.sops.secrets."authentik-radius/env".path;
     };
 
-    # Authentik Proxy outpost
     services.authentik-proxy = {
       enable = true;
       environmentFile = config.sops.secrets."authentik-proxy/env".path;
