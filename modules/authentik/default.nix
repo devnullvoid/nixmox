@@ -22,24 +22,9 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # SOPS secrets for Authentik
+    # SOPS secrets for Authentik - shared environment file for all services
     sops.secrets = {
-                    "authentik/env" = {
-                owner = "authentik";
-                group = "authentik";
-                mode = "0400";
-              };
-              "authentik-ldap/env" = {
-                owner = "authentik";
-                group = "authentik";
-                mode = "0400";
-              };
-              "authentik-radius/env" = {
-                owner = "authentik";
-                group = "authentik";
-                mode = "0400";
-              };
-              "authentik-proxy/env" = {
+              "authentik/env" = {
                 owner = "authentik";
                 group = "authentik";
                 mode = "0400";
@@ -108,6 +93,22 @@ in {
     # Add blueprints directory for declarative configuration
     services.authentik.settings.blueprints_dir = "/etc/authentik/blueprints";
 
+    # Enable outpost services using the same environment file
+    services.authentik-ldap = {
+      enable = true;
+      environmentFile = config.sops.secrets."authentik/env".path;
+    };
+
+    services.authentik-radius = {
+      enable = true;
+      environmentFile = config.sops.secrets."authentik/env".path;
+    };
+
+    services.authentik-proxy = {
+      enable = true;
+      environmentFile = config.sops.secrets."authentik/env".path;
+    };
+
     # Copy blueprint files to authentik directory
     systemd.services.authentik-blueprints = {
       description = "Copy Authentik blueprints";
@@ -125,100 +126,10 @@ in {
       };
     };
 
-    # Setup outpost tokens after authentik starts
-    systemd.services.authentik-outpost-setup = {
-      description = "Setup Authentik outpost tokens";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "authentik.service" ];
-      wants = [ "authentik.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        User = "root";
-        ExecStart = pkgs.writeShellScript "setup-outpost-tokens" ''
-          # Wait for authentik to be ready
-          echo "Waiting for Authentik to be ready..."
-          until curl -f -s http://localhost:9000/if/admin/ > /dev/null 2>&1; do
-            sleep 5
-          done
-          echo "Authentik is ready!"
-          
-          # Extract tokens from outposts created by blueprints
-          echo "Extracting outpost tokens..."
-          export LDAP_TOKEN=$(ak shell -c "from authentik.outposts.models import Outpost; print(Outpost.objects.get(name='LDAP Outpost').token.key, end='')")
-          export RADIUS_TOKEN=$(ak shell -c "from authentik.outposts.models import Outpost; print(Outpost.objects.get(name='RADIUS Outpost').token.key, end='')")  
-          export PROXY_TOKEN=$(ak shell -c "from authentik.outposts.models import Outpost; print(Outpost.objects.get(name='Proxy Outpost').token.key, end='')")
-          
-          echo "Creating outpost environment files with real tokens..."
-          
-          # Create environment files with real tokens
-          cat > /tmp/authentik-ldap.env << EOF
-          AUTHENTIK_HOST=http://127.0.0.1:9000
-          AUTHENTIK_TOKEN=$LDAP_TOKEN
-          AUTHENTIK_INSECURE=true
-          EOF
-          
-          cat > /tmp/authentik-radius.env << EOF
-          AUTHENTIK_HOST=http://127.0.0.1:9000
-          AUTHENTIK_TOKEN=$RADIUS_TOKEN
-          AUTHENTIK_INSECURE=true
-          EOF
-          
-          cat > /tmp/authentik-proxy.env << EOF
-          AUTHENTIK_HOST=http://127.0.0.1:9000
-          AUTHENTIK_TOKEN=$PROXY_TOKEN
-          AUTHENTIK_INSECURE=true
-          EOF
-          
-          # Replace the SOPS-managed environment files
-          cp /tmp/authentik-ldap.env ${config.sops.secrets."authentik-ldap/env".path}
-          cp /tmp/authentik-radius.env ${config.sops.secrets."authentik-radius/env".path}
-          cp /tmp/authentik-proxy.env ${config.sops.secrets."authentik-proxy/env".path}
-          
-          # Set correct permissions
-          chown authentik:authentik ${config.sops.secrets."authentik-ldap/env".path}
-          chown authentik:authentik ${config.sops.secrets."authentik-radius/env".path}
-          chown authentik:authentik ${config.sops.secrets."authentik-proxy/env".path}
-          chmod 400 ${config.sops.secrets."authentik-ldap/env".path}
-          chmod 400 ${config.sops.secrets."authentik-radius/env".path}
-          chmod 400 ${config.sops.secrets."authentik-proxy/env".path}
-          
-          # Clean up temp files
-          rm -f /tmp/authentik-*.env
-          
-          echo "Outpost tokens configured successfully!"
-          echo "LDAP Token: $LDAP_TOKEN"
-          echo "RADIUS Token: $RADIUS_TOKEN" 
-          echo "PROXY Token: $PROXY_TOKEN"
-        '';
-      };
-    };
-
-    # Authentik outpost services (using authentik-nix module with SOPS environment files)
-    services.authentik-ldap = {
-      enable = true;
-      environmentFile = config.sops.secrets."authentik-ldap/env".path;
-    };
-
-    services.authentik-radius = {
-      enable = true;
-      environmentFile = config.sops.secrets."authentik-radius/env".path;
-    };
-
-    services.authentik-proxy = {
-      enable = true;
-      environmentFile = config.sops.secrets."authentik-proxy/env".path;
-    };
-
-    # Ensure outpost services start after token setup
-    systemd.services.authentik-ldap.after = [ "authentik-outpost-setup.service" ];
-    systemd.services.authentik-ldap.wants = [ "authentik-outpost-setup.service" ];
-    
-    systemd.services.authentik-radius.after = [ "authentik-outpost-setup.service" ];
-    systemd.services.authentik-radius.wants = [ "authentik-outpost-setup.service" ];
-    
-    systemd.services.authentik-proxy.after = [ "authentik-outpost-setup.service" ];
-    systemd.services.authentik-proxy.wants = [ "authentik-outpost-setup.service" ];
+        # Note: We use the embedded outpost that runs within the main authentik server
+    # The embedded outpost handles LDAP, RADIUS, and Proxy protocols automatically
+    # and is accessible on the same ports as authentik (9000/9443)
+    # Paths starting with /outpost.goauthentik.io are automatically routed to the embedded outpost
 
     # PostgreSQL for Authentik
     services.postgresql = {
