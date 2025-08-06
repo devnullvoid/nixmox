@@ -39,6 +39,11 @@ in {
         group = "authentik";
         mode = "0400";
       };
+      "authentik-proxy/env" = {
+        owner = "authentik";
+        group = "authentik";
+        mode = "0400";
+      };
     };
 
     # Use the official authentik-nix module
@@ -110,6 +115,12 @@ in {
     services.authentik-radius = {
       enable = true;
       environmentFile = config.sops.secrets."authentik-radius/env".path;
+    };
+
+    # Authentik Proxy outpost
+    services.authentik-proxy = {
+      enable = true;
+      environmentFile = config.sops.secrets."authentik-proxy/env".path;
     };
 
     # PostgreSQL for Authentik
