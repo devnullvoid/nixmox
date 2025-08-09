@@ -286,6 +286,32 @@ sops = {
         ) containers
       );
       
+      # Deployment apps
+      apps = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system};
+        in {
+          deploy-authentik = {
+            type = "app";
+            program = "${pkgs.bash}/bin/bash";
+            args = [ "${./scripts/deploy-authentik.sh}" ];
+          };
+          
+          # Alternative deployment using direct nixos-rebuild
+          deploy-authentik-direct = {
+            type = "app";
+            program = "${pkgs.nixos-rebuild}/bin/nixos-rebuild";
+            args = [
+              "switch"
+              "--flake" ".#authentik"
+              "--target-host" "root@192.168.88.194"
+              "--build-host" "localhost" 
+              "--verbose"
+              "--max-jobs" "1"
+            ];
+          };
+        }
+      );
+      
       # Helper functions
       lib = {
         inherit containers commonConfig;
