@@ -26,10 +26,10 @@ entries:
     attrs:
       name: Vaultwarden OIDC
       client_type: confidential
-      client_id: "${OIDC_CLIENT_ID}"
-      client_secret: "${OIDC_CLIENT_SECRET}"
+      client_id: "$OIDC_CLIENT_ID"
+      client_secret: "$OIDC_CLIENT_SECRET"
       redirect_uris:
-        - ${OIDC_REDIRECT_URI}
+        - "$OIDC_REDIRECT_URI"
       authorization_flow: !KeyOf vw-authentication-flow
       property_mappings:
         - !Find [authentik_providers_oauth2.propertymapping, name, "OAuth2 - OpenID 'sub' Claim"]
@@ -91,7 +91,7 @@ in {
           # "authentik-proxy.service"
         ];
       };
-      # Vaultwarden OIDC client credentials for rendering blueprint
+      # Per-app OIDC creds for blueprint rendering (example: Vaultwarden)
       "vaultwarden/oidc" = {
         owner = "authentik";
         group = "authentik";
@@ -184,16 +184,21 @@ in {
     systemd.services.authentik-blueprints = {
       description = "Install Authentik blueprints";
       wantedBy = [ "multi-user.target" ];
-      before = [ "authentik.service" ];
+      before = [ "authentik.service" "authentik-migrate.service" ];
+      after = [ "sops-install-secrets.service" ];
+      requires = [ "sops-install-secrets.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        EnvironmentFile = config.sops.secrets."vaultwarden/oidc".path;
+        EnvironmentFile = [
+          config.sops.secrets."authentik/env".path
+          config.sops.secrets."vaultwarden/oidc".path
+        ];
         ExecStart = pkgs.writeShellScript "install-authentik-blueprints" ''
           set -euo pipefail
           mkdir -p ${blueprintDir}
           # Render OIDC blueprint with static client credentials from sops
-          ${pkgs.envsubst}/bin/envsubst < ${templateFile} > ${renderedBlueprint}
+          ${pkgs.gettext}/bin/envsubst < ${templateFile} > ${renderedBlueprint}
           # Copy other static blueprints
           cp ${./blueprints}/*.yaml ${blueprintDir}/
           chown -R authentik:authentik ${blueprintDir}
@@ -239,7 +244,7 @@ in {
           PSQL="${config.services.postgresql.package}/bin/psql"
           # Apply password (idempotent)
           "$PSQL" -v ON_ERROR_STOP=1 <<SQL
-ALTER ROLE authentik WITH PASSWORD '${AUTHENTIK_POSTGRESQL__PASSWORD}';
+ALTER ROLE authentik WITH PASSWORD '$AUTHENTIK_POSTGRESQL__PASSWORD';
 SQL
         '';
       };
