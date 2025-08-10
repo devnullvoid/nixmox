@@ -139,6 +139,15 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # SOPS secret for Vaultwarden sensitive env (admin token, jwt secret, OIDC client secret)
+    sops.secrets."vaultwarden/env" = {
+      owner = "vaultwarden";
+      group = "vaultwarden";
+      mode = "0400";
+      path = "/run/secrets/vaultwarden/env";
+      restartUnits = [ "vaultwarden.service" ];
+    };
+
     # Vaultwarden service
     services.vaultwarden = {
       enable = true;
@@ -151,11 +160,7 @@ in {
         # Database
         DATABASE_URL = cfg.vaultwarden.database.url;
         
-        # Admin token
-        ADMIN_TOKEN = cfg.vaultwarden.adminToken;
-        
-        # Security
-        JWT_SECRET = cfg.vaultwarden.security.jwtSecret;
+        # Admin token and JWT secret are expected via SOPS EnvironmentFile
         SIGNUPS_ALLOWED = cfg.vaultwarden.security.signupsAllowed;
         INVITATIONS_ALLOWED = cfg.vaultwarden.security.invitationsAllowed;
         
@@ -187,86 +192,24 @@ in {
         SECURITY_HEADERS = "true";
         
         # Additional custom environment variables
-      } // cfg.vaultwarden.environment;
-    };
-    
-    # Nginx configuration for Vaultwarden
-    services.nginx = {
-      enable = true;
-      
-      # Virtual host for Vaultwarden
-      virtualHosts.${cfg.domain} = {
-        enableACME = true;
-        forceSSL = true;
-        
-        # Security headers
-        extraConfig = ''
-          # Security headers
-          add_header X-Content-Type-Options nosniff;
-          add_header X-Frame-Options DENY;
-          add_header X-XSS-Protection "1; mode=block";
-          add_header Referrer-Policy "strict-origin-when-cross-origin";
-          add_header Permissions-Policy "geolocation=(), microphone=(), camera=()";
-          
-          # Vaultwarden specific headers
-          add_header X-Download-Options noopen;
-          add_header X-Permitted-Cross-Domain-Policies none;
-          add_header X-Robots-Tag "noindex, nofollow";
-          
-          # Large file uploads
-          client_max_body_size 10M;
-          
-          # Gzip compression
-          gzip on;
-          gzip_vary on;
-          gzip_min_length 1024;
-          gzip_proxied expired no-cache no-store private must-revalidate auth;
-          gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
-        '';
-        
-        # Locations
-        locations = {
-          "/" = {
-            proxyPass = "http://127.0.0.1:${toString cfg.vaultwarden.port}";
-            proxyWebsockets = true;
-            extraConfig = ''
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              
-              # Timeouts
-              proxy_connect_timeout 60s;
-              proxy_send_timeout 60s;
-              proxy_read_timeout 60s;
-            '';
-          };
-          
-          "/notifications/hub" = {
-            proxyPass = "http://127.0.0.1:${toString cfg.vaultwarden.port}";
-            proxyWebsockets = true;
-            extraConfig = ''
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              
-              # WebSocket specific settings
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "upgrade";
-            '';
-          };
-        };
+      } // cfg.vaultwarden.environment // {
+        # OIDC with Authentik (configure via sops env for secrets)
+        OIDC_ENABLED = "true";
+        OIDC_DISPLAY_NAME = "Authentik";
+        OIDC_SCOPE = "openid email profile";
+        OIDC_USER_CLAIM = "email";
+        # The following should be set through the EnvironmentFile (sops):
+        # OIDC_ISSUER=https://auth.nixmox.lan/application/o/<provider_slug>/
+        # OIDC_CLIENT_ID=...
+        # OIDC_CLIENT_SECRET=...
+        # OIDC_REDIRECT_URI=https://vault.nixmox.lan/oidc/callback
       };
     };
     
     # Firewall rules
     networking.firewall = {
       allowedTCPPorts = [
-        80   # HTTP
-        443  # HTTPS
-        cfg.vaultwarden.port  # Vaultwarden
+        cfg.vaultwarden.port  # Vaultwarden (reverse-proxied by Caddy)
       ];
     };
     
@@ -302,6 +245,9 @@ in {
           # Working directory
           WorkingDirectory = cfg.vaultwarden.dataDir;
           
+            # Sensitive environment via SOPS
+            EnvironmentFile = config.sops.secrets."vaultwarden/env".path;
+
           # Environment
           Environment = lib.mapAttrsToList (name: value: "${name}=${value}") cfg.services.vaultwarden.config;
           
@@ -326,12 +272,7 @@ in {
           StandardError = "journal";
         };
       };
-      
-      # Nginx service
-      "nginx" = {
-        after = [ "network.target" ];
-        wantedBy = [ "multi-user.target" ];
-      };
+      # Nginx is not used; Caddy handles reverse proxying
     };
     
     # Health check for Vaultwarden

@@ -4,6 +4,50 @@ with lib;
 
 let
   cfg = config.services.nixmox.authentik;
+  blueprintDir = "/etc/authentik/blueprints";
+  renderedBlueprint = "${blueprintDir}/oidc-vaultwarden.yaml";
+  templateFile = pkgs.writeText "oidc-vaultwarden.tmpl.yaml" ''
+version: 1
+metadata:
+  name: OIDC for Vaultwarden
+  description: Provider and application for Vaultwarden OIDC integration (rendered)
+
+entries:
+  - identifier: vw-authentication-flow
+    model: authentik_flows.flow
+    attrs:
+      name: Vaultwarden Login
+      slug: vaultwarden-login
+      designation: authentication
+      title: "Sign in to Vaultwarden"
+
+  - identifier: vw-client
+    model: authentik_providers_oauth2.oauth2provider
+    attrs:
+      name: Vaultwarden OIDC
+      client_type: confidential
+      client_id: "${OIDC_CLIENT_ID}"
+      client_secret: "${OIDC_CLIENT_SECRET}"
+      redirect_uris:
+        - ${OIDC_REDIRECT_URI}
+      authorization_flow: !KeyOf vw-authentication-flow
+      property_mappings:
+        - !Find [authentik_providers_oauth2.propertymapping, name, "OAuth2 - OpenID 'sub' Claim"]
+        - !Find [authentik_providers_oauth2.propertymapping, name, "OAuth2 - OpenID 'email' Claim"]
+        - !Find [authentik_providers_oauth2.propertymapping, name, "OAuth2 - OpenID 'profile' Claim"]
+      scopes:
+        - openid
+        - email
+        - profile
+
+  - identifier: vw-application
+    model: authentik_core.application
+    attrs:
+      name: Vaultwarden
+      slug: vaultwarden
+      group: Apps
+      protocol_provider: !KeyOf vw-client
+'';
 in {
   options.services.nixmox.authentik = {
     enable = mkEnableOption "Authentik identity provider";
@@ -46,6 +90,14 @@ in {
           "authentik-radius.service"
           # "authentik-proxy.service"
         ];
+      };
+      # Vaultwarden OIDC client credentials for rendering blueprint
+      "vaultwarden/oidc" = {
+        owner = "authentik";
+        group = "authentik";
+        mode = "0400";
+        path = "/run/secrets/vaultwarden/oidc";
+        restartUnits = [ "authentik.service" ];
       };
     };
 
@@ -109,7 +161,7 @@ in {
     };
 
     # Add blueprints directory for declarative configuration
-    # services.authentik.settings.blueprints_dir = "/etc/authentik/blueprints";
+    services.authentik.settings.blueprints_dir = blueprintDir;
 
     # Enable outpost services using the same environment file
     services.authentik-ldap = {
@@ -129,21 +181,26 @@ in {
     # };
 
     # Copy blueprint files to authentik directory
-    # systemd.services.authentik-blueprints = {
-    #   description = "Copy Authentik blueprints";
-    #   wantedBy = [ "multi-user.target" ];
-    #   before = [ "authentik.service" ];
-    #   serviceConfig = {
-    #     Type = "oneshot";
-    #     RemainAfterExit = true;
-    #     ExecStart = pkgs.writeShellScript "copy-blueprints" ''
-    #       mkdir -p /etc/authentik/blueprints
-    #       cp ${./blueprints}/*.yaml /etc/authentik/blueprints/
-    #       chown -R authentik:authentik /etc/authentik/blueprints
-    #       chmod -R 755 /etc/authentik/blueprints
-    #     '';
-    #   };
-    # };
+    systemd.services.authentik-blueprints = {
+      description = "Install Authentik blueprints";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "authentik.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        EnvironmentFile = config.sops.secrets."vaultwarden/oidc".path;
+        ExecStart = pkgs.writeShellScript "install-authentik-blueprints" ''
+          set -euo pipefail
+          mkdir -p ${blueprintDir}
+          # Render OIDC blueprint with static client credentials from sops
+          ${pkgs.envsubst}/bin/envsubst < ${templateFile} > ${renderedBlueprint}
+          # Copy other static blueprints
+          cp ${./blueprints}/*.yaml ${blueprintDir}/
+          chown -R authentik:authentik ${blueprintDir}
+          chmod -R 0755 ${blueprintDir}
+        '';
+      };
+    };
 
         # Note: We use the embedded outpost that runs within the main authentik server
     # The embedded outpost handles LDAP, RADIUS, and Proxy protocols automatically

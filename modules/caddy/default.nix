@@ -106,7 +106,7 @@ in {
               # Forward authentication
               ${optionalString service.enableAuth ''
               route {
-                forward_auth ${cfg.authentikDomain}:443 {
+                forward_auth http://${cfg.authentikDomain}:9000 {
                   uri /outpost.goauthentik.io/auth/caddy
                   copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Jwt
                   trusted_proxies private_ranges
