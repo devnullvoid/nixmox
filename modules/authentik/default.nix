@@ -180,6 +180,7 @@ in {
 
     # Ship static blueprints declaratively (no runtime copy service needed)
     environment.etc."authentik/blueprints/default-auth-flow.yaml".source = ./blueprints/default-auth-flow.yaml;
+    environment.etc."authentik/blueprints/default-invalidation-flow.yaml".source = ./blueprints/default-invalidation-flow.yaml;
     environment.etc."authentik/blueprints/ldap-outpost.yaml".source = ./blueprints/ldap-outpost.yaml;
     environment.etc."authentik/blueprints/radius-outpost.yaml".source = ./blueprints/radius-outpost.yaml;
     environment.etc."authentik/blueprints/proxy-outpost.yaml".source = ./blueprints/proxy-outpost.yaml;
