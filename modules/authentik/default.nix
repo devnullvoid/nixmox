@@ -132,48 +132,27 @@ in {
     # Ensure Authentik knows where to discover blueprints declaratively
 
     # Add blueprints directory for declarative configuration
-    # services.authentik.settings.blueprints_dir = blueprintDir;
+    services.authentik.settings.blueprints_dir = blueprintDir;
 
     # Ship static blueprints declaratively (no runtime copy/rendering services)
     # environment.etc."authentik/blueprints/default-auth-flow.yaml".source = ./blueprints/default-auth-flow.yaml;
     # environment.etc."authentik/blueprints/default-invalidation-flow.yaml".source = ./blueprints/default-invalidation-flow.yaml;
-    # Outpost blueprints can be enabled later once tokens are configured
-    # environment.etc."authentik/blueprints/ldap-outpost.yaml".source = ./blueprints/ldap-outpost.yaml;
-    # environment.etc."authentik/blueprints/radius-outpost.yaml".source = ./blueprints/radius-outpost.yaml;
+    # Seed providers and outposts (tokens still generated in UI)
+    environment.etc."authentik/blueprints/ldap-outpost.yaml".source = ./blueprints/ldap-outpost.yaml;
+    environment.etc."authentik/blueprints/radius-outpost.yaml".source = ./blueprints/radius-outpost.yaml;
     # environment.etc."authentik/blueprints/proxy-outpost.yaml".source = ./blueprints/proxy-outpost.yaml;
 
     # Enable outpost services using the same environment file
     # Disable external outposts by default for clean bootstrap; can be enabled later when tokens are set
     services.authentik-ldap = {
-      enable = false;
+      enable = true;
       environmentFile = "/run/secrets/authentik-ldap/env";
     };
 
     services.authentik-radius = {
-      enable = false;
+      enable = true;
       environmentFile = "/run/secrets/authentik-radius/env";
     };
-
-    # Ensure required env for outposts; tokens come from SOPS env files
-    (mkIf config.services.authentik-ldap.enable {
-      systemd.services.authentik-ldap.serviceConfig.Environment = [
-        "AUTHENTIK_HOST=http://127.0.0.1:9000"
-        "AUTHENTIK_INSECURE=true"
-      ];
-    })
-    //
-    (mkIf config.services.authentik-radius.enable {
-      systemd.services.authentik-radius.serviceConfig.Environment = [
-        "AUTHENTIK_HOST=http://127.0.0.1:9000"
-        "AUTHENTIK_INSECURE=true"
-      ];
-    });
-
-    # Open firewall for outposts (LDAP 389/636, RADIUS 1812/1813)
-    networking.firewall.allowedTCPPorts =
-      (if config.services.authentik-ldap.enable then [ 389 636 ] else []);
-    networking.firewall.allowedUDPPorts =
-      (if config.services.authentik-radius.enable then [ 1812 1813 ] else []);
 
     # Rely on Authentik bootstrap for initial admin and RBAC; no extra oneshots
 
