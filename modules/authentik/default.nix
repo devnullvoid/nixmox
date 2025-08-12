@@ -145,24 +145,29 @@ in {
     # Enable outpost services using the same environment file
     # Disable external outposts by default for clean bootstrap; can be enabled later when tokens are set
     services.authentik-ldap = {
-      enable = true;
+      enable = false;
       environmentFile = "/run/secrets/authentik-ldap/env";
     };
 
     services.authentik-radius = {
-      enable = true;
+      enable = false;
       environmentFile = "/run/secrets/authentik-radius/env";
     };
 
     # Ensure required env for outposts; tokens come from SOPS env files
-    systemd.services.authentik-ldap.serviceConfig.Environment = [
-      "AUTHENTIK_HOST=http://127.0.0.1:9000"
-      "AUTHENTIK_INSECURE=true"
-    ];
-    systemd.services.authentik-radius.serviceConfig.Environment = [
-      "AUTHENTIK_HOST=http://127.0.0.1:9000"
-      "AUTHENTIK_INSECURE=true"
-    ];
+    (mkIf config.services.authentik-ldap.enable {
+      systemd.services.authentik-ldap.serviceConfig.Environment = [
+        "AUTHENTIK_HOST=http://127.0.0.1:9000"
+        "AUTHENTIK_INSECURE=true"
+      ];
+    })
+    //
+    (mkIf config.services.authentik-radius.enable {
+      systemd.services.authentik-radius.serviceConfig.Environment = [
+        "AUTHENTIK_HOST=http://127.0.0.1:9000"
+        "AUTHENTIK_INSECURE=true"
+      ];
+    });
 
     # Open firewall for outposts (LDAP 389/636, RADIUS 1812/1813)
     networking.firewall.allowedTCPPorts =
