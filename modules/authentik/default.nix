@@ -154,9 +154,19 @@ in {
       environmentFile = "/run/secrets/authentik-radius/env";
     };
 
-    # Open firewall for outposts (defaults: LDAP 3389/6636, RADIUS 1812/1813)
+    # Ensure required env for outposts; tokens come from SOPS env files
+    systemd.services.authentik-ldap.serviceConfig.Environment = [
+      "AUTHENTIK_HOST=http://127.0.0.1:9000"
+      "AUTHENTIK_INSECURE=true"
+    ];
+    systemd.services.authentik-radius.serviceConfig.Environment = [
+      "AUTHENTIK_HOST=http://127.0.0.1:9000"
+      "AUTHENTIK_INSECURE=true"
+    ];
+
+    # Open firewall for outposts (LDAP 389/636, RADIUS 1812/1813)
     networking.firewall.allowedTCPPorts =
-      (if config.services.authentik-ldap.enable then [ 3389 6636 ] else []);
+      (if config.services.authentik-ldap.enable then [ 389 636 ] else []);
     networking.firewall.allowedUDPPorts =
       (if config.services.authentik-radius.enable then [ 1812 1813 ] else []);
 
