@@ -145,14 +145,20 @@ in {
     # Enable outpost services using the same environment file
     # Disable external outposts by default for clean bootstrap; can be enabled later when tokens are set
     services.authentik-ldap = {
-      enable = false;
+      enable = true;
       environmentFile = "/run/secrets/authentik-ldap/env";
     };
 
     services.authentik-radius = {
-      enable = false;
+      enable = true;
       environmentFile = "/run/secrets/authentik-radius/env";
     };
+
+    # Open firewall for outposts (defaults: LDAP 3389/6636, RADIUS 1812/1813)
+    networking.firewall.allowedTCPPorts =
+      (if config.services.authentik-ldap.enable then [ 3389 6636 ] else []);
+    networking.firewall.allowedUDPPorts =
+      (if config.services.authentik-radius.enable then [ 1812 1813 ] else []);
 
     # Rely on Authentik bootstrap for initial admin and RBAC; no extra oneshots
 
