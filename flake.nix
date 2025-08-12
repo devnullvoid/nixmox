@@ -116,18 +116,93 @@ sops = {
       
       # Container configurations
       containers = {
-        # Authentik container
-        authentik = { config, pkgs, lib, ... }: {
+        # Authentik container (POC stack: also runs Caddy and Vaultwarden)
+        authentik = { config, pkgs, lib, ... }:
+        let
+          certs = pkgs.runCommand "local-ca-and-cert" { buildInputs = [ pkgs.openssl ]; } ''
+            set -eu
+            mkdir -p $out
+            # CA
+            openssl req -x509 -new -nodes -newkey rsa:2048 -sha256 -days 3650 \
+              -subj "/CN=NixMox Local CA" \
+              -keyout $out/ca.key -out $out/ca.crt
+            # Server key
+            openssl genrsa -out $out/server.key 2048
+            # CSR config
+            cat > $out/openssl.cnf <<CFG
+            [ req ]
+            distinguished_name = dn
+            req_extensions = v3_req
+            [ dn ]
+            [ v3_req ]
+            basicConstraints = CA:FALSE
+            keyUsage = digitalSignature, keyEncipherment
+            subjectAltName = @alt_names
+            [ alt_names ]
+            DNS.1 = auth.nixmox.lan
+            DNS.2 = vault.nixmox.lan
+            CFG
+            # CSR
+            openssl req -new -key $out/server.key -subj "/CN=auth.nixmox.lan" -out $out/server.csr -config $out/openssl.cnf
+            # Sign
+            openssl x509 -req -in $out/server.csr -CA $out/ca.crt -CAkey $out/ca.key -CAcreateserial -out $out/server.crt -days 825 -sha256 -extfile $out/openssl.cnf -extensions v3_req
+          '';
+          caddyFile = pkgs.writeText "Caddyfile" ''
+https://auth.nixmox.lan {
+  tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+  reverse_proxy 127.0.0.1:9000 {
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Real-IP {remote_host}
+  }
+}
+
+https://vault.nixmox.lan {
+  tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+  reverse_proxy 127.0.0.1:8080 {
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Real-IP {remote_host}
+    header_up Host {host}
+  }
+}
+'';
+        in {
           imports = [
             commonConfig
             ./modules/authentik
+            ./modules/vaultwarden
             authentik-nix.nixosModules.default
           ];
           
           networking.hostName = "authentik";
           
-          # Authentik-specific settings
+          # Core services
           services.nixmox.authentik.enable = true;
+
+          # Resolve local hostnames (until DNS exists)
+          networking.hosts."127.0.0.1" = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
+
+          # Minimal Caddy reverse proxy config
+          services.caddy = {
+            enable = true;
+            configFile = caddyFile;
+          };
+
+          # Install certs and trust local CA
+          environment.etc."caddy/tls/server.crt".source = "${certs}/server.crt";
+          environment.etc."caddy/tls/server.key".source = "${certs}/server.key";
+          security.pki.certificates = [ (builtins.readFile "${certs}/ca.crt") ];
+
+          networking.firewall.allowedTCPPorts = [ 80 443 ];
+
+          # Vaultwarden on same host for POC
+          services.nixmox.vaultwarden.enable = true;
+          services.nixmox.vaultwarden.vaultwarden = {
+            port = 8080;
+            domain = "https://vault.nixmox.lan"; # external URL used by clients
+            security.signupsAllowed = false;
+          };
         };
         
         # Caddy reverse proxy container

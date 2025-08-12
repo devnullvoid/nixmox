@@ -139,7 +139,7 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # SOPS secret for Vaultwarden sensitive env (admin token, jwt secret, OIDC client secret)
+    # SOPS secret for Vaultwarden sensitive env (admin token, jwt secret)
     sops.secrets."vaultwarden/env" = {
       owner = "vaultwarden";
       group = "vaultwarden";
@@ -147,6 +147,8 @@ in {
       path = "/run/secrets/vaultwarden/env";
       restartUnits = [ "vaultwarden.service" ];
     };
+
+    # Optionally, include OIDC values directly in vaultwarden/env for POC
 
     # Vaultwarden service
     services.vaultwarden = {
@@ -157,8 +159,8 @@ in {
         # Domain
         DOMAIN = cfg.vaultwarden.domain;
         
-        # Database
-        DATABASE_URL = cfg.vaultwarden.database.url;
+        # Database (use relative path under WorkingDirectory)
+        DATABASE_URL = "data/db.sqlite3";
         
         # Admin token and JWT secret are expected via SOPS EnvironmentFile
         SIGNUPS_ALLOWED = cfg.vaultwarden.security.signupsAllowed;
@@ -172,9 +174,8 @@ in {
         SMTP_PASSWORD = cfg.vaultwarden.email.smtpPassword;
         SMTP_SECURITY = "starttls";
         
-        # Web vault
-        WEB_VAULT_ENABLED = cfg.vaultwarden.webVault.enable;
-        WEB_VAULT_FOLDER = cfg.vaultwarden.webVault.path;
+        # Web vault (enable embedded web vault so "/" serves UI)
+        WEB_VAULT_ENABLED = true;
         
         # Additional environment variables
         ROCKET_ADDRESS = "0.0.0.0";
@@ -196,7 +197,6 @@ in {
         # OIDC with Authentik (configure via sops env for secrets)
         OIDC_ENABLED = "true";
         OIDC_DISPLAY_NAME = "Authentik";
-        OIDC_SCOPE = "openid email profile";
         OIDC_USER_CLAIM = "email";
         # The following should be set through the EnvironmentFile (sops):
         # OIDC_ISSUER=https://auth.nixmox.lan/application/o/<provider_slug>/
@@ -226,8 +226,9 @@ in {
     # Create directories
     systemd.tmpfiles.rules = [
       "d ${cfg.vaultwarden.dataDir} 0755 vaultwarden vaultwarden"
+      "d ${cfg.vaultwarden.dataDir}/data 0755 vaultwarden vaultwarden"
       "d ${cfg.vaultwarden.webVault.path} 0755 vaultwarden vaultwarden"
-      "d /var/log/vaultwarden 0755 vaultwarden vaultwarden"
+      # logging to journal; no on-disk log file needed
     ];
     
     # Systemd services
@@ -238,6 +239,9 @@ in {
         wantedBy = [ "multi-user.target" ];
         
         serviceConfig = {
+          ExecStartPre = [
+            "${pkgs.coreutils}/bin/mkdir -p ${cfg.vaultwarden.dataDir}/data"
+          ];
           # User and group
           User = "vaultwarden";
           Group = "vaultwarden";
@@ -245,11 +249,11 @@ in {
           # Working directory
           WorkingDirectory = cfg.vaultwarden.dataDir;
           
-            # Sensitive environment via SOPS
-            EnvironmentFile = config.sops.secrets."vaultwarden/env".path;
+          # Sensitive environment via SOPS
+          EnvironmentFile = config.sops.secrets."vaultwarden/env".path;
 
           # Environment
-          Environment = lib.mapAttrsToList (name: value: "${name}=${value}") cfg.services.vaultwarden.config;
+          Environment = lib.mapAttrsToList (name: value: "${name}=${toString value}") (config.services.vaultwarden.config);
           
           # Security settings
           NoNewPrivileges = true;
@@ -282,10 +286,10 @@ in {
       after = [ "vaultwarden.service" ];
       
       serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:${toString cfg.vaultwarden.port}/alive";
+        Type = "simple";
+        ExecStart = "${pkgs.bash}/bin/bash -c 'for i in {1..20}; do ${pkgs.curl}/bin/curl -fs http://localhost:${toString cfg.vaultwarden.port}/alive && exit 0; sleep 2; done; exit 1'";
         Restart = "on-failure";
-        RestartSec = "30s";
+        RestartSec = "15s";
       };
     };
     
@@ -316,9 +320,8 @@ in {
       BACKUP_FREQUENCY = "12h";
       BACKUP_ATTEMPTS = "3";
       
-      # Logging
+      # Logging (to journal)
       EXTENDED_LOGGING = "true";
-      LOG_FILE = "/var/log/vaultwarden/vaultwarden.log";
     };
   };
 } 

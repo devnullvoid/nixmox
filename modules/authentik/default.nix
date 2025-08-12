@@ -60,14 +60,7 @@ in {
         path = "/run/secrets/authentik-radius/env";
         restartUnits = [ "authentik-radius.service" ];
       };
-      # Per-app OIDC creds for blueprint rendering (example: Vaultwarden)
-      "vaultwarden/oidc" = {
-        owner = "authentik";
-        group = "authentik";
-        mode = "0400";
-        path = "/run/secrets/vaultwarden/oidc";
-        restartUnits = [ "authentik.service" ];
-      };
+      # (moved) Vaultwarden OIDC secret owned by vaultwarden service in its module
     };
 
     # Use the official authentik-nix module
