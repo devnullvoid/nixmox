@@ -142,6 +142,9 @@ in {
     environment.etc."authentik/blueprints/radius-outpost.yaml".source = ./blueprints/radius-outpost.yaml;
     # environment.etc."authentik/blueprints/proxy-outpost.yaml".source = ./blueprints/proxy-outpost.yaml;
 
+    # Ensure host resolution for self before DNS exists
+    networking.hosts."127.0.0.1" = [ cfg.domain ];
+
     # Enable outpost services using the same environment file
     # Disable external outposts by default for clean bootstrap; can be enabled later when tokens are set
     services.authentik-ldap = {
@@ -154,7 +157,6 @@ in {
       environmentFile = "/run/secrets/authentik-radius/env";
     };
 
-    # Rely on Authentik bootstrap for initial admin and RBAC; no extra oneshots
 
     # PostgreSQL for Authentik (ensure DB/user and schema ownership)
     services.postgresql = {
