@@ -4,19 +4,23 @@ metadata:
   description: Creates RADIUS provider and outpost for authentication
 
 entries:
-  - identifier: radius-provider
+  - id: radius-provider
     model: authentik_providers_radius.radiusprovider
+    identifiers:
+      name: RADIUS Provider
     attrs:
       name: RADIUS Provider
       shared_secret: test-secret
 
-  - identifier: radius-outpost
+  - id: radius-outpost
     model: authentik_outposts.outpost
+    identifiers:
+      name: RADIUS Outpost
     attrs:
       name: RADIUS Outpost
-      type: authentik.outposts.radius.RadiusOutpost
+      type: radius
     depends_on:
       - radius-provider
     relations:
       providers:
-        - radius-provider 
+        - !KeyOf radius-provider

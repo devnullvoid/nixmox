@@ -25,6 +25,11 @@ in {
       default = "auth.nixmox.lan";
       description = "Authentik domain for forward auth";
     };
+    authentikUpstream = mkOption {
+      type = types.str;
+      default = "localhost:9000";
+      description = "Upstream host:port for Authentik core (for reverse_proxy and forward_auth). Use IP:port when Authentik runs on another container.";
+    };
     
     # Service configurations
     services = mkOption {
@@ -90,7 +95,7 @@ in {
           "${cfg.authentikDomain}" = {
             extraConfig = ''
               # Authentik service
-              reverse_proxy localhost:9000 {
+              reverse_proxy ${cfg.authentikUpstream} {
                 header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-For {remote_host}
                 header_up X-Real-IP {remote_host}
@@ -106,7 +111,7 @@ in {
               # Forward authentication
               ${optionalString service.enableAuth ''
               route {
-                forward_auth http://${cfg.authentikDomain}:9000 {
+                forward_auth http://${cfg.authentikUpstream} {
                   uri /outpost.goauthentik.io/auth/caddy
                   copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Jwt
                   trusted_proxies private_ranges

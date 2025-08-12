@@ -44,30 +44,27 @@ entries:
     model: authentik_flows.flowstagebinding
     identifiers:
       target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-identification
+      stage:  !KeyOf stage-identification
+      order: 0
     attrs:
-      target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-identification
       order: 0
 
   - id: binding-password
     model: authentik_flows.flowstagebinding
     identifiers:
       target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-password
+      stage:  !KeyOf stage-password
+      order: 1
     attrs:
-      target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-password
       order: 1
 
   - id: binding-login
     model: authentik_flows.flowstagebinding
     identifiers:
       target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-login
+      stage:  !KeyOf stage-login
+      order: 2
     attrs:
-      target: !KeyOf default-auth-flow
-      stage: !KeyOf stage-login
       order: 2
 
 

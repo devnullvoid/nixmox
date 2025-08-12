@@ -4,8 +4,10 @@ metadata:
   description: Creates LDAP provider and outpost for authentication
 
 entries:
-  - identifier: ldap-provider
+  - id: ldap-provider
     model: authentik_providers_ldap.ldapprovider
+    identifiers:
+      name: LDAP Provider
     attrs:
       name: LDAP Provider
       base_dn: dc=example,dc=com
@@ -13,13 +15,15 @@ entries:
       search_mode: direct
       mfa_support: true
 
-  - identifier: ldap-outpost
+  - id: ldap-outpost
     model: authentik_outposts.outpost
+    identifiers:
+      name: LDAP Outpost
     attrs:
       name: LDAP Outpost
-      type: authentik.outposts.ldap.LDAPOutpost
+      type: ldap
     depends_on:
       - ldap-provider
     relations:
       providers:
-        - ldap-provider 
+        - !KeyOf ldap-provider
