@@ -10,10 +10,25 @@ entries:
       name: LDAP Provider
     attrs:
       name: LDAP Provider
-      base_dn: dc=example,dc=com
+      base_dn: dc=nixmox,dc=lan
       bind_mode: direct
       search_mode: direct
       mfa_support: true
+
+  - id: ldap-application
+    model: authentik_core.application
+    identifiers:
+      slug: ldap-directory
+    attrs:
+      name: LDAP Directory
+      slug: ldap-directory
+
+  - id: ldap-provider-application-link
+    model: authentik_providers_ldap.ldapprovider
+    identifiers:
+      name: LDAP Provider
+    attrs:
+      application: !KeyOf ldap-application
 
   - id: ldap-outpost
     model: authentik_outposts.outpost
