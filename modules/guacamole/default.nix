@@ -139,8 +139,8 @@ in {
     # Initialize Guacamole DB schema if empty
     systemd.services.guacamole-pgsql-schema-import = {
       enable = true;
-      requires = [ "postgresql.service" ];
-      after = [ "postgresql.service" ];
+      requires = [ "postgresql.service" "postgresql-setup.service" ];
+      after = [ "postgresql.service" "postgresql-setup.service" ];
       wantedBy = [ "tomcat.service" "multi-user.target" ];
       script = ''
         echo "[guacamole-bootstrapper] Info: checking if database 'guacamole' exists but is empty..."

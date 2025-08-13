@@ -76,13 +76,6 @@ in {
         {
           # Admin API (for dynamic config)
           admin off
-          
-          # Logging
-          log {
-            output file /var/log/caddy/access.log
-            format json
-          }
-          
           # Automatic HTTPS
           auto_https disable_redirects
         }
