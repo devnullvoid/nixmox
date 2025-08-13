@@ -185,7 +185,7 @@ in {
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
           # Import local CA into a Java truststore so Guacamole trusts Authentik TLS
-          "${keytool} -import -trustcacerts -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true"
+          "${keytool} -importcert -trustcacerts -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true"
         ];
       };
     };
