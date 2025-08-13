@@ -127,6 +127,7 @@ sops = {
              commonConfig
              ./modules/authentik
              ./modules/vaultwarden
+             ./modules/vaultwarden/oci.nix
               ./modules/caddy
               ./modules/guacamole
              ./modules/localtls
