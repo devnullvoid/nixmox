@@ -111,7 +111,7 @@ in {
       openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
       openid-client-id = cfg.clientId;
       openid-redirect-uri = "https://${cfg.hostName}/";
-      openid-username-claim-type = "preferred_username";
+      openid-username-claim-type = "email";
       openid-scope = "openid email profile";
     };
 
