@@ -63,6 +63,12 @@ in {
       description = "Authentik domain used for OIDC endpoints";
     };
 
+    clientId = mkOption {
+      type = types.str;
+      default = "guacamole-client";
+      description = "OIDC client ID to use for Guacamole (public value)";
+    };
+
     openFirewall = mkOption {
       type = types.bool;
       default = false;
@@ -103,7 +109,7 @@ in {
       openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
       openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
       openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
-      openid-client-id = "CHANGE_ME_IN_AUTHENTIK";
+      openid-client-id = cfg.clientId;
       openid-redirect-uri = "https://${cfg.hostName}/";
       openid-username-claim-type = "preferred_username";
       openid-scope = "openid email profile";

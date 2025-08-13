@@ -187,6 +187,7 @@ sops = {
              enable = true;
              hostName = "guac.nixmox.lan";
              authentikDomain = "auth.nixmox.lan";
+             clientId = "${builtins.getEnv "GUAC_OPENID_CLIENT_ID" or "guacamole-client"}";
              tomcatPort = 8280;
            };
         };
