@@ -26,11 +26,7 @@ variable "guac_client_id" {
   type        = string
 }
 
-variable "guac_client_secret" {
-  description = "Guacamole OAuth2 client secret"
-  type        = string
-  sensitive   = true
-}
+## Public client, no secret needed
 
 variable "guac_redirect_uri" {
   description = "Redirect URI for Guacamole (e.g., https://guac.nixmox.lan/)"

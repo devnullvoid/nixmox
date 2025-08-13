@@ -6,7 +6,7 @@ Inputs:
 - `authentik_url` (e.g., `https://auth.nixmox.lan`)
 - `authentik_token` (automation API token)
 - `authentik_insecure` (bool, default `true` for self-signed)
-- `guac_client_id`, `guac_client_secret`
+- `guac_client_id` (public client)
 - `guac_redirect_uri` (e.g., `https://guac.nixmox.lan/`)
 - `guac_app_name`, `guac_app_slug`, `guac_app_group`, `guac_launch_url`
 
@@ -25,7 +25,6 @@ module "authentik_guacamole" {
   authentik_insecure = true
 
   guac_client_id     = var.guac_client_id
-  guac_client_secret = var.guac_client_secret
   guac_redirect_uri  = "https://guac.nixmox.lan/"
 
   guac_app_name   = "Guacamole"

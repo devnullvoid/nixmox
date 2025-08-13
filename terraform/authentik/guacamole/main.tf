@@ -1,9 +1,9 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.6.0"
   required_providers {
     authentik = {
       source  = "goauthentik/authentik"
-      version = ">= 2024.6.0"
+      version = ">= 2024.10.0"
     }
   }
 }
@@ -40,22 +40,20 @@ data "authentik_property_mapping_provider_scope" "scope_profile" {
   managed = "goauthentik.io/providers/oauth2/scope-profile"
 }
 
-resource "authentik_oauth2_provider" "guacamole" {
+resource "authentik_provider_oauth2" "guacamole" {
   name               = var.guac_provider_name
   client_id          = var.guac_client_id
-  client_secret      = var.guac_client_secret
   authorization_flow = data.authentik_flow.provider_authorize_implicit.id
   invalidation_flow  = data.authentik_flow.default_invalidation.id
-
-  # Guacamole uses Authorization Code flow; PKCE optional
-  authorization_flow_user_consent = true
-  client_type                     = "confidential"
+  client_type        = "public"
 
   allowed_redirect_uris = [
-    var.guac_redirect_uri
+    {
+      matching_mode = "strict"
+      url           = var.guac_redirect_uri
+    }
   ]
 
-  # Common scopes for Guacamole login
   property_mappings = [
     data.authentik_property_mapping_provider_scope.scope_openid.id,
     data.authentik_property_mapping_provider_scope.scope_email.id,
@@ -66,14 +64,13 @@ resource "authentik_oauth2_provider" "guacamole" {
 resource "authentik_application" "guacamole" {
   name              = var.guac_app_name
   slug              = var.guac_app_slug
-  provider          = authentik_oauth2_provider.guacamole.id
+  protocol_provider = authentik_provider_oauth2.guacamole.id
   group             = var.guac_app_group
-  launch_url        = var.guac_launch_url
+  # Meta launch URL only (newer provider schema)
   meta_launch_url   = var.guac_launch_url
   meta_icon         = "mdi:remote-desktop"
   meta_publisher    = "NixMox"
   open_in_new_tab   = false
-  disable_everyone  = false
 }
 
 
