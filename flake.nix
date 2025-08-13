@@ -122,33 +122,12 @@ sops = {
       containers = {
         # Authentik container (POC stack: also runs Caddy and Vaultwarden)
         authentik = { config, pkgs, lib, ... }:
-        let
-           # Use moduleized local TLS
-          caddyFile = pkgs.writeText "Caddyfile" ''
-https://auth.nixmox.lan {
-  tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-  reverse_proxy 127.0.0.1:9000 {
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-For {remote_host}
-    header_up X-Real-IP {remote_host}
-  }
-}
-
-https://vault.nixmox.lan {
-  tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-  reverse_proxy 127.0.0.1:8080 {
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-For {remote_host}
-    header_up X-Real-IP {remote_host}
-    header_up Host {host}
-  }
-}
-'';
-        in {
+        {
           imports = [
              commonConfig
              ./modules/authentik
              ./modules/vaultwarden
+             ./modules/caddy
              ./modules/localtls
              authentik-nix.nixosModules.default
           ];
@@ -161,10 +140,19 @@ https://vault.nixmox.lan {
           # Resolve local hostnames (until DNS exists)
           networking.hosts."127.0.0.1" = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
 
-          # Minimal Caddy reverse proxy config
-          services.caddy = {
+          # Caddy via module; route Authentik and Vaultwarden
+          services.nixmox.caddy = {
             enable = true;
-            configFile = caddyFile;
+            authentikDomain = "auth.nixmox.lan";
+            authentikUpstream = "127.0.0.1:9000";
+            services = {
+              vaultwarden = {
+                domain = "vault.nixmox.lan";
+                backend = "127.0.0.1";
+                port = 8080;
+                enableAuth = false; # Vaultwarden handles SSO via OIDC
+              };
+            };
           };
 
            # Local TLS certs used by Caddy
@@ -172,15 +160,6 @@ https://vault.nixmox.lan {
              enable = true;
              domains = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
            };
-
-          # Provide Vaultwarden env via SOPS for the container
-          sops.secrets."vaultwarden/env" = {
-            path = "/run/secrets/vaultwarden/env";
-            mode = "0400";
-            owner = "root";
-            group = "root";
-            restartUnits = [ "podman-vaultwarden.service" ];
-          };
 
           networking.firewall.allowedTCPPorts = [ 80 443 ];
 
