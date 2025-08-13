@@ -24,7 +24,7 @@ in {
   config = mkIf cfg.enable (let
     domains = cfg.domains;
     primary = if domains == [] then "localhost" else builtins.head domains;
-    sanEntries = builtins.imap (idx: d: "DNS." + toString (idx + 1) + " = " + d) domains;
+    sanEntries = lib.imap0 (idx: d: "DNS." + toString (idx + 1) + " = " + d) domains;
     sanText = builtins.concatStringsSep "\n" sanEntries;
     certs = pkgs.runCommand "local-ca-and-cert" { buildInputs = [ pkgs.openssl ]; } ''
       set -eu
