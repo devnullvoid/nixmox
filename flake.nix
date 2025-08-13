@@ -161,7 +161,7 @@ sops = {
              domains = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
            };
 
-          networking.firewall.allowedTCPPorts = [ 80 443 ];
+          # Firewall is managed by the Caddy module
 
           # Switch Vaultwarden to OCI container (module)
           services.nixmox.vaultwarden.oci = {
