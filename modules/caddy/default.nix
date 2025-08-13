@@ -89,23 +89,24 @@ in {
       '';
       
       # Virtual hosts configuration
-      virtualHosts = mkMerge [
-        # Authentik service
-        {
-          "${cfg.authentikDomain}" = {
-            extraConfig = ''
-              # Authentik service
-              reverse_proxy ${cfg.authentikUpstream} {
-                header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Real-IP {remote_host}
-              }
-            '';
-          };
-        }
-        
-        # Service proxies with forward auth
-        (mapAttrs (name: service: {
+      virtualHosts = mkMerge (
+        [
+          # Authentik service
+          {
+            "${cfg.authentikDomain}" = {
+              extraConfig = ''
+                # Authentik service
+                reverse_proxy ${cfg.authentikUpstream} {
+                  header_up X-Forwarded-Proto {scheme}
+                  header_up X-Forwarded-For {remote_host}
+                  header_up X-Real-IP {remote_host}
+                }
+              '';
+            };
+          }
+        ]
+        # Service proxies with forward auth (flattened)
+        ++ (mapAttrsToList (name: service: {
           "${service.domain}" = {
             extraConfig = ''
               # Forward authentication
@@ -142,15 +143,17 @@ in {
         }) cfg.services)
         
         # Default catch-all for unknown domains
-        {
-          "${cfg.primaryDomain}" = {
-            extraConfig = ''
-              # Default page
-              respond "NixMox Proxy - Service not found" 404
-            '';
-          };
-        }
-      ];
+        ++ [
+          {
+            "${cfg.primaryDomain}" = {
+              extraConfig = ''
+                # Default page
+                respond "NixMox Proxy - Service not found" 404
+              '';
+            };
+          }
+        ]
+      );
     };
     
     # Create log directory
