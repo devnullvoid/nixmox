@@ -152,7 +152,7 @@ sops = {
                 domain = "vault.nixmox.lan";
                 backend = "127.0.0.1";
                 port = 8080;
-                enableAuth = false; # Vaultwarden handles SSO via OIDC
+                enableAuth = lib.mkForce false; # Vaultwarden handles SSO via OIDC
               };
                guacamole = {
                  domain = "guac.nixmox.lan";
