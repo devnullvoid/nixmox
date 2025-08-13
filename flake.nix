@@ -179,6 +179,11 @@ sops = {
               tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
               reverse_proxy 127.0.0.1:8080
             }
+
+            nixmox.lan {
+              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+              respond "NixMox Proxy - Service not found" 404
+            }
           '';
 
            # Local TLS certs used by Caddy

@@ -193,19 +193,7 @@ in {
       };
     };
     
-    # Health check for Caddy
-    systemd.services.caddy-health = {
-      description = "Caddy health check";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "caddy.service" ];
-      
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:2019/health/";
-        Restart = "on-failure";
-        RestartSec = "30s";
-      };
-    };
+    # Health check disabled to avoid flapping during admin reload
     
     # Create Caddy user
     users.users.caddy = {
