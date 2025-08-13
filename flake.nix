@@ -127,7 +127,8 @@ sops = {
              commonConfig
              ./modules/authentik
              ./modules/vaultwarden
-             ./modules/caddy
+              ./modules/caddy
+              ./modules/guacamole
              ./modules/localtls
              authentik-nix.nixosModules.default
           ];
@@ -140,7 +141,7 @@ sops = {
           # Resolve local hostnames (until DNS exists)
           networking.hosts."127.0.0.1" = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
 
-          # Caddy via module; route Authentik and Vaultwarden
+           # Caddy via module; route Authentik, Vaultwarden, and Guacamole
           services.nixmox.caddy = {
             enable = true;
             authentikDomain = "auth.nixmox.lan";
@@ -152,13 +153,22 @@ sops = {
                 port = 8080;
                 enableAuth = false; # Vaultwarden handles SSO via OIDC
               };
+               guacamole = {
+                 domain = "guac.nixmox.lan";
+                 backend = "127.0.0.1";
+                 port = 8280;
+                 enableAuth = true;
+                 extraConfig = ''
+                   rewrite * /guacamole{uri}
+                 '';
+               };
             };
           };
 
            # Local TLS certs used by Caddy
            services.nixmox.localtls = {
              enable = true;
-             domains = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
+             domains = [ "auth.nixmox.lan" "vault.nixmox.lan" "guac.nixmox.lan" ];
            };
 
           # Firewall is managed by the Caddy module
@@ -171,6 +181,14 @@ sops = {
             lanIp = "192.168.88.194";
             authDomain = "auth.nixmox.lan";
           };
+
+           # Enable Guacamole stack (Tomcat + guacd + Postgres) behind Caddy
+           services.nixmox.guacamole = {
+             enable = true;
+             hostName = "guac.nixmox.lan";
+             authentikDomain = "auth.nixmox.lan";
+             tomcatPort = 8280;
+           };
         };
         
         # Caddy reverse proxy container
