@@ -164,11 +164,10 @@ sops = {
 
             guac.nixmox.lan {
               tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              @notGuac {
-                not path /guacamole*
+              # Serve Guacamole root at /
+              reverse_proxy 127.0.0.1:8280 {
+                header_up Host {host}
               }
-              rewrite @notGuac /guacamole{uri}
-              reverse_proxy 127.0.0.1:8280
             }
 
             vault.nixmox.lan {
@@ -206,6 +205,11 @@ sops = {
              authentikDomain = "auth.nixmox.lan";
               clientId = let v = builtins.getEnv "GUAC_OPENID_CLIENT_ID"; in if v != "" then v else "guacamole-client";
              tomcatPort = 8280;
+              bootstrapAdmin = {
+                enable = true;
+                username = let v = builtins.getEnv "GUAC_LOCAL_ADMIN"; in if v != "" then v else "";
+                password = null; # random
+              };
            };
         };
         

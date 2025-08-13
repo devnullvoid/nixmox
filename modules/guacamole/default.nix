@@ -81,9 +81,30 @@ in {
       default = 8280;
       description = "Tomcat port hosting Guacamole client";
     };
+
+    bootstrapAdmin = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Create or update a local Guacamole DB admin matching the given username";
+      };
+      username = mkOption {
+        type = types.str;
+        default = "";
+        description = "Username to bootstrap as Guacamole admin (should match Authentik preferred_username)";
+      };
+      password = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Optional password for the local admin; random if null. Not used for OIDC but stored for completeness.";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
+    # Ensure local resolution works even before DNS is in place
+    networking.hosts."127.0.0.1" = [ cfg.hostName ];
+
     # Optionally open the Tomcat port (usually proxied locally by Caddy)
     networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [ cfg.tomcatPort ];
 
@@ -174,6 +195,60 @@ in {
       "-Djavax.net.ssl.trustStore=/var/lib/guacamole/java-cacerts"
       "-Djavax.net.ssl.trustStorePassword=changeit"
     ];
+
+    # Bootstrap a local Guacamole admin user if requested
+    systemd.services.guacamole-bootstrap-admin = mkIf cfg.bootstrapAdmin.enable {
+      description = "Bootstrap Guacamole local admin user";
+      requires = [ "guacamole-pgsql-schema-import.service" "postgresql.service" ];
+      after = [ "guacamole-pgsql-schema-import.service" "postgresql.service" ];
+      wantedBy = [ "tomcat.service" "multi-user.target" ];
+      environment = {
+        GUAC_BOOTSTRAP_USER = cfg.bootstrapAdmin.username;
+        GUAC_BOOTSTRAP_PASS = if cfg.bootstrapAdmin.password == null then "" else cfg.bootstrapAdmin.password;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+      };
+      script = ''
+        set -euo pipefail
+        if [ -z "${GUAC_BOOTSTRAP_USER}" ]; then
+          echo "[guacamole-bootstrap-admin] Skipping: no username provided" >&2
+          exit 0
+        fi
+
+        # Generate salt and hash (SHA-256 of salt+password, base64-encoded). If no password provided, generate a random one.
+        PASS=${GUAC_BOOTSTRAP_PASS}
+        if [ -z "$PASS" ]; then
+          PASS=$(${pkgs.openssl}/bin/openssl rand -base64 18)
+        fi
+        SALT=$(${pkgs.openssl}/bin/openssl rand -base64 32)
+        HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
+
+        # Upsert user
+        PGOPTIONS="-c bootstrap.username=${GUAC_BOOTSTRAP_USER} -c bootstrap.hash=${HASH} -c bootstrap.salt=${SALT}" \
+        ${psql} -v ON_ERROR_STOP=1 -U guacamole -d guacamole <<'PSQL'
+DO $$
+DECLARE
+  uid integer;
+BEGIN
+  SELECT user_id INTO uid FROM guacamole_user WHERE username = current_setting('bootstrap.username');
+  IF uid IS NULL THEN
+    INSERT INTO guacamole_user (username, password_hash, password_salt, password_date, disabled)
+    VALUES (current_setting('bootstrap.username'), current_setting('bootstrap.hash'), current_setting('bootstrap.salt'), now(), false)
+    RETURNING user_id INTO uid;
+  ELSE
+    UPDATE guacamole_user SET password_hash = current_setting('bootstrap.hash'), password_salt = current_setting('bootstrap.salt'), password_date = now()
+    WHERE user_id = uid;
+  END IF;
+
+  -- Grant system admin permission
+  IF NOT EXISTS (SELECT 1 FROM guacamole_system_permission WHERE user_id = uid AND permission = 'ADMINISTER') THEN
+    INSERT INTO guacamole_system_permission (user_id, permission) VALUES (uid, 'ADMINISTER');
+  END IF;
+END $$;
+PSQL
+      '';
+    };
   };
 }
 

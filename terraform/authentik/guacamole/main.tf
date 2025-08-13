@@ -52,10 +52,7 @@ resource "authentik_provider_oauth2" "guacamole" {
       matching_mode = "strict"
       url           = var.guac_redirect_uri
     },
-    {
-      matching_mode = "strict"
-      url           = "https://guac.nixmox.lan/guacamole"
-    }
+    # keep only the root redirect to avoid ambiguity and loops
   ]
 
   property_mappings = [
