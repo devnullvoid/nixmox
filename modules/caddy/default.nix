@@ -72,13 +72,10 @@ in {
       
       # Global settings
       globalConfig = ''
-        # Global Caddy settings
-        {
-          # Admin API (for dynamic config)
-          admin off
-          # Automatic HTTPS
-          auto_https disable_redirects
-        }
+        # Admin API (for dynamic config)
+        admin off
+        # Automatic HTTPS
+        auto_https disable_redirects
       '';
       
       # Virtual hosts configuration
