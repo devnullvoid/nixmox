@@ -225,19 +225,25 @@ in {
         HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
 
         # Upsert user
-        PGOPTIONS="-c bootstrap.username=''''${GUAC_BOOTSTRAP_USER} -c bootstrap.hash=''''${HASH} -c bootstrap.salt=''''${SALT}" \
-        ${psql} -v ON_ERROR_STOP=1 -U guacamole -d guacamole <<'PSQL'
+        ${psql} -v ON_ERROR_STOP=1 \
+          -v username="''${GUAC_BOOTSTRAP_USER}" \
+          -v hash="''${HASH}" \
+          -v salt="''${SALT}" \
+          -U guacamole -d guacamole <<'PSQL'
 DO $$
 DECLARE
   uid integer;
+  v_username text := :'username';
+  v_hash text := :'hash';
+  v_salt text := :'salt';
 BEGIN
-  SELECT user_id INTO uid FROM guacamole_user WHERE username = current_setting('bootstrap.username');
+  SELECT user_id INTO uid FROM guacamole_user WHERE username = v_username;
   IF uid IS NULL THEN
     INSERT INTO guacamole_user (username, password_hash, password_salt, password_date, disabled)
-    VALUES (current_setting('bootstrap.username'), current_setting('bootstrap.hash'), current_setting('bootstrap.salt'), now(), false)
+    VALUES (v_username, v_hash, v_salt, now(), false)
     RETURNING user_id INTO uid;
   ELSE
-    UPDATE guacamole_user SET password_hash = current_setting('bootstrap.hash'), password_salt = current_setting('bootstrap.salt'), password_date = now()
+    UPDATE guacamole_user SET password_hash = v_hash, password_salt = v_salt, password_date = now()
     WHERE user_id = uid;
   END IF;
 
