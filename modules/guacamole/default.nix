@@ -47,6 +47,7 @@ let
 
   psql = "${pkgs.postgresql}/bin/psql";
   cat = "${pkgs.coreutils}/bin/cat";
+  keytool = "${pkgs.openjdk}/bin/keytool";
 in {
   options.services.nixmox.guacamole = {
     enable = mkEnableOption "Guacamole, a clientless remote desktop gateway";
@@ -110,8 +111,8 @@ in {
       openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
       openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
       openid-client-id = cfg.clientId;
-      openid-redirect-uri = "https://${cfg.hostName}/";
-      openid-username-claim-type = "email";
+      openid-redirect-uri = "https://${cfg.hostName}/guacamole";
+      openid-username-claim-type = "preferred_username";
       openid-scope = "openid email profile";
     };
 
@@ -159,7 +160,20 @@ in {
     systemd.services.tomcat = {
       requires = [ "postgresql.service" ];
       after = [ "postgresql.service" ];
+      serviceConfig = {
+        ExecStartPre = [
+          "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
+          # Import local CA into a Java truststore so Guacamole trusts Authentik TLS
+          "${keytool} -importcert -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true"
+        ];
+      };
     };
+
+    # Point Tomcat/Java at the truststore containing our local CA
+    services.tomcat.javaOpts = [
+      "-Djavax.net.ssl.trustStore=/var/lib/guacamole/java-cacerts"
+      "-Djavax.net.ssl.trustStorePassword=changeit"
+    ];
   };
 }
 
