@@ -164,15 +164,8 @@ sops = {
 
             guac.nixmox.lan {
               tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              route {
-                forward_auth http://127.0.0.1:9000 {
-                  uri /outpost.goauthentik.io/auth/caddy
-                  copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Jwt
-                  trusted_proxies private_ranges
-                }
-              }
-              reverse_proxy 127.0.0.1:8280
               rewrite * /guacamole{uri}
+              reverse_proxy 127.0.0.1:8280
             }
 
             vault.nixmox.lan {
