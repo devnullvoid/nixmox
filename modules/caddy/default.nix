@@ -226,47 +226,6 @@ in {
     };
     
     users.groups.caddy = {};
-    
-    # Default service configurations
-    services.nixmox.caddy.services = {
-      # Example service configurations
-      jellyfin = {
-        domain = "jellyfin.${cfg.primaryDomain}";
-        backend = "192.168.50.10";
-        port = 8096;
-        enableAuth = true;
-      };
-      
-      nextcloud = {
-        domain = "nextcloud.${cfg.primaryDomain}";
-        backend = "192.168.50.11";
-        port = 80;
-        enableAuth = true;
-        extraConfig = ''
-          # Nextcloud specific settings
-          header {
-            # Security headers
-            X-Content-Type-Options nosniff
-            X-Frame-Options DENY
-            X-XSS-Protection "1; mode=block"
-            Referrer-Policy "strict-origin-when-cross-origin"
-          }
-        '';
-      };
-      
-      vaultwarden = {
-        domain = "vault.${cfg.primaryDomain}";
-        backend = "192.168.50.12";
-        port = 80;
-        enableAuth = true;
-      };
-      
-      grafana = {
-        domain = "grafana.${cfg.primaryDomain}";
-        backend = "192.168.50.13";
-        port = 3000;
-        enableAuth = true;
-      };
-    };
+    # Do not predefine example services; rely on caller to populate cfg.services
   };
 } 
