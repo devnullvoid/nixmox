@@ -22,9 +22,13 @@
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    terranix = {
+      url = "github:terranix/terranix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, sops-nix, authentik-nix, nixos-generators }:
+  outputs = { self, nixpkgs, sops-nix, authentik-nix, nixos-generators, terranix }:
     let
       # System types we support
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -180,38 +184,13 @@ https://vault.nixmox.lan {
 
           networking.firewall.allowedTCPPorts = [ 80 443 ];
 
-          # Switch Vaultwarden to OCI container (SSO-capable build)
-          services.nixmox.vaultwarden.enable = lib.mkForce false;
-          virtualisation.podman.enable = true;
-          virtualisation.oci-containers.containers.vaultwarden = {
-            image = "ghcr.io/timshel/vaultwarden:latest";
-            autoStart = true;
-            ports = [ "127.0.0.1:8080:8080" ];
-            volumes = [
-              "/var/lib/vaultwarden:/data"
-              "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-bundle.crt:ro"
-            ];
-            extraOptions = [
-              "--add-host=auth.nixmox.lan:192.168.88.194"
-              "--add-host=vault.nixmox.lan:192.168.88.194"
-            ];
-            environmentFiles = [ "/run/secrets/vaultwarden/env" ];
-            environment = {
-              DOMAIN = "https://vault.nixmox.lan";
-              ROCKET_ADDRESS = "0.0.0.0";
-              ROCKET_PORT = "8080";
-              WEB_VAULT_ENABLED = "true";
-              SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
-              SSL_CERT_DIR = "/etc/ssl/certs";
-              REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-bundle.crt";
-              # SSO static config; client/secret via env file
-              SSO_ENABLED = "true";
-              SSO_ONLY = "false";
-              SSO_DISPLAY_NAME = "Authentik";
-              SSO_SCOPES = "openid email profile offline_access";
-              # Ensure correct provider slug and trailing slash
-              SSO_AUTHORITY = "https://auth.nixmox.lan/application/o/vaultwarden/";
-            };
+          # Switch Vaultwarden to OCI container (module)
+          services.nixmox.vaultwarden.oci = {
+            enable = true;
+            listenPort = 8080;
+            domain = "https://vault.nixmox.lan";
+            lanIp = "192.168.88.194";
+            authDomain = "auth.nixmox.lan";
           };
         };
         
