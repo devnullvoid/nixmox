@@ -56,6 +56,7 @@ in {
   in {
     environment.etc."caddy/tls/server.crt".source = "${certs}/server.crt";
     environment.etc."caddy/tls/server.key".source = "${certs}/server.key";
+    environment.etc."caddy/tls/ca.crt".source = "${certs}/ca.crt";
     security.pki.certificates = [ (builtins.readFile "${certs}/ca.crt") ];
   });
 }

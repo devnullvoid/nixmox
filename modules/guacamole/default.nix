@@ -111,7 +111,7 @@ in {
       openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
       openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
       openid-client-id = cfg.clientId;
-      openid-redirect-uri = "https://${cfg.hostName}/guacamole";
+      openid-redirect-uri = "https://${cfg.hostName}/";
       openid-username-claim-type = "preferred_username";
       openid-scope = "openid email profile";
     };
@@ -164,7 +164,7 @@ in {
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
           # Import local CA into a Java truststore so Guacamole trusts Authentik TLS
-          "${keytool} -importcert -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true"
+          "${keytool} -import -trustcacerts -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true"
         ];
       };
     };
