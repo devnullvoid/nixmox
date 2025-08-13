@@ -99,13 +99,14 @@ in {
       postgresql-username = "guacamole";
       postgresql-password = "";
 
-      # OIDC with Authentik
+      # OIDC with Authentik per Guacamole docs
       openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
-      openid-client-id = "CHANGE_ME_IN_AUTHENTIK";
-      openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
       openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
+      openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
+      openid-client-id = "CHANGE_ME_IN_AUTHENTIK";
       openid-redirect-uri = "https://${cfg.hostName}/";
       openid-username-claim-type = "preferred_username";
+      openid-scope = "openid email profile";
     };
 
     # Provide required extensions and JDBC driver
