@@ -147,24 +147,39 @@ sops = {
             enable = true;
             authentikDomain = "auth.nixmox.lan";
             authentikUpstream = "127.0.0.1:9000";
-            services = {
-              vaultwarden = {
-                domain = "vault.nixmox.lan";
-                backend = "127.0.0.1";
-                port = 8080;
-                enableAuth = lib.mkForce false; # Vaultwarden handles SSO via OIDC
-              };
-               guacamole = {
-                 domain = "guac.nixmox.lan";
-                 backend = "127.0.0.1";
-                 port = 8280;
-                 enableAuth = true;
-                 extraConfig = ''
-                   rewrite * /guacamole{uri}
-                 '';
-               };
-            };
+            services = {};
           };
+
+          # Override with explicit Caddyfile to avoid module logging bug
+          services.caddy.configFile = pkgs.writeText "Caddyfile" ''
+            {
+              admin off
+              auto_https disable_redirects
+            }
+
+            auth.nixmox.lan {
+              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+              reverse_proxy 127.0.0.1:9000
+            }
+
+            guac.nixmox.lan {
+              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+              route {
+                forward_auth http://127.0.0.1:9000 {
+                  uri /outpost.goauthentik.io/auth/caddy
+                  copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Jwt
+                  trusted_proxies private_ranges
+                }
+              }
+              reverse_proxy 127.0.0.1:8280
+              rewrite * /guacamole{uri}
+            }
+
+            vault.nixmox.lan {
+              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+              reverse_proxy 127.0.0.1:8080
+            }
+          '';
 
            # Local TLS certs used by Caddy
            services.nixmox.localtls = {
