@@ -153,7 +153,7 @@ sops = {
           # Override with explicit Caddyfile to avoid module logging bug
           services.caddy.configFile = pkgs.writeText "Caddyfile" ''
             {
-              admin localhost:2019
+              admin :2019
               auto_https disable_redirects
             }
 

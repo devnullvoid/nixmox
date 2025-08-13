@@ -190,6 +190,7 @@ in {
         # Logging
         StandardOutput = "journal";
         StandardError = "journal";
+        ExecReload = ""; # avoid failing reloads while admin API cycles
       };
     };
     
