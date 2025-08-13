@@ -211,21 +211,21 @@ in {
       };
       script = ''
         set -euo pipefail
-        if [ -z "${GUAC_BOOTSTRAP_USER}" ]; then
+        if [ -z "''${GUAC_BOOTSTRAP_USER}" ]; then
           echo "[guacamole-bootstrap-admin] Skipping: no username provided" >&2
           exit 0
         fi
 
         # Generate salt and hash (SHA-256 of salt+password, base64-encoded). If no password provided, generate a random one.
-        PASS=${GUAC_BOOTSTRAP_PASS}
-        if [ -z "$PASS" ]; then
+        PASS=''${GUAC_BOOTSTRAP_PASS}
+        if [ -z ""$PASS"" ]; then
           PASS=$(${pkgs.openssl}/bin/openssl rand -base64 18)
         fi
         SALT=$(${pkgs.openssl}/bin/openssl rand -base64 32)
         HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
 
         # Upsert user
-        PGOPTIONS="-c bootstrap.username=${GUAC_BOOTSTRAP_USER} -c bootstrap.hash=${HASH} -c bootstrap.salt=${SALT}" \
+        PGOPTIONS="-c bootstrap.username=''''${GUAC_BOOTSTRAP_USER} -c bootstrap.hash=''''${HASH} -c bootstrap.salt=''''${SALT}" \
         ${psql} -v ON_ERROR_STOP=1 -U guacamole -d guacamole <<'PSQL'
 DO $$
 DECLARE

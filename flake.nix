@@ -164,10 +164,12 @@ sops = {
 
             guac.nixmox.lan {
               tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              # Serve Guacamole root at /
-              reverse_proxy 127.0.0.1:8280 {
-                header_up Host {host}
+              # Serve Guacamole at / with internal path rewrite
+              @notGuac {
+                not path /guacamole*
               }
+              rewrite @notGuac /guacamole{uri}
+              reverse_proxy 127.0.0.1:8280
             }
 
             vault.nixmox.lan {
