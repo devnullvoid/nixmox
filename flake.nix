@@ -194,14 +194,49 @@ https://vault.nixmox.lan {
           environment.etc."caddy/tls/server.key".source = "${certs}/server.key";
           security.pki.certificates = [ (builtins.readFile "${certs}/ca.crt") ];
 
+          # Provide Vaultwarden env via SOPS for the container
+          sops.secrets."vaultwarden/env" = {
+            path = "/run/secrets/vaultwarden/env";
+            mode = "0400";
+            owner = "root";
+            group = "root";
+            restartUnits = [ "podman-vaultwarden.service" ];
+          };
+
           networking.firewall.allowedTCPPorts = [ 80 443 ];
 
-          # Vaultwarden on same host for POC
-          services.nixmox.vaultwarden.enable = true;
-          services.nixmox.vaultwarden.vaultwarden = {
-            port = 8080;
-            domain = "https://vault.nixmox.lan"; # external URL used by clients
-            security.signupsAllowed = false;
+          # Switch Vaultwarden to OCI container (SSO-capable build)
+          services.nixmox.vaultwarden.enable = lib.mkForce false;
+          virtualisation.podman.enable = true;
+          virtualisation.oci-containers.containers.vaultwarden = {
+            image = "ghcr.io/timshel/vaultwarden:latest";
+            autoStart = true;
+            ports = [ "127.0.0.1:8080:8080" ];
+            volumes = [
+              "/var/lib/vaultwarden:/data"
+              "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-bundle.crt:ro"
+            ];
+            extraOptions = [
+              "--add-host=auth.nixmox.lan:192.168.88.194"
+              "--add-host=vault.nixmox.lan:192.168.88.194"
+            ];
+            environmentFiles = [ "/run/secrets/vaultwarden/env" ];
+            environment = {
+              DOMAIN = "https://vault.nixmox.lan";
+              ROCKET_ADDRESS = "0.0.0.0";
+              ROCKET_PORT = "8080";
+              WEB_VAULT_ENABLED = "true";
+              SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
+              SSL_CERT_DIR = "/etc/ssl/certs";
+              REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-bundle.crt";
+              # SSO static config; client/secret via env file
+              SSO_ENABLED = "true";
+              SSO_ONLY = "false";
+              SSO_DISPLAY_NAME = "Authentik";
+              SSO_SCOPES = "openid email profile offline_access";
+              # Ensure correct provider slug and trailing slash
+              SSO_AUTHORITY = "https://auth.nixmox.lan/application/o/vaultwarden/";
+            };
           };
         };
         

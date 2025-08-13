@@ -10,6 +10,6 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
-ssh "$HOST" 'ak shell -c "from authentik.core.models import Token, User; u=User.objects.get(username=\"akadmin\"); t,_=Token.objects.get_or_create(identifier=\"automation\", user=u, intent=\"app_password\", defaults={\"description\":\"automation\"}); print(t.key)"'
+ssh "$HOST" 'ak shell -c "from authentik.core.models import Token, User; u=User.objects.get(username=\"akadmin\"); t,_=Token.objects.get_or_create(identifier=\"terraform\", user=u, intent=Token.Intent.AUTOMATION, defaults={\"description\":\"terraform\"}); print(t.key)"' 2>/dev/null | tail -n 1
 
 

@@ -32,4 +32,19 @@ go.work.sum
 # .vscode/
 
 # Nix build artifacts
-result*
+result*# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+*.tfplan
+*.plan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

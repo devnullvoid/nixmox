@@ -198,11 +198,24 @@ in {
         OIDC_ENABLED = "true";
         OIDC_DISPLAY_NAME = "Authentik";
         OIDC_USER_CLAIM = "email";
+        OIDC_SCOPE = "openid email profile";
         # The following should be set through the EnvironmentFile (sops):
         # OIDC_ISSUER=https://auth.nixmox.lan/application/o/<provider_slug>/
         # OIDC_CLIENT_ID=...
         # OIDC_CLIENT_SECRET=...
         # OIDC_REDIRECT_URI=https://vault.nixmox.lan/oidc/callback
+
+        # SSO button support in web-vault (non-sensitive here; secrets in sops env)
+        # Ref: https://github.com/Timshel/vaultwarden/blob/sso-support/SSO.md
+        SSO_ENABLED = "true";
+        SSO_ONLY = "false";
+        SSO_DISPLAY_NAME = "Authentik";
+        # Match provider scopes and docs: include offline_access
+        SSO_SCOPES = "email profile offline_access";
+        # Provide these via sops env file (vaultwarden/env):
+        # SSO_AUTHORITY=https://auth.nixmox.lan/application/o/vaultwarden-oidc/
+        # SSO_CLIENT_ID=...
+        # SSO_CLIENT_SECRET=...
       };
     };
     
