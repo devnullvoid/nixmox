@@ -142,48 +142,19 @@ sops = {
            # Resolve local hostnames (until DNS exists); rely on modules for their own host entries
            networking.hosts."127.0.0.1" = [ ];
 
-          # Caddy via module (configured below)
-
-          # Define vhosts using the Caddy module
-          services.nixmox.caddy = {
-            enable = true;
-            authentikDomain = config.services.nixmox.authentik.domain;
-            authentikUpstream = "127.0.0.1:9000";
-            tlsCertPath = "/etc/caddy/tls/server.crt";
-            tlsKeyPath = "/etc/caddy/tls/server.key";
-            services = {};
-          };
+          # Caddy via module only
+          services.nixmox.caddy.enable = true;
 
            # Local TLS certs used by Caddy
-           services.nixmox.localtls = {
-             enable = true;
-             domains = [ "auth.nixmox.lan" "vault.nixmox.lan" "guac.nixmox.lan" ];
-           };
+           services.nixmox.localtls.enable = true;
 
           # Firewall is managed by the Caddy module
 
           # Switch Vaultwarden to OCI container (module)
-          services.nixmox.vaultwarden.oci = {
-            enable = true;
-            listenPort = 8080;
-            domain = "https://vault.nixmox.lan";
-            lanIp = "192.168.88.194";
-            authDomain = "auth.nixmox.lan";
-          };
+          services.nixmox.vaultwarden.oci.enable = true;
 
            # Enable Guacamole stack (Tomcat + guacd + Postgres) behind Caddy
-           services.nixmox.guacamole = {
-             enable = true;
-             hostName = "guac.nixmox.lan";
-             authentikDomain = "auth.nixmox.lan";
-              clientId = let v = builtins.getEnv "GUAC_OPENID_CLIENT_ID"; in if v != "" then v else "guacamole-client";
-             tomcatPort = 8280;
-              bootstrapAdmin = {
-                enable = true;
-                username = let v = builtins.getEnv "GUAC_LOCAL_ADMIN"; in if v != "" then v else "";
-                password = null; # random
-              };
-           };
+           services.nixmox.guacamole.enable = true;
         };
         
         # Caddy reverse proxy container

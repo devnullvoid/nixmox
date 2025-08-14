@@ -60,8 +60,8 @@ in {
 
     hostName = mkOption {
       type = types.str;
-      default = "guac.nixmox.lan";
-      description = "Public host name for Guacamole";
+      default = "";
+      description = "Public host name for Guacamole; defaults to <subdomain>.<services.nixmox.domain>";
     };
 
     authentikDomain = mkOption {
@@ -109,7 +109,7 @@ in {
 
   config = mkIf cfg.enable {
     # Derive hostName from global base domain if not explicitly set
-    services.nixmox.guacamole.hostName = mkDefault "${cfg.subdomain}.${config.services.nixmox.domain}";
+    services.nixmox.guacamole.hostName = mkDefault (if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}");
 
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ cfg.hostName ];

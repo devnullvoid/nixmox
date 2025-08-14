@@ -52,7 +52,7 @@ in {
 
     authDomain = mkOption {
       type = types.str;
-      default = "auth.nixmox.lan";
+      default = config.services.nixmox.authentik.domain;
       description = "Authentik domain for SSO Authority";
     };
   };
