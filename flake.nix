@@ -139,21 +139,21 @@ sops = {
           # Core services
           services.nixmox.authentik.enable = true;
 
-          # Resolve local hostnames (until DNS exists)
-          networking.hosts."127.0.0.1" = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
+           # Resolve local hostnames (until DNS exists); rely on modules for their own host entries
+           networking.hosts."127.0.0.1" = [ ];
 
           # Caddy via module (configured below)
 
           # Define vhosts using the Caddy module
           services.nixmox.caddy = {
             enable = true;
-            authentikDomain = "auth.nixmox.lan";
+            authentikDomain = config.services.nixmox.authentik.domain;
             authentikUpstream = "127.0.0.1:9000";
             tlsCertPath = "/etc/caddy/tls/server.crt";
             tlsKeyPath = "/etc/caddy/tls/server.key";
             services = {
               guacamole = {
-                domain = "guac.nixmox.lan";
+                domain = config.services.nixmox.guacamole.hostName;
                 backend = "127.0.0.1";
                 port = 8280;
                 enableAuth = false;
@@ -162,7 +162,7 @@ sops = {
                 '';
               };
               vaultwarden = {
-                domain = "vault.nixmox.lan";
+                domain = builtins.replaceStrings ["https://"] [""] config.services.nixmox.vaultwarden.oci.domain;
                 backend = "127.0.0.1";
                 port = 8080;
                 enableAuth = false;

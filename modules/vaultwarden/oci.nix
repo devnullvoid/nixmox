@@ -26,10 +26,16 @@ in {
       description = "Host address to bind the Vaultwarden port to";
     };
 
+    subdomain = mkOption {
+      type = types.str;
+      default = "vault";
+      description = "Subdomain for Vaultwarden; full host becomes <subdomain>.<services.nixmox.domain>";
+    };
+
     domain = mkOption {
       type = types.str;
-      default = "https://vault.nixmox.lan";
-      description = "External URL for Vaultwarden";
+      default = "";
+      description = "External URL for Vaultwarden; if empty, constructed from subdomain + base domain with https://";
     };
 
     dataDir = mkOption {
@@ -52,6 +58,8 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Construct DOMAIN if not provided
+    services.nixmox.vaultwarden.oci.domain = mkIf (cfg.domain == "") (mkDefault ("https://" + cfg.subdomain + "." + config.services.nixmox.domain));
     # Ensure native service is off when using container
     services.nixmox.vaultwarden.enable = lib.mkForce false;
 
@@ -75,7 +83,7 @@ in {
       ];
       extraOptions = [
         "--add-host=${cfg.authDomain}:${cfg.lanIp}"
-        "--add-host=vault.nixmox.lan:${cfg.lanIp}"
+        "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
       ];
       environmentFiles = [ "/run/secrets/vaultwarden/env" ];
       environment = {

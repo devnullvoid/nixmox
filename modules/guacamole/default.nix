@@ -52,6 +52,12 @@ in {
   options.services.nixmox.guacamole = {
     enable = mkEnableOption "Guacamole, a clientless remote desktop gateway";
 
+    subdomain = mkOption {
+      type = types.str;
+      default = "guac";
+      description = "Subdomain for Guacamole; full host becomes <subdomain>.<services.nixmox.domain> unless overridden by hostName";
+    };
+
     hostName = mkOption {
       type = types.str;
       default = "guac.nixmox.lan";
@@ -102,6 +108,9 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Derive hostName from global base domain if not explicitly set
+    services.nixmox.guacamole.hostName = mkDefault "${cfg.subdomain}.${config.services.nixmox.domain}";
+
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ cfg.hostName ];
 

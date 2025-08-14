@@ -10,13 +10,18 @@ in {
     
     domain = mkOption {
       type = types.str;
+      default = config.services.nixmox.domain;
+      description = "Base domain for services (inherits from services.nixmox.domain by default)";
+    };
+    domain = mkOption {
+      type = types.str;
       default = "proxy.nixmox.lan";
       description = "Domain for Caddy proxy";
     };
     
     primaryDomain = mkOption {
       type = types.str;
-      default = "nixmox.lan";
+      default = config.services.nixmox.domain;
       description = "Primary domain for services";
     };
     

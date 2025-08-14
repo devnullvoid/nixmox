@@ -9,10 +9,16 @@ in {
   options.services.nixmox.authentik = {
     enable = mkEnableOption "Authentik identity provider";
     
+    subdomain = mkOption {
+      type = types.str;
+      default = "auth";
+      description = "Subdomain for Authentik; full host becomes <subdomain>.<services.nixmox.domain>";
+    };
+
     domain = mkOption {
       type = types.str;
-      default = "auth.nixmox.lan";
-      description = "Domain for Authentik service";
+      default = "";
+      description = "Domain for Authentik service; if empty, constructed from subdomain + base domain";
     };
     
     adminEmail = mkOption {
@@ -23,6 +29,8 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Construct domain if not provided
+    services.nixmox.authentik.domain = mkIf (cfg.domain == "") (mkDefault ("${cfg.subdomain}.${config.services.nixmox.domain}"));
     # Create authentik user and group early in the activation process
     users.users.authentik = {
       isSystemUser = true;
