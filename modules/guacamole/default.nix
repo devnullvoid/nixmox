@@ -264,6 +264,17 @@ END $$;
 PSQL
       '';
     };
+
+    # Expose Caddy vhost via the Caddy module
+    services.nixmox.caddy.services.guacamole = {
+      domain = cfg.hostName;
+      backend = "127.0.0.1";
+      port = cfg.tomcatPort;
+      enableAuth = false;
+      extraConfig = ''
+        rewrite * /guacamole{uri}
+      '';
+    };
   };
 }
 

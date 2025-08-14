@@ -151,23 +151,7 @@ sops = {
             authentikUpstream = "127.0.0.1:9000";
             tlsCertPath = "/etc/caddy/tls/server.crt";
             tlsKeyPath = "/etc/caddy/tls/server.key";
-            services = {
-              guacamole = {
-                domain = config.services.nixmox.guacamole.hostName;
-                backend = "127.0.0.1";
-                port = 8280;
-                enableAuth = false;
-                extraConfig = ''
-                  rewrite * /guacamole{uri}
-                '';
-              };
-              vaultwarden = {
-                domain = builtins.replaceStrings ["https://"] [""] config.services.nixmox.vaultwarden.oci.domain;
-                backend = "127.0.0.1";
-                port = 8080;
-                enableAuth = false;
-              };
-            };
+            services = {};
           };
 
            # Local TLS certs used by Caddy

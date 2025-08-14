@@ -103,6 +103,14 @@ in {
         SSO_AUTHORITY = "https://${cfg.authDomain}/application/o/vaultwarden/";
       };
     };
+
+    # Expose Caddy vhost for Vaultwarden
+    services.nixmox.caddy.services.vaultwarden = {
+      domain = builtins.replaceStrings ["https://"] [""] cfg.domain;
+      backend = cfg.bindAddress;
+      port = cfg.listenPort;
+      enableAuth = false;
+    };
   };
 }
 
