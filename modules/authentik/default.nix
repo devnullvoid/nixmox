@@ -29,8 +29,8 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Construct domain if not provided
-    services.nixmox.authentik.domain = mkIf (cfg.domain == "") (mkDefault ("${cfg.subdomain}.${config.services.nixmox.domain}"));
+    # Default domain derived from base domain unless explicitly set by caller
+    services.nixmox.authentik.domain = mkDefault "${cfg.subdomain}.${config.services.nixmox.domain}";
     # Create authentik user and group early in the activation process
     users.users.authentik = {
       isSystemUser = true;

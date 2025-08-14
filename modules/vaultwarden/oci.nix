@@ -58,8 +58,8 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Construct DOMAIN if not provided
-    services.nixmox.vaultwarden.oci.domain = mkIf (cfg.domain == "") (mkDefault ("https://" + cfg.subdomain + "." + config.services.nixmox.domain));
+    # Construct DOMAIN by default from base domain
+    services.nixmox.vaultwarden.oci.domain = mkDefault ("https://" + cfg.subdomain + "." + config.services.nixmox.domain);
     # Ensure native service is off when using container
     services.nixmox.vaultwarden.enable = lib.mkForce false;
 
