@@ -78,9 +78,11 @@ in {
       ports = [ "${cfg.bindAddress}:${toString cfg.listenPort}:${toString cfg.listenPort}" ];
       volumes = [
         "${cfg.dataDir}:/data"
-        "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-bundle.crt:ro"
+        # Ensure container trusts host CA bundle (incl. local CA) at Debian's default path
+        "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
+        # Ensure name resolution for Authentik and Vaultwarden domains inside the container
         "--add-host=${cfg.authDomain}:${cfg.lanIp}"
         "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
       ];
@@ -90,9 +92,9 @@ in {
         ROCKET_ADDRESS = "0.0.0.0";
         ROCKET_PORT = toString cfg.listenPort;
         WEB_VAULT_ENABLED = "true";
-        SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
+        SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
         SSL_CERT_DIR = "/etc/ssl/certs";
-        REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-bundle.crt";
+        REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
         # SSO static config; client/secret via env file
         SSO_ENABLED = "true";
         SSO_ONLY = "false";
