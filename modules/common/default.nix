@@ -66,6 +66,8 @@ environment.systemPackages = with pkgs; [
       stateVersion = "25.11";
     };
     
+    virtualisation.podman.enable = true;
+
     # Common networking settings
     networking = {
       # DNS settings

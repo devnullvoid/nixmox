@@ -130,6 +130,8 @@ in {
       guacd-hostname = "localhost";
       guacd-port = config.services.guacamole-server.port;
       extension-priority = "openid";
+      # Allow environment variables (OPENID_*) to override properties
+      enable-environment-properties = "true";
 
       # Database config
       postgresql-hostname = "localhost";
@@ -192,12 +194,23 @@ in {
       requires = [ "postgresql.service" ];
       after = [ "postgresql.service" ];
       serviceConfig = {
+        # Load OPENID_* from SOPS-managed env file
+        EnvironmentFile = "/run/secrets/guacamole/env";
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
           # Import local CA into a Java truststore so Guacamole trusts Authentik TLS (ignore failures)
           "${pkgs.bash}/bin/bash -lc '${keytool} -importcert -trustcacerts -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true'"
         ];
       };
+    };
+
+    # Provide env file via SOPS (e.g., contains OPENID_CLIENT_ID=...)
+    sops.secrets."guacamole/env" = {
+      path = "/run/secrets/guacamole/env";
+      mode = "0400";
+      owner = "root";
+      group = "root";
+      restartUnits = [ "tomcat.service" ];
     };
 
     # Point Tomcat/Java at the truststore containing our local CA
