@@ -273,7 +273,10 @@ PSQL
       port = cfg.tomcatPort;
       enableAuth = false;
       extraConfig = ''
-        rewrite * /guacamole{uri}
+        @notGuac {
+          not path /guacamole*
+        }
+        rewrite @notGuac /guacamole{uri}
       '';
     };
   });

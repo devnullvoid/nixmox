@@ -84,8 +84,8 @@ in {
       
       # Global settings
       globalConfig = ''
-        # Admin API (disable)
-        admin off
+        # Admin API on loopback for safe reloads
+        admin localhost:2019
         # Disable automatic HTTPS/ACME entirely; we use local certs
         auto_https off
       '';
@@ -198,7 +198,7 @@ in {
         # Logging
         StandardOutput = "journal";
         StandardError = "journal";
-        ExecReload = "${pkgs.coreutils}/bin/true"; # avoid failing reloads while admin API cycles
+        ExecReload = lib.mkForce "${pkgs.coreutils}/bin/true"; # avoid failing reloads while admin API is disabled
       };
     };
     
