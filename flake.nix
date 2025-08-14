@@ -142,13 +142,7 @@ sops = {
           # Resolve local hostnames (until DNS exists)
           networking.hosts."127.0.0.1" = [ "auth.nixmox.lan" "vault.nixmox.lan" ];
 
-           # Caddy via module; route Authentik, Vaultwarden, and Guacamole
-          services.nixmox.caddy = {
-            enable = true;
-            authentikDomain = "auth.nixmox.lan";
-            authentikUpstream = "127.0.0.1:9000";
-            services = {};
-          };
+          # Caddy via module (configured below)
 
           # Configure via module only
           services.caddy.configFile = lib.mkForce "";
