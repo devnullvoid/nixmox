@@ -70,8 +70,6 @@ in {
 
     # Podman bridged networking needs nftables (netavark) for port publishing
     networking.nftables.enable = true;
-    # Be explicit about backend to avoid slirp fallback
-    virtualisation.podman.networkBackend = lib.mkDefault "netavark";
 
     # Provide Vaultwarden env via SOPS for the container
     sops.secrets."vaultwarden/env" = {
