@@ -58,6 +58,8 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Ensure local firewall permits backend traffic on the Vaultwarden port
+    networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
     # Construct DOMAIN by default from base domain
     services.nixmox.vaultwarden.oci.domain = mkDefault ("https://" + cfg.subdomain + "." + config.services.nixmox.domain);
     # Ensure native service is off when using container
@@ -75,6 +77,7 @@ in {
       restartUnits = [ "podman-vaultwarden.service" ];
     };
 
+    virtualisation.podman.enable = true;
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
