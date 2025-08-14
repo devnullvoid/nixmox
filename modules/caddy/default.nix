@@ -84,10 +84,10 @@ in {
       
       # Global settings
       globalConfig = ''
-        # Admin API (for dynamic config)
+        # Admin API (disable)
         admin off
-        # Automatic HTTPS
-        auto_https disable_redirects
+        # Disable automatic HTTPS/ACME entirely; we use local certs
+        auto_https off
       '';
       
       # Virtual hosts configuration
@@ -99,11 +99,7 @@ in {
               extraConfig = ''
                 # Authentik service
                 tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
-                reverse_proxy ${cfg.authentikUpstream} {
-                  header_up X-Forwarded-Proto {scheme}
-                  header_up X-Forwarded-For {remote_host}
-                  header_up X-Real-IP {remote_host}
-                }
+                reverse_proxy ${cfg.authentikUpstream}
               '';
             };
           }
@@ -126,9 +122,6 @@ in {
               # Backend service
               tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
               reverse_proxy ${service.backend}:${toString service.port} {
-                header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Real-IP {remote_host}
                 header_up Host {host}
                 
                 # Copy Authentik headers to backend
