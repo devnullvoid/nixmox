@@ -107,12 +107,13 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
-    # Derive hostName from global base domain if not explicitly set
-    services.nixmox.guacamole.hostName = mkDefault (if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}");
+  config = mkIf cfg.enable (
+    let
+      hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
+    in {
 
     # Ensure local resolution works even before DNS is in place
-    networking.hosts."127.0.0.1" = [ cfg.hostName ];
+    networking.hosts."127.0.0.1" = [ hostNameEffective ];
 
     # Optionally open the Tomcat port (usually proxied locally by Caddy)
     networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [ cfg.tomcatPort ];
@@ -141,7 +142,7 @@ in {
       openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
       openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
       openid-client-id = cfg.clientId;
-      openid-redirect-uri = "https://${cfg.hostName}/guacamole/";
+      openid-redirect-uri = "https://${hostNameEffective}/guacamole/";
       openid-username-claim-type = "preferred_username";
       openid-scope = "openid email profile";
     };
@@ -267,7 +268,7 @@ PSQL
 
     # Expose Caddy vhost via the Caddy module
     services.nixmox.caddy.services.guacamole = {
-      domain = cfg.hostName;
+      domain = hostNameEffective;
       backend = "127.0.0.1";
       port = cfg.tomcatPort;
       enableAuth = false;
@@ -275,7 +276,7 @@ PSQL
         rewrite * /guacamole{uri}
       '';
     };
-  };
+  });
 }
 
 
