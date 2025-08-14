@@ -78,7 +78,8 @@ in {
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
-      ports = [ "${cfg.bindAddress}:${toString cfg.listenPort}:${toString cfg.listenPort}" ];
+      # Bind on all interfaces inside the host namespace to avoid slirp port-proxy quirks
+      ports = [ "0.0.0.0:${toString cfg.listenPort}:${toString cfg.listenPort}" ];
       volumes = [
         "${cfg.dataDir}:/data"
         # Ensure container trusts host CA bundle (incl. local CA) at Debian's default path
