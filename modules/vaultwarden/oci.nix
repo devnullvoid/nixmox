@@ -63,6 +63,9 @@ in {
     # Ensure native service is off when using container
     services.nixmox.vaultwarden.enable = lib.mkForce false;
 
+    # Ensure local resolution works even before DNS is in place
+    networking.hosts."127.0.0.1" = [ "${cfg.subdomain}.${config.services.nixmox.domain}" ];
+
     # Provide Vaultwarden env via SOPS for the container
     sops.secrets."vaultwarden/env" = {
       path = "/run/secrets/vaultwarden/env";
