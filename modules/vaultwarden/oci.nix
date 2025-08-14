@@ -84,14 +84,15 @@ in {
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
-      # Publish container port to host loopback (bridged networking)
-      ports = [ "${cfg.bindAddress}:${toString cfg.listenPort}:${toString cfg.listenPort}" ];
+      # Use host networking to avoid LXC NAT/loopback quirks
+      ports = [ ];
       volumes = [
         "${cfg.dataDir}:/data"
         # Ensure container trusts host CA bundle (incl. local CA) at Debian's default path
         "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
+        "--network=host"
         # Ensure name resolution for Authentik and Vaultwarden domains inside the container
         "--add-host=${cfg.authDomain}:${cfg.lanIp}"
         "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
@@ -118,7 +119,8 @@ in {
     # Expose Caddy vhost for Vaultwarden
     services.nixmox.caddy.services.vaultwarden = {
       domain = builtins.replaceStrings ["https://"] [""] cfg.domain;
-      backend = cfg.bindAddress;
+      # With host networking, bind to the host LAN IP
+      backend = cfg.lanIp;
       port = cfg.listenPort;
       enableAuth = false;
     };
