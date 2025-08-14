@@ -81,15 +81,14 @@ in {
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
-      # Use host networking to avoid port-proxy issues
-      ports = [ ];
+      # Publish container port to host loopback (bridged networking)
+      ports = [ "${cfg.bindAddress}:${toString cfg.listenPort}:${toString cfg.listenPort}" ];
       volumes = [
         "${cfg.dataDir}:/data"
         # Ensure container trusts host CA bundle (incl. local CA) at Debian's default path
         "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
-        "--network=host"
         # Ensure name resolution for Authentik and Vaultwarden domains inside the container
         "--add-host=${cfg.authDomain}:${cfg.lanIp}"
         "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
