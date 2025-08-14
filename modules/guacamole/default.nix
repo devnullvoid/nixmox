@@ -125,29 +125,42 @@ in {
     # Host the client on Tomcat, avoid common 8080 clashes
     services.tomcat.port = cfg.tomcatPort;
 
-    # Guacamole client settings
-    services.guacamole-client.settings = {
-      guacd-hostname = "localhost";
-      guacd-port = config.services.guacamole-server.port;
-      extension-priority = "openid";
-      # Allow environment variables (OPENID_*) to override properties
-      enable-environment-properties = "true";
-
-      # Database config
-      postgresql-hostname = "localhost";
-      postgresql-database = "guacamole";
-      postgresql-username = "guacamole";
-      postgresql-password = "";
-
-      # OIDC with Authentik per Guacamole docs
-      openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
-      openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
-      openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
-      openid-client-id = cfg.clientId;
-      openid-redirect-uri = "https://${hostNameEffective}/guacamole/";
-      openid-username-claim-type = "preferred_username";
-      openid-scope = "openid email profile";
+    # Provide OPENID client id via SOPS and render guacamole.properties via template
+    sops.secrets."guacamole/client-id" = {
+      mode = "0400";
+      owner = "root";
+      group = "root";
+      restartUnits = [ "tomcat.service" ];
     };
+
+    # Render complete guacamole.properties at runtime so we can inject secret placeholders
+    sops.templates."guacamole/properties" = {
+      mode = "0444";
+      owner = "root";
+      group = "root";
+      content = ''
+        guacd-hostname: localhost
+        guacd-port: ${toString config.services.guacamole-server.port}
+        extension-priority: openid
+        enable-environment-properties: true
+
+        postgresql-hostname: localhost
+        postgresql-database: guacamole
+        postgresql-username: guacamole
+        postgresql-password: 
+
+        openid-authorization-endpoint: https://${cfg.authentikDomain}/application/o/authorize/
+        openid-jwks-endpoint: https://${cfg.authentikDomain}/application/o/guacamole/jwks/
+        openid-issuer: https://${cfg.authentikDomain}/application/o/guacamole/
+        openid-client-id: ${config.sops.placeholder."guacamole/client-id"}
+        openid-redirect-uri: https://${hostNameEffective}/guacamole/
+        openid-username-claim-type: preferred_username
+        openid-scope: openid email profile
+      '';
+    };
+
+    # Install the rendered properties file for Guacamole
+    environment.etc."guacamole/guacamole.properties".source = config.sops.templates."guacamole/properties".path;
 
     # Provide required extensions and JDBC driver
     environment.etc."guacamole/extensions/guacamole-auth-sso-openid-${guacVer}.jar".source = "${oidcExtension}/guacamole-auth-sso-openid-${guacVer}.jar";
