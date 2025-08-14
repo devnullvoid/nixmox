@@ -66,7 +66,7 @@ in {
 
     authentikDomain = mkOption {
       type = types.str;
-      default = "auth.nixmox.lan";
+      default = config.services.nixmox.authentik.domain;
       description = "Authentik domain used for OIDC endpoints";
     };
 
