@@ -10,7 +10,7 @@ in {
 
     domains = mkOption {
       type = with types; listOf str;
-      default = [];
+      default = let base = config.services.nixmox.domain; in [ "auth.${base}" "vault.${base}" "guac.${base}" ];
       description = "DNS names to include as SANs in the self-signed certificate (first used as CN).";
     };
 
