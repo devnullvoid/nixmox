@@ -68,6 +68,11 @@ in {
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ "${cfg.subdomain}.${config.services.nixmox.domain}" ];
 
+    # Podman bridged networking needs nftables (netavark) for port publishing
+    networking.nftables.enable = true;
+    # Be explicit about backend to avoid slirp fallback
+    virtualisation.podman.networkBackend = lib.mkDefault "netavark";
+
     # Provide Vaultwarden env via SOPS for the container
     sops.secrets."vaultwarden/env" = {
       path = "/run/secrets/vaultwarden/env";
