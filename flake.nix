@@ -150,39 +150,34 @@ sops = {
             services = {};
           };
 
-          # Override with explicit Caddyfile to avoid module logging bug
-          services.caddy.configFile = pkgs.writeText "Caddyfile" ''
-            {
-              admin :2019
-              auto_https disable_redirects
-            }
+          # Configure via module only
+          services.caddy.configFile = lib.mkForce "";
 
-            auth.nixmox.lan {
-              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              reverse_proxy 127.0.0.1:9000
-            }
-
-            guac.nixmox.lan {
-              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              # Serve Guacamole at / with internal path rewrite
-              rewrite * /guacamole{uri}
-              reverse_proxy 127.0.0.1:8280 {
-                header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-Host {host}
-                header_up X-Forwarded-For {remote_host}
-              }
-            }
-
-            vault.nixmox.lan {
-              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              reverse_proxy 127.0.0.1:8080
-            }
-
-            nixmox.lan {
-              tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
-              respond "NixMox Proxy - Service not found" 404
-            }
-          '';
+          # Define vhosts using the Caddy module
+          services.nixmox.caddy = {
+            enable = true;
+            authentikDomain = "auth.nixmox.lan";
+            authentikUpstream = "127.0.0.1:9000";
+            tlsCertPath = "/etc/caddy/tls/server.crt";
+            tlsKeyPath = "/etc/caddy/tls/server.key";
+            services = {
+              guacamole = {
+                domain = "guac.nixmox.lan";
+                backend = "127.0.0.1";
+                port = 8280;
+                enableAuth = false;
+                extraConfig = ''
+                  rewrite * /guacamole{uri}
+                '';
+              };
+              vaultwarden = {
+                domain = "vault.nixmox.lan";
+                backend = "127.0.0.1";
+                port = 8080;
+                enableAuth = false;
+              };
+            };
+          };
 
            # Local TLS certs used by Caddy
            services.nixmox.localtls = {

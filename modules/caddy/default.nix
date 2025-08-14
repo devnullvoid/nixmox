@@ -30,6 +30,18 @@ in {
       default = "localhost:9000";
       description = "Upstream host:port for Authentik core (for reverse_proxy and forward_auth). Use IP:port when Authentik runs on another container.";
     };
+
+    tlsCertPath = mkOption {
+      type = types.str;
+      default = "/etc/caddy/tls/server.crt";
+      description = "Path to TLS certificate to use for all vhosts";
+    };
+
+    tlsKeyPath = mkOption {
+      type = types.str;
+      default = "/etc/caddy/tls/server.key";
+      description = "Path to TLS private key to use for all vhosts";
+    };
     
     # Service configurations
     services = mkOption {
@@ -86,6 +98,7 @@ in {
             "${cfg.authentikDomain}" = {
               extraConfig = ''
                 # Authentik service
+                tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
                 reverse_proxy ${cfg.authentikUpstream} {
                   header_up X-Forwarded-Proto {scheme}
                   header_up X-Forwarded-For {remote_host}
@@ -111,6 +124,7 @@ in {
               ''}
               
               # Backend service
+              tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
               reverse_proxy ${service.backend}:${toString service.port} {
                 header_up X-Forwarded-Proto {scheme}
                 header_up X-Forwarded-For {remote_host}
@@ -138,6 +152,7 @@ in {
             "${cfg.primaryDomain}" = {
               extraConfig = ''
                 # Default page
+                tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
                 respond "NixMox Proxy - Service not found" 404
               '';
             };
