@@ -144,9 +144,6 @@ sops = {
 
           # Caddy via module (configured below)
 
-          # Configure via module only
-          services.caddy.configFile = lib.mkForce "";
-
           # Define vhosts using the Caddy module
           services.nixmox.caddy = {
             enable = true;
