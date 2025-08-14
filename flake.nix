@@ -169,7 +169,11 @@ sops = {
                 not path /guacamole*
               }
               rewrite @notGuac /guacamole{uri}
-              reverse_proxy 127.0.0.1:8280
+              reverse_proxy 127.0.0.1:8280 {
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Forwarded-Host {host}
+                header_up X-Forwarded-For {remote_host}
+              }
             }
 
             vault.nixmox.lan {
