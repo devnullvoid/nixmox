@@ -144,6 +144,9 @@ in {
     # Ensure host resolution for self before DNS exists
     networking.hosts."127.0.0.1" = [ cfg.domain ];
 
+    # networking.firewall.allowedTCPPorts = [ 389 636 9000 9443 ];
+    # networking.firewall.allowedUDPPorts = [ 1812 1813 ];
+
     # Expose Caddy vhost for Authentik
     services.nixmox.caddy.services.authentik = {
       domain = cfg.domain;

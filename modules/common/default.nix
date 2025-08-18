@@ -66,7 +66,16 @@ environment.systemPackages = with pkgs; [
       stateVersion = "25.11";
     };
     
-    virtualisation.podman.enable = true;
+    virtualisation = {
+      containers.enable = true;
+      oci-containers.backend = "podman";
+      podman = {
+        enable = true;
+        dockerCompat = true;
+        dockerSocket.enable = true;
+        defaultNetwork.settings.dns_enabled = true;
+      };
+    };
 
     # Common networking settings
     networking = {

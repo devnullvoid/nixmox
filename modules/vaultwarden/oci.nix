@@ -80,7 +80,6 @@ in {
       restartUnits = [ "podman-vaultwarden.service" ];
     };
 
-    virtualisation.podman.enable = true;
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
