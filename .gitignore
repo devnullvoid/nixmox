@@ -48,3 +48,8 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# Secrets: ignore backup and temp files (but keep tracked encrypted files)
+secrets/*.backup*
+secrets/*.bak
+secrets/sops-temp-*.yaml

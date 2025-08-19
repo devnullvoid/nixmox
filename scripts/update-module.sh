@@ -296,6 +296,8 @@ run_terraform() {
         fi
         
         success "Authentik Terraform deployment completed successfully"
+        # Ensure we're back in the project root
+        cd /home/jon/Dev/github/nixmox
         return 0
     fi
     
