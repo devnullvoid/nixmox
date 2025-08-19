@@ -74,11 +74,6 @@ variable "ldap_outpost_name" {
   default     = "LDAP Outpost"
 }
 
-variable "ldap_metrics_port" {
-  description = "Metrics port for LDAP outpost (default: 9300)"
-  type        = number
-  default     = 9300
-}
 
 
 

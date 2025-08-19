@@ -13,11 +13,4 @@ output "ldap_outpost_id" {
   description = "LDAP outpost ID"
 }
 
-output "ldap_metrics_port" {
-  value       = var.ldap_metrics_port
-  description = "Metrics port for LDAP outpost"
-}
-
-
-
 
