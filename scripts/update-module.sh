@@ -224,6 +224,87 @@ run_terraform() {
         return 0
     fi
     
+    # Handle special case for authentik module
+    if [[ "$MODULE" == "authentik" ]]; then
+        log "Authentik module detected - deploying LDAP and RADIUS outposts separately"
+        
+        # Deploy LDAP outpost
+        if [[ -d "terraform/authentik/ldap" ]]; then
+            log "Deploying LDAP outpost..."
+            cd "terraform/authentik/ldap"
+            
+            # Initialize if needed
+            if [[ ! -d ".terraform" ]]; then
+                log "Initializing Terraform for LDAP outpost..."
+                terraform init
+            fi
+            
+            # Plan and apply
+            log "Planning LDAP outpost deployment..."
+            if terraform plan -out=deploy-plan.tfplan; then
+                log "Applying LDAP outpost deployment..."
+                if terraform apply deploy-plan.tfplan; then
+                    success "LDAP outpost deployment completed successfully"
+                else
+                    error "LDAP outpost deployment failed"
+                    cd ../../..
+                    return 1
+                fi
+            else
+                error "LDAP outpost planning failed"
+                cd ../../..
+                return 1
+            fi
+            cd ../..
+        else
+            warn "LDAP outpost Terraform configuration not found"
+        fi
+        
+        # Ensure we're back in the project root for RADIUS check
+        cd /home/jon/Dev/github/nixmox
+        
+        # Deploy RADIUS outpost
+        if [[ -d "terraform/authentik/radius" ]]; then
+            log "Deploying RADIUS outpost..."
+            cd "terraform/authentik/radius"
+            
+            # Initialize if needed
+            if [[ ! -d ".terraform" ]]; then
+                log "Initializing Terraform for RADIUS outpost..."
+                terraform init
+            fi
+            
+            # Plan and apply
+            log "Planning RADIUS outpost deployment..."
+            if terraform plan -out=deploy-plan.tfplan; then
+                log "Applying RADIUS outpost deployment..."
+                if terraform apply deploy-plan.tfplan; then
+                    success "RADIUS outpost deployment completed successfully"
+                else
+                    error "RADIUS outpost deployment failed"
+                    cd ../../..
+                    return 1
+                fi
+            else
+                error "RADIUS outpost planning failed"
+                cd ../../..
+                return 1
+            fi
+            cd ../..
+        else
+            warn "RADIUS outpost Terraform configuration not found"
+        fi
+        
+        success "Authentik Terraform deployment completed successfully"
+        return 0
+    fi
+    
+    # Standard Terraform deployment for other modules
+    if [[ ! -d "terraform/$MODULE" ]]; then
+        error "Terraform configuration for '$MODULE' not found in terraform/"
+        return 1
+    fi
+    
     cd "terraform/$MODULE"
     
     # Initialize if needed
