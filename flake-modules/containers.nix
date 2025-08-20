@@ -160,7 +160,6 @@ let
       imports = [
         commonConfig
         ../modules/media
-        ../modules/authentik-integration
       ];
 
       networking.hostName = "media";
@@ -177,9 +176,6 @@ let
         user = "media";
         password = "changeme"; # Should be overridden via SOPS
       };
-
-      # Enable Authentik integration
-      services.nixmox.authentikIntegration.enable = true;
     };
 
     # Nextcloud container
@@ -187,7 +183,6 @@ let
       imports = [
         commonConfig
         ../modules/nextcloud
-        ../modules/authentik-integration
       ];
 
       networking.hostName = "nextcloud";
@@ -203,9 +198,6 @@ let
         name = "nextcloud";
         user = "nextcloud";
       };
-
-      # Enable Authentik integration
-      services.nixmox.authentikIntegration.enable = true;
     };
 
     # Vaultwarden container
