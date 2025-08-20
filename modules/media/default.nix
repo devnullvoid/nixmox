@@ -136,6 +136,45 @@ in {
         description = "Torrents directory";
       };
     };
+
+    # Database configuration
+    database = {
+      type = mkOption {
+        type = types.enum [ "postgresql" "sqlite" ];
+        default = "postgresql";
+        description = "Database type to use";
+      };
+
+      host = mkOption {
+        type = types.str;
+        default = "postgresql.nixmox.lan";
+        description = "Database host";
+      };
+
+      port = mkOption {
+        type = types.int;
+        default = 5432;
+        description = "Database port";
+      };
+
+      name = mkOption {
+        type = types.str;
+        default = "media";
+        description = "Base database name";
+      };
+
+      user = mkOption {
+        type = types.str;
+        default = "media";
+        description = "Database user";
+      };
+
+      password = mkOption {
+        type = types.str;
+        default = "changeme";
+        description = "Database password (should be overridden via SOPS)";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -147,7 +186,6 @@ in {
       dataDir = cfg.jellyfin.dataDir;
       cacheDir = cfg.jellyfin.cacheDir;
       logDir = cfg.jellyfin.logDir;
-      openFirewall = true;
     };
 
     # Sonarr configuration
@@ -155,6 +193,12 @@ in {
       enable = true;
       dataDir = cfg.sonarr.dataDir;
       openFirewall = true;
+
+      # Use external PostgreSQL if configured
+      settings = mkIf (cfg.database.type == "postgresql") {
+        "Database:Provider" = "PostgreSQL";
+        "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name}_sonarr;Username=${cfg.database.user};Password=${cfg.database.password}";
+      };
     };
 
     # Radarr configuration
@@ -162,6 +206,12 @@ in {
       enable = true;
       dataDir = cfg.radarr.dataDir;
       openFirewall = true;
+
+      # Use external PostgreSQL if configured
+      settings = mkIf (cfg.database.type == "postgresql") {
+        "Database:Provider" = "PostgreSQL";
+        "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name}_radarr;Username=${cfg.database.user};Password=${cfg.database.password}";
+      };
     };
 
     # Prowlarr configuration
@@ -169,6 +219,12 @@ in {
       enable = true;
       dataDir = cfg.prowlarr.dataDir;
       openFirewall = true;
+
+      # Use external PostgreSQL if configured
+      settings = mkIf (cfg.database.type == "postgresql") {
+        "Database:Provider" = "PostgreSQL";
+        "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name}_prowlarr;Username=${cfg.database.user};Password=${cfg.database.password}";
+      };
     };
 
     # Transmission for downloads
@@ -398,9 +454,10 @@ in {
     # Default configuration
     services.nixmox.media = {
       jellyfin.enable = true;
-      sonarr.enable = true;
-      radarr.enable = true;
-      prowlarr.enable = true;
+      # Disabling arr services that require external database setup
+      sonarr.enable = false;
+      radarr.enable = false;
+      prowlarr.enable = false;
     };
   };
 } 

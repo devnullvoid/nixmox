@@ -1,0 +1,159 @@
+{ config, lib, pkgs, ... }:
+
+with lib;
+
+let
+  cfg = config.services.nixmox.postgresql;
+in {
+  options.services.nixmox.postgresql = {
+    enable = mkEnableOption "PostgreSQL database server";
+
+    # PostgreSQL configuration
+    port = mkOption {
+      type = types.int;
+      default = 5432;
+      description = "PostgreSQL port";
+    };
+
+    dataDir = mkOption {
+      type = types.str;
+      default = "/var/lib/postgresql";
+      description = "PostgreSQL data directory";
+    };
+
+    # Database configurations for different services
+    databases = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          name = mkOption {
+            type = types.str;
+            description = "Database name";
+          };
+          owner = mkOption {
+            type = types.str;
+            description = "Database owner";
+          };
+          extensions = mkOption {
+            type = types.listOf types.str;
+            default = [];
+            description = "PostgreSQL extensions to enable";
+          };
+        };
+      });
+      default = {};
+      description = "Databases to create";
+    };
+
+    # User configurations
+    users = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          name = mkOption {
+            type = types.str;
+            description = "Username";
+          };
+          password = mkOption {
+            type = types.str;
+            default = "changeme";
+            description = "User password (should be overridden via SOPS)";
+          };
+          databases = mkOption {
+            type = types.listOf types.str;
+            default = [];
+            description = "Databases this user can access";
+          };
+          superuser = mkOption {
+            type = types.bool;
+            default = false;
+            description = "Whether this user is a superuser";
+          };
+        };
+      });
+      default = {};
+      description = "PostgreSQL users to create";
+    };
+  };
+
+  config = mkIf cfg.enable {
+    # PostgreSQL configuration
+    services.postgresql = {
+      enable = true;
+      port = cfg.port;
+      dataDir = cfg.dataDir;
+
+      # Performance settings
+      settings = {
+        # Memory settings
+        shared_buffers = "256MB";
+        effective_cache_size = "1GB";
+        maintenance_work_mem = "64MB";
+        
+        # WAL settings
+        checkpoint_completion_target = "0.9";
+        wal_buffers = "16MB";
+        min_wal_size = "1GB";
+        max_wal_size = "4GB";
+        
+        # Query optimization
+        default_statistics_target = "100";
+        random_page_cost = "1.1";
+        effective_io_concurrency = "200";
+        work_mem = "4MB";
+        
+        # Connection settings
+        max_connections = "100";
+        
+        # Logging
+        log_statement = "all";
+        log_min_duration_statement = "1000";
+        log_checkpoints = "on";
+        log_connections = "on";
+        log_disconnections = "on";
+        log_lock_waits = "on";
+        log_temp_files = "0";
+      };
+
+      # Create databases
+      ensureDatabases = mapAttrsToList (name: db: db.name) cfg.databases;
+
+      # Create users
+      ensureUsers = mapAttrsToList (name: user: {
+        name = user.name;
+        ensureDBOwnership = true;
+      }) cfg.users;
+
+      # Enable required extensions
+      enableJIT = true;
+      package = pkgs.postgresql_16;
+    };
+
+    # Firewall rules
+    networking.firewall = {
+      allowedTCPPorts = [
+        cfg.port  # PostgreSQL
+      ];
+    };
+
+    # Systemd services
+    systemd.services = {
+      postgresql = {
+        after = [ "network.target" ];
+        wantedBy = [ "multi-user.target" ];
+      };
+    };
+
+    # Health check service
+    systemd.services.postgresql-health = {
+      description = "PostgreSQL health check";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "postgresql.service" ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.postgresql_16}/bin/psql -h localhost -U postgres -c 'SELECT 1;'";
+        Restart = "on-failure";
+        RestartSec = "30s";
+      };
+    };
+  };
+}

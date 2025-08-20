@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../nix/NixOS-Server"
+		},
+		{
+			"path": "../../nix/HomeFree"
+		},
+		{
+			"path": "../../nix/homefree-sample-config"
+		},
+		{
+			"path": "../../nix/typedrat_nix-config"
+		},
+		{
+			"path": "../../nix/justinhschaaf_nixos-config"
+		}
+	],
+	"settings": {}
+}

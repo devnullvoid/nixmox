@@ -40,10 +40,16 @@
         # Import flake modules for each major component
         ./flake-modules/containers.nix
         ./flake-modules/development.nix
-        ./flake-modules/deployment.nix
         ./flake-modules/packages.nix
+        ./flake-modules/deployment.nix
       ];
-      
+
+      # Define supported systems
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+
       flake = {
         # Core flake attributes
         description = "NixMox - NixOS LXC Orchestration on Proxmox";
@@ -52,7 +58,7 @@
         lib = {
           inherit (config) containers commonConfig;
         };
-        
+
         # Generate NixOS configurations for each container
         nixosConfigurations = builtins.mapAttrs (name: containerConfig: 
           inputs.nixpkgs.lib.nixosSystem {
@@ -70,15 +76,20 @@
             ];
           }
         ) (config._module.args.containers or {});
-      };
-      
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      
-      perSystem = { config, pkgs, system, ... }: {
-        # System-specific configurations will be defined in the imported modules
+
+        # Generate packages for container images
+        packages = builtins.mapAttrs (system: nixpkgs: 
+          builtins.mapAttrs (name: nixosConfig: 
+            nixpkgs.runCommand "nixmox-${name}-lxc" {
+              buildInputs = [ inputs.nixos-generators.packages.${system}.default nixpkgs.nix ];
+            } ''
+              ${inputs.nixos-generators.packages.${system}.default}/bin/nixos-generate -f proxmox-lxc -c ${nixosConfig.config.system.build.toplevel} -o $out
+            ''
+          ) (config.flake.nixosConfigurations or {})
+        ) {
+          x86_64-linux = import inputs.nixpkgs { system = "x86_64-linux"; };
+          aarch64-linux = import inputs.nixpkgs { system = "aarch64-linux"; };
+        };
       };
     });
 } 
