@@ -8,10 +8,16 @@ in {
   options.services.nixmox.monitoring = {
     enable = mkEnableOption "Monitoring stack (Prometheus + Grafana)";
     
-    domain = mkOption {
+    subdomain = mkOption {
       type = types.str;
-      default = "monitoring.nixmox.lan";
-      description = "Domain for monitoring services";
+      default = "monitoring";
+      description = "Subdomain for monitoring services; full host becomes <subdomain>.<services.nixmox.domain>";
+    };
+
+    hostName = mkOption {
+      type = types.str;
+      default = "";
+      description = "Public host name for monitoring services; defaults to <subdomain>.<services.nixmox.domain>";
     };
     
     # Prometheus configuration
@@ -60,7 +66,13 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    let
+      hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
+    in {
+    # Ensure local resolution works even before DNS is in place
+    networking.hosts."127.0.0.1" = [ hostNameEffective ];
+
     # Prometheus configuration
     services.prometheus = {
       enable = true;
@@ -105,13 +117,12 @@ in {
               };
             }
           ];
-          metrics_path = "/metrics";
         }
         {
           job_name = "postgresql";
           static_configs = [
             {
-              targets = [ "localhost:9187" ];
+              targets = [ "postgresql.nixmox.lan:9187" ];
               labels = {
                 job = "postgresql";
               };
@@ -120,82 +131,48 @@ in {
         }
       ];
       
-      # Alertmanager configuration
-      alertmanager = {
-        enable = true;
-        configuration = {
-          global = {
-            smtp_smarthost = "mail.nixmox.lan:587";
-            smtp_from = "alertmanager@nixmox.lan";
-          };
-          
-          route = {
-            group_by = [ "alertname" ];
-            group_wait = "10s";
-            group_interval = "10s";
-            repeat_interval = "1h";
-            receiver = "admin";
-          };
-          
-          receivers = [
-            {
-              name = "admin";
-              email_configs = [
-                {
-                  to = "admin@nixmox.lan";
-                }
-              ];
-            }
-          ];
-        };
-      };
-      
-      # Simplified alert rules - using string format instead of complex nested structure
-      rules = [
-        ''
-          groups:
-          - name: nixmox
-            rules:
-            - alert: HighCPUUsage
-              expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-              for: 5m
-              labels:
-                severity: warning
-              annotations:
-                summary: "High CPU usage on {{ $labels.instance }}"
-                description: "CPU usage is above 80% for 5 minutes"
-            
-            - alert: HighMemoryUsage
-              expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
-              for: 5m
-              labels:
-                severity: warning
-              annotations:
-                summary: "High memory usage on {{ $labels.instance }}"
-                description: "Memory usage is above 85% for 5 minutes"
-            
-            - alert: HighDiskUsage
-              expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
-              for: 5m
-              labels:
-                severity: warning
-              annotations:
-                summary: "High disk usage on {{ $labels.instance }}"
-                description: "Disk usage is above 85% for 5 minutes"
-            
-            - alert: ServiceDown
-              expr: up == 0
-              for: 1m
-              labels:
-                severity: critical
-              annotations:
-                summary: "Service down on {{ $labels.instance }}"
-                description: "Service {{ $labels.job }} is down on {{ $labels.instance }}"
-        ''
-      ];
-      
       # Retention
       retentionTime = cfg.prometheus.retention;
+      
+      # Listen on loopback only (behind Caddy)
+      listenAddress = "127.0.0.1";
+      port = 9090;
+    };
+    
+    # Alertmanager configuration
+    services.prometheus.alertmanager = {
+      enable = true;
+      
+      # Listen on loopback only (behind Caddy)
+      listenAddress = "127.0.0.1";
+      port = 9093;
+      
+      # Basic configuration
+      configuration = {
+        global = {
+          smtp_smarthost = "mail.nixmox.lan:587";
+          smtp_from = "alertmanager@nixmox.lan";
+        };
+        
+        route = {
+          group_by = [ "alertname" "cluster" "service" ];
+          group_wait = "30s";
+          group_interval = "5m";
+          repeat_interval = "1h";
+          receiver = "web.hook";
+        };
+        
+        receivers = [
+          {
+            name = "web.hook";
+            webhook_configs = [
+              {
+                url = "http://127.0.0.1:5001/";
+              }
+            ];
+          }
+        ];
+      };
     };
     
     # Grafana configuration
@@ -206,8 +183,10 @@ in {
       settings = {
         server = {
           http_port = cfg.grafana.port;
-          domain = cfg.domain;
-          root_url = "https://${cfg.domain}/";
+          domain = hostNameEffective;
+          root_url = "https://${hostNameEffective}/";
+          # Listen on loopback only (behind Caddy)
+          http_addr = "127.0.0.1";
         };
         
         security = {
@@ -236,19 +215,19 @@ in {
       # Datasources and dashboards can be added through the web interface
     };
     
-    # PostgreSQL exporter for database monitoring (only if Authentik is enabled)
-    services.prometheus.exporters.postgres = mkIf (config.services.nixmox ? authentik && config.services.nixmox.authentik.enable) {
-      enable = true;
-      dataSourceNames = [ "postgresql://authentik:${config.services.nixmox.authentik.postgresPassword}@localhost:5432/authentik?sslmode=disable" ];
-    };
+    # PostgreSQL exporter for database monitoring (temporarily disabled)
+    # services.prometheus.exporters.postgres = {
+    #   enable = true;
+    #   dataSourceNames = [ "postgresql://media:changeme@postgresql.nixmox.lan:5432/media?sslmode=disable" ];
+    # };
     
-    # Firewall rules
+    # Firewall rules - only open backend ports (Caddy handles external access)
     networking.firewall = {
       allowedTCPPorts = [
-        9090  # Prometheus
-        9093  # Alertmanager
-        3000  # Grafana
-        9187  # PostgreSQL exporter
+        9090  # Prometheus (backend)
+        9093  # Alertmanager (backend)
+        3000  # Grafana (backend)
+        9187  # PostgreSQL exporter (backend)
       ];
     };
     
@@ -271,8 +250,8 @@ in {
       };
       
       "prometheus-postgres-exporter" = {
-        after = [ "postgresql.service" ];
-        requires = [ "postgresql.service" ];
+        after = [ "network.target" ];
+        wantedBy = [ "multi-user.target" ];
       };
     };
     
@@ -309,5 +288,68 @@ in {
         RestartSec = "30s";
       };
     };
-  };
+
+    # Expose Caddy vhosts for monitoring services
+    services.nixmox.caddy.services = {
+      # Prometheus
+      prometheus = {
+        domain = "prometheus.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = 9090;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Prometheus-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Grafana
+      grafana = {
+        domain = hostNameEffective;
+        backend = "127.0.0.1";
+        port = cfg.grafana.port;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Grafana-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Alertmanager
+      alertmanager = {
+        domain = "alertmanager.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = 9093;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Alertmanager-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+    };
+  });
 } 

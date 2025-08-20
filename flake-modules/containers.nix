@@ -134,12 +134,16 @@ let
       imports = [
         commonConfig
         ../modules/monitoring
+        ../modules/caddy
       ];
 
       networking.hostName = "monitoring";
 
       # Monitoring stack
       services.nixmox.monitoring.enable = true;
+
+      # Enable Caddy for reverse proxy
+      services.nixmox.caddy.enable = true;
     };
 
     # Mail server container
@@ -160,6 +164,7 @@ let
       imports = [
         commonConfig
         ../modules/media
+        ../modules/caddy
       ];
 
       networking.hostName = "media";
@@ -176,6 +181,9 @@ let
         user = "media";
         password = "changeme"; # Should be overridden via SOPS
       };
+
+      # Enable Caddy for reverse proxy
+      services.nixmox.caddy.enable = true;
     };
 
     # Nextcloud container
@@ -183,6 +191,7 @@ let
       imports = [
         commonConfig
         ../modules/nextcloud
+        ../modules/caddy
       ];
 
       networking.hostName = "nextcloud";
@@ -198,6 +207,9 @@ let
         name = "nextcloud";
         user = "nextcloud";
       };
+
+      # Enable Caddy for reverse proxy
+      services.nixmox.caddy.enable = true;
     };
 
     # Vaultwarden container
@@ -250,6 +262,11 @@ let
           owner = "authentik";
           extensions = [ "pg_trgm" "uuid-ossp" ];
         };
+        guacamole = {
+          name = "guacamole";
+          owner = "guacamole";
+          extensions = [];
+        };
         jellyfin = {
           name = "jellyfin";
           owner = "jellyfin";
@@ -288,6 +305,12 @@ let
           name = "authentik";
           password = "changeme"; # Should be overridden via SOPS
           databases = [ "authentik" ];
+          superuser = false;
+        };
+        guacamole = {
+          name = "guacamole";
+          password = "changeme"; # Should be overridden via SOPS
+          databases = [ "guacamole" ];
           superuser = false;
         };
         jellyfin = {

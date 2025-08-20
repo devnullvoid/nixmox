@@ -8,16 +8,16 @@ in {
   options.services.nixmox.nextcloud = {
     enable = mkEnableOption "Nextcloud file sharing platform";
 
-    domain = mkOption {
+    subdomain = mkOption {
       type = types.str;
-      default = "nextcloud.nixmox.lan";
-      description = "Domain for Nextcloud service";
+      default = "nextcloud";
+      description = "Subdomain for Nextcloud; full host becomes <subdomain>.<services.nixmox.domain>";
     };
 
-    primaryDomain = mkOption {
+    hostName = mkOption {
       type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for services";
+      default = "";
+      description = "Public host name for Nextcloud; defaults to <subdomain>.<services.nixmox.domain>";
     };
 
     # Database configuration
@@ -51,6 +51,12 @@ in {
         default = "nextcloud";
         description = "Database user";
       };
+      
+      password = mkOption {
+        type = types.str;
+        default = "changeme";
+        description = "Database password (should be overridden via SOPS)";
+      };
     };
 
     # Redis configuration
@@ -82,16 +88,10 @@ in {
 
     # Nextcloud configuration
     nextcloud = {
-      hostName = mkOption {
-        type = types.str;
-        default = "nextcloud.nixmox.lan";
-        description = "Nextcloud hostname";
-      };
-
       port = mkOption {
         type = types.int;
-        default = 80;
-        description = "Nextcloud web interface port";
+        default = 8080;
+        description = "Nextcloud web interface port (behind Caddy)";
       };
 
       storage = {
@@ -111,7 +111,10 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    let
+      hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
+    in {
     # Nextcloud configuration
     services.nextcloud = {
       enable = true;
@@ -120,7 +123,7 @@ in {
       package = pkgs.nextcloud31;
 
       # Basic settings
-      hostName = cfg.nextcloud.hostName;
+      hostName = hostNameEffective;
       datadir = cfg.nextcloud.storage.dataDir;
 
       # Admin configuration using files for security
@@ -135,8 +138,8 @@ in {
         dbpassFile = "/run/secrets/nextcloud-db-password";
       };
 
-      # HTTPS settings
-      https = true;
+      # No HTTPS (handled by Caddy)
+      https = false;
 
       # Auto-update
       autoUpdateApps = {
@@ -150,7 +153,7 @@ in {
       # Extra settings
       settings = {
         # Trusted domains
-        trusted_domains = [ cfg.nextcloud.hostName ];
+        trusted_domains = [ hostNameEffective "127.0.0.1" ];
 
         # Performance and security settings
         "opcache.enable" = "1";
@@ -163,7 +166,9 @@ in {
 
         # Authentik integration (will be configured later)
         "auth_type" = "oauth2";
-        "oauth2_provider_url" = "https://authentik.nixmox.lan";
+        "oauth2_provider_url" = if config.services.nixmox ? authentik && config.services.nixmox.authentik.enable 
+                                 then "https://${config.services.nixmox.authentik.domain}" 
+                                 else "https://authentik.nixmox.lan";
         "oauth2_client_id" = "nextcloud";
         "oauth2_client_secret" = "changeme"; # Should be overridden via SOPS
       };
@@ -193,19 +198,65 @@ in {
       };
     };
 
-    # Firewall rules
+    # Firewall rules - only open the backend port (Caddy handles external access)
     networking.firewall = {
       allowedTCPPorts = [
-        80   # HTTP
-        443  # HTTPS
+        cfg.nextcloud.port  # Nextcloud backend (behind Caddy)
       ];
     };
 
     # Add host entries for external services
-    networking.hosts = mkIf (cfg.database.host != "localhost") {
+    networking.hosts = {
+      "127.0.0.1" = [ hostNameEffective ];
+    } // mkIf (cfg.database.host != "localhost") {
       "${cfg.database.host}" = [ "postgresql.nixmox.lan" ];
     } // mkIf (cfg.redis.host != "localhost") {
       "${cfg.redis.host}" = [ "redis.nixmox.lan" ];
     };
-  };
+
+    # Expose Caddy vhost for Nextcloud
+    services.nixmox.caddy.services.nextcloud = {
+      domain = hostNameEffective;
+      backend = "127.0.0.1";
+      port = cfg.nextcloud.port;
+      enableAuth = true; # Enable Authentik forward auth
+      extraConfig = ''
+        # Nextcloud-specific Caddy configuration
+        header {
+          # Security headers
+          X-Content-Type-Options nosniff
+          X-Frame-Options DENY
+          X-XSS-Protection "1; mode=block"
+          Referrer-Policy strict-origin-when-cross-origin
+          # Remove server header
+          -Server
+        }
+        
+        # Handle Nextcloud-specific paths
+        @nc {
+          path /remote.php /dav /status.php /updater /ocs /index.php /robots.txt /.well-known
+        }
+        
+        # Proxy to Nextcloud for specific paths
+        reverse_proxy @nc 127.0.0.1:${toString cfg.nextcloud.port}
+      '';
+    };
+
+    # SOPS secrets for Nextcloud
+    sops.secrets = {
+      "nextcloud-admin-password" = {
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
+      };
+      
+      "nextcloud-db-password" = {
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
+      };
+    };
+  });
 } 

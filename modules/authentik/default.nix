@@ -26,11 +26,60 @@ in {
       default = "admin@nixmox.lan";
       description = "Admin email for Authentik";
     };
+
+    # Database configuration
+    database = {
+      host = mkOption {
+        type = types.str;
+        default = "postgresql.nixmox.lan";
+        description = "PostgreSQL host";
+      };
+      
+      port = mkOption {
+        type = types.int;
+        default = 5432;
+        description = "PostgreSQL port";
+      };
+      
+      name = mkOption {
+        type = types.str;
+        default = "authentik";
+        description = "PostgreSQL database name";
+      };
+      
+      user = mkOption {
+        type = types.str;
+        default = "authentik";
+        description = "PostgreSQL username";
+      };
+      
+      password = mkOption {
+        type = types.str;
+        default = "changeme";
+        description = "PostgreSQL password (should be overridden via SOPS)";
+      };
+    };
+
+    # Redis configuration
+    redis = {
+      host = mkOption {
+        type = types.str;
+        default = "localhost";
+        description = "Redis host";
+      };
+      
+      port = mkOption {
+        type = types.int;
+        default = 6379;
+        description = "Redis port";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
     # Default domain derived from base domain unless explicitly set by caller
     services.nixmox.authentik.domain = mkDefault "${cfg.subdomain}.${config.services.nixmox.domain}";
+    
     # Create authentik user and group early in the activation process
     users.users.authentik = {
       isSystemUser = true;
@@ -51,7 +100,6 @@ in {
           "authentik.service"
           "authentik-ldap.service"
           "authentik-radius.service"
-          # "authentik-proxy.service"
         ];
       };
       "authentik-ldap/env" = {
@@ -68,7 +116,6 @@ in {
         path = "/run/secrets/authentik-radius/env";
         restartUnits = [ "authentik-radius.service" ];
       };
-      # (moved) Vaultwarden OIDC secret owned by vaultwarden service in its module
     };
 
     # Use the official authentik-nix module
@@ -107,45 +154,40 @@ in {
         # Host configuration for correct redirects/cookies behind proxy
         authentik.host = cfg.domain;
         
-        # # Listen configuration
-        # listen = {
-        #   http = "0.0.0.0:9000";
-        #   https = "0.0.0.0:9443";
-        # };
+        # Listen configuration
+        listen = {
+          http = "0.0.0.0:9000";
+          https = "0.0.0.0:9443";
+        };
         
-        # # PostgreSQL configuration
-        # postgresql = {
-        #   host = "127.0.0.1";
-        #   port = 5432;
-        #   user = "authentik";
-        #   name = "authentik";
-        #   password = "authentik123";
-        # };
+        # PostgreSQL configuration - use external database
+        postgresql = {
+          host = cfg.database.host;
+          port = cfg.database.port;
+          user = cfg.database.user;
+          name = cfg.database.name;
+          password = cfg.database.password;
+        };
         
-        # # Redis configuration - use default port 6379 from authentik-nix module
-        # redis = {
-        #   host = "127.0.0.1";
-        #   port = 6379;
-        # };
+        # Redis configuration - use external Redis
+        redis = {
+          host = cfg.redis.host;
+          port = cfg.redis.port;
+        };
       };
     };
 
     # Add blueprints directory for declarative configuration
     services.authentik.settings.blueprints_dir = blueprintDir;
 
-    # Ship static blueprints declaratively (no runtime copy/rendering services)
-    # environment.etc."authentik/blueprints/default-auth-flow.yaml".source = ./blueprints/default-auth-flow.yaml;
-    # environment.etc."authentik/blueprints/default-invalidation-flow.yaml".source = ./blueprints/default-invalidation-flow.yaml;
-    # Seed providers and outposts (tokens still generated in UI)
-    # environment.etc."authentik/blueprints/ldap-outpost.yaml".source = ./blueprints/ldap-outpost.yaml;
-    # environment.etc."authentik/blueprints/radius-outpost.yaml".source = ./blueprints/radius-outpost.yaml;
-    # environment.etc."authentik/blueprints/proxy-outpost.yaml".source = ./blueprints/proxy-outpost.yaml;
-
     # Ensure host resolution for self before DNS exists
     networking.hosts."127.0.0.1" = [ cfg.domain ];
 
-    # networking.firewall.allowedTCPPorts = [ 389 636 9000 9443 ];
-    # networking.firewall.allowedUDPPorts = [ 1812 1813 ];
+    # Firewall rules for Authentik services
+    networking.firewall = {
+      allowedTCPPorts = [ 389 636 9000 9443 ];
+      allowedUDPPorts = [ 1812 1813 ];
+    };
 
     # Expose Caddy vhost for Authentik
     services.nixmox.caddy.services.authentik = {
@@ -156,7 +198,6 @@ in {
     };
 
     # Enable outpost services using the same environment file
-    # Disable external outposts by default for clean bootstrap; can be enabled later when tokens are set
     services.authentik-ldap = {
       enable = true;
       environmentFile = "/run/secrets/authentik-ldap/env";
@@ -167,43 +208,7 @@ in {
       environmentFile = "/run/secrets/authentik-radius/env";
     };
 
-
-    # PostgreSQL for Authentik (ensure DB/user and schema ownership)
-    services.postgresql = {
-      enable = true;
-      ensureDatabases = [ "authentik" ];
-      ensureUsers = [{
-        name = "authentik";
-        ensureDBOwnership = true;
-      }];
-      # Runs on initial cluster/database creation only (no secrets here)
-      initialScript = pkgs.writeText "authentik-init.sql" ''
-        ALTER SCHEMA public OWNER TO authentik;
-      '';
-    };
-
-    # Note: Redis is automatically configured by the authentik-nix module
-    # on port 6379, so we don't need to configure it manually
-
-    # Set Authentik DB user's password from sops secret at activation time
-    systemd.services.postgresql-authentik-password = {
-      description = "Set password for PostgreSQL role 'authentik' from sops secret";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "postgresql.service" "sops-install-secrets.service" ];
-      requires = [ "postgresql.service" "sops-install-secrets.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        User = "postgres";
-        Group = "postgres";
-        EnvironmentFile = config.sops.secrets."authentik/env".path;
-        ExecStart = pkgs.writeShellScript "set-authentik-db-password" ''
-          PSQL="${config.services.postgresql.package}/bin/psql"
-          # Apply password (idempotent)
-          "$PSQL" -v ON_ERROR_STOP=1 <<SQL
-ALTER ROLE authentik WITH PASSWORD '$AUTHENTIK_POSTGRESQL__PASSWORD';
-SQL
-        '';
-      };
-    };
+    # Note: No local PostgreSQL configuration - using external database
+    # Note: No local Redis configuration - using external Redis
   };
 }

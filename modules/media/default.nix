@@ -8,6 +8,18 @@ in {
   options.services.nixmox.media = {
     enable = mkEnableOption "Media server stack";
 
+    subdomain = mkOption {
+      type = types.str;
+      default = "media";
+      description = "Subdomain for media services; full host becomes <subdomain>.<services.nixmox.domain>";
+    };
+
+    hostName = mkOption {
+      type = types.str;
+      default = "";
+      description = "Public host name for media services; defaults to <subdomain>.<services.nixmox.domain>";
+    };
+
     # Jellyfin configuration
     jellyfin = {
       enable = mkOption {
@@ -177,7 +189,17 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    let
+      hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
+    in {
+    # Ensure local resolution works even before DNS is in place
+    networking.hosts = {
+      "127.0.0.1" = [ hostNameEffective ];
+    } // mkIf (cfg.database.host != "localhost") {
+      "${cfg.database.host}" = [ "postgresql.nixmox.lan" ];
+    };
+
     # Jellyfin configuration
     services.jellyfin = mkIf cfg.jellyfin.enable {
       enable = true;
@@ -192,7 +214,7 @@ in {
     services.sonarr = mkIf cfg.sonarr.enable {
       enable = true;
       dataDir = cfg.sonarr.dataDir;
-      openFirewall = true;
+      openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
       settings = mkIf (cfg.database.type == "postgresql") {
@@ -205,7 +227,7 @@ in {
     services.radarr = mkIf cfg.radarr.enable {
       enable = true;
       dataDir = cfg.radarr.dataDir;
-      openFirewall = true;
+      openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
       settings = mkIf (cfg.database.type == "postgresql") {
@@ -218,7 +240,7 @@ in {
     services.prowlarr = mkIf cfg.prowlarr.enable {
       enable = true;
       dataDir = cfg.prowlarr.dataDir;
-      openFirewall = true;
+      openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
       settings = mkIf (cfg.database.type == "postgresql") {
@@ -230,38 +252,38 @@ in {
     # Transmission for downloads
     services.transmission = {
       enable = true;
-
+      
       # Settings
       settings = {
         # Basic settings
         download-dir = cfg.mediaDirs.downloads;
         incomplete-dir = "${cfg.mediaDirs.downloads}/incomplete";
         watch-dir = "${cfg.mediaDirs.downloads}/watch";
-
+        
         # Network settings
         peer-port = 51413;
         peer-port-random-on-start = true;
-
+        
         # Security
         rpc-username = "transmission";
         rpc-password = "changeme"; # Should be overridden via SOPS
-
+        
         # Performance
         cache-size-mb = 4;
         prefetch-enabled = true;
-
+        
         # Limits
         speed-limit-down = 0;
         speed-limit-up = 0;
         ratio-limit = 2.0;
         ratio-limit-enabled = true;
       };
-
-      # Open firewall
+      
+      # Open firewall for peer connections only
       openFirewall = true;
     };
 
-    # Firewall rules
+    # Firewall rules - only open backend ports (Caddy handles external access)
     networking.firewall = {
       allowedTCPPorts = [
         cfg.jellyfin.port    # Jellyfin
@@ -336,11 +358,13 @@ in {
 
       # Media group for shared access
       media = {
-        members = [ "transmission" ] ++
-          (lib.optional cfg.jellyfin.enable "jellyfin") ++
-          (lib.optional cfg.sonarr.enable "sonarr") ++
-          (lib.optional cfg.radarr.enable "radarr") ++
-          (lib.optional cfg.prowlarr.enable "prowlarr");
+        members = mkMerge [
+          (mkIf cfg.jellyfin.enable [ "jellyfin" ])
+          (mkIf cfg.sonarr.enable [ "sonarr" ])
+          (mkIf cfg.radarr.enable [ "radarr" ])
+          (mkIf cfg.prowlarr.enable [ "prowlarr" ])
+          [ "transmission" ]
+        ];
       };
     };
 
@@ -352,14 +376,14 @@ in {
       "d ${cfg.mediaDirs.music} 0755 root media"
       "d ${cfg.mediaDirs.downloads} 0755 transmission media"
       "d ${cfg.mediaDirs.torrents} 0755 transmission media"
-
+      
       # Service directories
       "d ${cfg.jellyfin.dataDir} 0755 jellyfin jellyfin"
       "d ${cfg.jellyfin.cacheDir} 0755 jellyfin jellyfin"
       "d ${cfg.jellyfin.logDir} 0755 jellyfin jellyfin"
-    ] ++ (lib.optional cfg.sonarr.enable "d ${cfg.sonarr.dataDir} 0755 sonarr sonarr") ++
-        (lib.optional cfg.radarr.enable "d ${cfg.radarr.dataDir} 0755 radarr radarr") ++
-        (lib.optional cfg.prowlarr.enable "d ${cfg.prowlarr.dataDir} 0755 prowlarr prowlarr");
+    ] ++ (lib.optional cfg.sonarr.enable "d ${cfg.sonarr.dataDir} 0755 sonarr sonarr") 
+        ++ (lib.optional cfg.radarr.enable "d ${cfg.radarr.dataDir} 0755 radarr radarr") 
+        ++ (lib.optional cfg.prowlarr.enable "d ${cfg.prowlarr.dataDir} 0755 prowlarr prowlarr");
 
     # Systemd services and health checks
     systemd.services = {
@@ -451,13 +475,115 @@ in {
       };
     };
 
+    # Expose Caddy vhosts for media services
+    services.nixmox.caddy.services = {
+      # Jellyfin
+      jellyfin = mkIf cfg.jellyfin.enable {
+        domain = hostNameEffective;
+        backend = "127.0.0.1";
+        port = cfg.jellyfin.port;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Jellyfin-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Sonarr
+      sonarr = mkIf cfg.sonarr.enable {
+        domain = "sonarr.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = cfg.sonarr.port;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Sonarr-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Radarr
+      radarr = mkIf cfg.radarr.enable {
+        domain = "radarr.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = cfg.radarr.port;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Radarr-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Prowlarr
+      prowlarr = mkIf cfg.prowlarr.enable {
+        domain = "prowlarr.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = cfg.prowlarr.port;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Prowlarr-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Transmission
+      transmission = {
+        domain = "transmission.${hostNameEffective}";
+        backend = "127.0.0.1";
+        port = 9091;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Transmission-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+    };
+
     # Default configuration
     services.nixmox.media = {
       jellyfin.enable = true;
-      # Disabling arr services that require external database setup
-      sonarr.enable = false;
-      radarr.enable = false;
-      prowlarr.enable = false;
+      sonarr.enable = false;  # Temporarily disabled due to database config issues
+      radarr.enable = false;  # Temporarily disabled due to database config issues
+      prowlarr.enable = false; # Temporarily disabled due to database config issues
     };
-  };
+  });
 } 

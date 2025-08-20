@@ -88,6 +88,39 @@ in {
       description = "Tomcat port hosting Guacamole client";
     };
 
+    # Database configuration
+    database = {
+      host = mkOption {
+        type = types.str;
+        default = "postgresql.nixmox.lan";
+        description = "PostgreSQL host";
+      };
+      
+      port = mkOption {
+        type = types.int;
+        default = 5432;
+        description = "PostgreSQL port";
+      };
+      
+      name = mkOption {
+        type = types.str;
+        default = "guacamole";
+        description = "PostgreSQL database name";
+      };
+      
+      user = mkOption {
+        type = types.str;
+        default = "guacamole";
+        description = "PostgreSQL username";
+      };
+      
+      password = mkOption {
+        type = types.str;
+        default = "changeme";
+        description = "PostgreSQL password (should be overridden via SOPS)";
+      };
+    };
+
     bootstrapAdmin = {
       enable = mkOption {
         type = types.bool;
@@ -131,11 +164,12 @@ in {
       guacd-port = config.services.guacamole-server.port;
       extension-priority = "openid";
 
-      # Database config
-      postgresql-hostname = "localhost";
-      postgresql-database = "guacamole";
-      postgresql-username = "guacamole";
-      postgresql-password = "";
+      # Database config - use external PostgreSQL
+      postgresql-hostname = cfg.database.host;
+      postgresql-port = cfg.database.port;
+      postgresql-database = cfg.database.name;
+      postgresql-username = cfg.database.user;
+      postgresql-password = cfg.database.password;
 
       # OIDC with Authentik per Guacamole docs
       openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
@@ -152,45 +186,32 @@ in {
     environment.etc."guacamole/lib/postgresql-${pgVer}.jar".source = pgDriverSrc;
     environment.etc."guacamole/extensions/guacamole-auth-jdbc-postgresql-${guacVer}.jar".source = "${pgExtension}/guacamole-auth-jdbc-postgresql-${guacVer}.jar";
 
-    # Postgres for Guacamole
-    services.postgresql = {
-      authentication = ''
-        #type database  DBuser  auth-method
-        local all       all     trust
-        #type database DBuser origin-address auth-method
-        host  all       all     127.0.0.1/32   trust
-      '';
-      enableTCPIP = true;
-      ensureDatabases = [ "guacamole" ];
-      ensureUsers = [{
-        name = "guacamole";
-        ensureDBOwnership = true;
-      }];
-    };
+    # Note: No local PostgreSQL configuration - using external database
 
-    # Initialize Guacamole DB schema if empty
+    # Initialize Guacamole DB schema if empty (using external PostgreSQL)
     systemd.services.guacamole-pgsql-schema-import = {
       enable = true;
-      requires = [ "postgresql.service" "postgresql-setup.service" ];
-      after = [ "postgresql.service" "postgresql-setup.service" ];
+      after = [ "network.target" ];
       wantedBy = [ "tomcat.service" "multi-user.target" ];
       script = ''
-        echo "[guacamole-bootstrapper] Info: checking if database 'guacamole' exists but is empty..."
-        output=$(${psql} -U guacamole -c "\\dt" 2>&1)
+        echo "[guacamole-bootstrapper] Info: checking if database '${cfg.database.name}' exists but is empty..."
+        output=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
         if [[ "$output" == *"Did not find any relations."* ]]; then
           echo "[guacamole-bootstrapper] Info: installing guacamole postgres database schema..."
-          ${cat} ${pgExtension}/schema/*.sql | ${psql} -U guacamole -d guacamole -f -
+          ${cat} ${pgExtension}/schema/*.sql | ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
         fi
       '';
       serviceConfig = {
         Type = "oneshot";
+        Environment = [
+          "PGPASSWORD=${cfg.database.password}"
+        ];
       };
     };
 
-    # Ensure Tomcat starts after Postgres is ready
+    # Ensure Tomcat starts after network (no local PostgreSQL dependency)
     systemd.services.tomcat = {
-      requires = [ "postgresql.service" ];
-      after = [ "postgresql.service" ];
+      after = [ "network.target" ];
       serviceConfig = {
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
@@ -209,8 +230,8 @@ in {
     # Bootstrap a local Guacamole admin user if requested
     systemd.services.guacamole-bootstrap-admin = mkIf cfg.bootstrapAdmin.enable {
       description = "Bootstrap Guacamole local admin user";
-      requires = [ "guacamole-pgsql-schema-import.service" "postgresql.service" ];
-      after = [ "guacamole-pgsql-schema-import.service" "postgresql.service" ];
+      requires = [ "guacamole-pgsql-schema-import.service" ];
+      after = [ "guacamole-pgsql-schema-import.service" ];
       wantedBy = [ "tomcat.service" "multi-user.target" ];
       environment = {
         GUAC_BOOTSTRAP_USER = cfg.bootstrapAdmin.username;
@@ -218,6 +239,9 @@ in {
       };
       serviceConfig = {
         Type = "oneshot";
+        Environment = [
+          "PGPASSWORD=${cfg.database.password}"
+        ];
       };
       script = ''
         set -euo pipefail
@@ -235,11 +259,11 @@ in {
         HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
 
         # Upsert user
-        ${psql} -v ON_ERROR_STOP=1 \
+        ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
           -v username="''${GUAC_BOOTSTRAP_USER}" \
           -v hash="''${HASH}" \
           -v salt="''${SALT}" \
-          -U guacamole -d guacamole <<'PSQL'
+          -U ${cfg.database.user} -d ${cfg.database.name} <<'PSQL'
 DO $$
 DECLARE
   uid integer;

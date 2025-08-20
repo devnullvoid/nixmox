@@ -22,7 +22,9 @@ in {
     
     authentikDomain = mkOption {
       type = types.str;
-      default = config.services.nixmox.authentik.domain;
+      default = if config.services.nixmox ? authentik && config.services.nixmox.authentik.enable 
+                then config.services.nixmox.authentik.domain 
+                else "authentik.nixmox.lan";
       description = "Authentik domain for forward auth";
     };
     authentikUpstream = mkOption {
