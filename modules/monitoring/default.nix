@@ -150,65 +150,48 @@ in {
         };
       };
       
-      # Alert rules
+      # Simplified alert rules - using string format instead of complex nested structure
       rules = [
-        {
-          groups = [
-            {
-              name = "nixmox";
-              rules = [
-                {
-                  alert = "HighCPUUsage";
-                  expr = "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100) > 80";
-                  for = "5m";
-                  labels = {
-                    severity = "warning";
-                  };
-                  annotations = {
-                    summary = "High CPU usage on {{ $labels.instance }}";
-                    description = "CPU usage is above 80% for 5 minutes";
-                  };
-                }
-                {
-                  alert = "HighMemoryUsage";
-                  expr = "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85";
-                  for = "5m";
-                  labels = {
-                    severity = "warning";
-                  };
-                  annotations = {
-                    summary = "High memory usage on {{ $labels.instance }}";
-                    description = "Memory usage is above 85% for 5 minutes";
-                  };
-                }
-                {
-                  alert = "HighDiskUsage";
-                  expr = "(node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85";
-                  for = "5m";
-                  labels = {
-                    severity = "warning";
-                  };
-                  annotations = {
-                    summary = "High disk usage on {{ $labels.instance }}";
-                    description = "Disk usage is above 85% for 5 minutes";
-                  };
-                }
-                {
-                  alert = "ServiceDown";
-                  expr = "up == 0";
-                  for = "1m";
-                  labels = {
-                    severity = "critical";
-                  };
-                  annotations = {
-                    summary = "Service down on {{ $labels.instance }}";
-                    description = "Service {{ $labels.job }} is down on {{ $labels.instance }}";
-                  };
-                }
-              ];
-            }
-          ];
-        }
+        ''
+          groups:
+          - name: nixmox
+            rules:
+            - alert: HighCPUUsage
+              expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High CPU usage on {{ $labels.instance }}"
+                description: "CPU usage is above 80% for 5 minutes"
+            
+            - alert: HighMemoryUsage
+              expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High memory usage on {{ $labels.instance }}"
+                description: "Memory usage is above 85% for 5 minutes"
+            
+            - alert: HighDiskUsage
+              expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High disk usage on {{ $labels.instance }}"
+                description: "Disk usage is above 85% for 5 minutes"
+            
+            - alert: ServiceDown
+              expr: up == 0
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Service down on {{ $labels.instance }}"
+                description: "Service {{ $labels.job }} is down on {{ $labels.instance }}"
+        ''
       ];
       
       # Retention

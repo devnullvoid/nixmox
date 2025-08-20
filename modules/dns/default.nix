@@ -102,7 +102,7 @@ in {
           # DNSSEC
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
           trust-anchor = [
-            '"." 20326 8 2 E06D44B80B8F1D39A95C0D0E4E041F15E4F915A5'
+            "\".\" 20326 8 2 E06D44B80B8F1D39A95C0D0E4E041F15E4F915A5"
           ];
           
           # Forward zones for internal services
@@ -120,20 +120,14 @@ in {
         ];
         
         # Local data for internal services
-        local-data = mkMerge [
+        local-data = [
           # NS record for primary domain
-          [ "${cfg.primaryDomain}. IN NS ${cfg.domain}." ]
-          
-          # Service records
-          (mapAttrsToList (name: service: 
-            "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-          ) cfg.services)
-          
-          # Service aliases
-          (concatLists (mapAttrsToList (name: service:
-            map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
-          ) cfg.services))
-        ];
+          "${cfg.primaryDomain}. IN NS ${cfg.domain}."
+        ] ++ (mapAttrsToList (name: service: 
+          "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
+        ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+          map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
+        ) cfg.services));
       };
     };
     
