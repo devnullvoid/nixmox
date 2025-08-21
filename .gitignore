@@ -32,7 +32,15 @@ go.work.sum
 # .vscode/
 
 # Nix build artifacts
-result*# Terraform
+result*
+builds/
+*.tar.xz
+*.tar.gz
+*.qcow2
+*.vmdk
+*.ova
+
+# Terraform
 **/.terraform/*
 *.tfstate
 *.tfstate.*

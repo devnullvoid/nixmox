@@ -51,7 +51,14 @@ CONTAINER_NAME:
 Available containers:
     - authentik
     - caddy
+    - postgresql
+    - nextcloud
+    - media
     - monitoring
+    - guacamole
+    - vaultwarden
+    - dns
+    - mail
 
 Examples:
     $0 authentik                    # Build authentik container
@@ -108,7 +115,14 @@ if [[ "$LIST_CONTAINERS" == "true" ]]; then
     print_status "Available containers:"
     echo "  - authentik"
     echo "  - caddy"
+    echo "  - postgresql"
+    echo "  - nextcloud"
+    echo "  - media"
     echo "  - monitoring"
+    echo "  - guacamole"
+    echo "  - vaultwarden"
+    echo "  - dns"
+    echo "  - mail"
     exit 0
 fi
 
@@ -120,7 +134,7 @@ if [[ -z "$CONTAINER_NAME" ]]; then
 fi
 
 # Validate container name
-VALID_CONTAINERS=("authentik" "caddy" "monitoring")
+VALID_CONTAINERS=("authentik" "caddy" "postgresql" "nextcloud" "media" "monitoring" "guacamole" "vaultwarden" "dns" "mail")
 if [[ ! " ${VALID_CONTAINERS[@]} " =~ " ${CONTAINER_NAME} " ]]; then
     print_error "Invalid container name: $CONTAINER_NAME"
     print_status "Available containers: ${VALID_CONTAINERS[*]}"
@@ -144,11 +158,29 @@ print_success "NixOS configuration built successfully"
 if [[ "$TEST_CONFIG" == "true" ]]; then
     print_status "Testing configuration..."
     
-    # Check if services are properly configured
-    SSH_ENABLED=$(nix eval ".#nixosConfigurations.$CONTAINER_NAME.config.services.openssh.enable" --raw 2>/dev/null || echo "false")
-    if [[ "$SSH_ENABLED" != "true" ]]; then
-        print_error "Configuration test failed - SSH service not properly configured"
-        exit 1
+    # Check if the main service is properly configured
+    SERVICE_ENABLED=$(nix eval ".#nixosConfigurations.$CONTAINER_NAME.config.services.nixmox.$CONTAINER_NAME.enable" 2>/dev/null || echo "false")
+    if [[ "$SERVICE_ENABLED" != "true" ]]; then
+        print_warning "Main service not enabled - checking alternative configurations..."
+        
+        # For vaultwarden, check OCI configuration
+        if [[ "$CONTAINER_NAME" == "vaultwarden" ]]; then
+            OCI_ENABLED=$(nix eval ".#nixosConfigurations.$CONTAINER_NAME.config.services.nixmox.vaultwarden.oci.enable" --raw 2>/dev/null || echo "false")
+            if [[ "$OCI_ENABLED" != "true" ]]; then
+                print_error "Configuration test failed - Vaultwarden OCI service not properly configured"
+                exit 1
+            fi
+        # For media, check if any media services are enabled
+        elif [[ "$CONTAINER_NAME" == "media" ]]; then
+            MEDIA_ENABLED=$(nix eval ".#nixosConfigurations.$CONTAINER_NAME.config.services.nixmox.media.enable" --raw 2>/dev/null || echo "false")
+            if [[ "$MEDIA_ENABLED" != "true" ]]; then
+                print_error "Configuration test failed - Media service not properly configured"
+                exit 1
+            fi
+        else
+            print_error "Configuration test failed - Main service not properly configured"
+            exit 1
+        fi
     fi
     
     # Check if the system has the expected packages

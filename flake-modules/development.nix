@@ -21,6 +21,9 @@ in {
         git
         inputs.nixos-generators.packages.${system}.default
         
+        # Deployment tools
+        colmena
+        
         # Go for backend development
         go
         
