@@ -189,14 +189,6 @@ in {
       allowedUDPPorts = [ 1812 1813 ];
     };
 
-    # Expose Caddy vhost for Authentik
-    services.nixmox.caddy.services.authentik = {
-      domain = cfg.domain;
-      backend = "127.0.0.1";
-      port = 9000;
-      enableAuth = false;
-    };
-
     # Enable outpost services using the same environment file
     services.authentik-ldap = {
       enable = true;

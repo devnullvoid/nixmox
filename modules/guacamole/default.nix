@@ -64,9 +64,10 @@ in {
       description = "Public host name for Guacamole; defaults to <subdomain>.<services.nixmox.domain>";
     };
 
+    # Authentik domain for OIDC
     authentikDomain = mkOption {
       type = types.str;
-      default = config.services.nixmox.authentik.domain;
+      default = "authentik.nixmox.lan";
       description = "Authentik domain used for OIDC endpoints";
     };
 
@@ -287,20 +288,6 @@ BEGIN
   END IF;
 END $$;
 PSQL
-      '';
-    };
-
-    # Expose Caddy vhost via the Caddy module
-    services.nixmox.caddy.services.guacamole = {
-      domain = hostNameEffective;
-      backend = "127.0.0.1";
-      port = cfg.tomcatPort;
-      enableAuth = false;
-      extraConfig = ''
-        @notGuac {
-          not path /guacamole*
-        }
-        rewrite @notGuac /guacamole{uri}
       '';
     };
   });

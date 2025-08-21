@@ -78,11 +78,11 @@ in {
     # PostgreSQL configuration
     services.postgresql = {
       enable = true;
-      port = cfg.port;
       dataDir = cfg.dataDir;
-
-      # Performance settings
       settings = {
+        port = cfg.port;
+        
+        # Performance settings
         # Memory settings
         shared_buffers = "256MB";
         effective_cache_size = "1GB";

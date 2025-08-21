@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 with lib;
 
@@ -7,75 +7,25 @@ let
 in {
   options.services.nixmox.caddy = {
     enable = mkEnableOption "Caddy reverse proxy";
-    
+
+    # Global Caddy settings
     domain = mkOption {
       type = types.str;
-      default = "proxy.nixmox.lan";
-      description = "Domain for Caddy proxy";
+      default = "nixmox.lan";
+      description = "Base domain for all services";
     };
-    
-    primaryDomain = mkOption {
-      type = types.str;
-      default = config.services.nixmox.domain;
-      description = "Primary domain for services";
-    };
-    
+
+    # Authentik configuration
     authentikDomain = mkOption {
       type = types.str;
-      default = if config.services.nixmox ? authentik && config.services.nixmox.authentik.enable 
-                then config.services.nixmox.authentik.domain 
-                else "authentik.nixmox.lan";
+      default = "authentik.nixmox.lan";
       description = "Authentik domain for forward auth";
     };
+
     authentikUpstream = mkOption {
       type = types.str;
-      default = "localhost:9000";
-      description = "Upstream host:port for Authentik core (for reverse_proxy and forward_auth). Use IP:port when Authentik runs on another container.";
-    };
-
-    tlsCertPath = mkOption {
-      type = types.str;
-      default = "/etc/caddy/tls/server.crt";
-      description = "Path to TLS certificate to use for all vhosts";
-    };
-
-    tlsKeyPath = mkOption {
-      type = types.str;
-      default = "/etc/caddy/tls/server.key";
-      description = "Path to TLS private key to use for all vhosts";
-    };
-    
-    # Service configurations
-    services = mkOption {
-      type = types.attrsOf (types.submodule {
-        options = {
-          domain = mkOption {
-            type = types.str;
-            description = "Domain for this service";
-          };
-          backend = mkOption {
-            type = types.str;
-            description = "Backend service address (IP:port)";
-          };
-          port = mkOption {
-            type = types.int;
-            default = 80;
-            description = "Backend service port";
-          };
-          enableAuth = mkOption {
-            type = types.bool;
-            default = true;
-            description = "Enable Authentik forward auth";
-          };
-          extraConfig = mkOption {
-            type = types.str;
-            default = "";
-            description = "Extra Caddy configuration";
-          };
-        };
-      });
-      default = {};
-      description = "Services to proxy";
+      default = "authentik.nixmox.lan:9000";
+      description = "Authentik upstream for forward auth";
     };
   };
 
@@ -86,135 +36,42 @@ in {
       
       # Global settings
       globalConfig = ''
-        # Admin API on loopback for safe reloads
-        admin localhost:2019
-        # Disable automatic HTTPS/ACME entirely; we use local certs
-        auto_https off
+        {
+          admin off
+          servers {
+            metrics 127.0.0.1:9090
+          }
+        }
       '';
       
-      # Virtual hosts configuration
-      virtualHosts = mkMerge (
-        [
-          # Authentik service
-          {
-            "${cfg.authentikDomain}" = {
-              extraConfig = ''
-                # Authentik service
-                tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
-                reverse_proxy ${cfg.authentikUpstream}
-              '';
-            };
-          }
-        ]
-        # Service proxies with forward auth (flattened)
-        ++ (mapAttrsToList (name: service: {
-          "${service.domain}" = {
-            extraConfig = ''
-              # Forward authentication
-              ${optionalString service.enableAuth ''
-              route {
-                forward_auth http://${cfg.authentikUpstream} {
-                  uri /outpost.goauthentik.io/auth/caddy
-                  copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email X-Authentik-Jwt
-                  trusted_proxies private_ranges
-                }
-              }
-              ''}
-              
-              # Backend service
-              tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
-              reverse_proxy ${service.backend}:${toString service.port} {
-                header_up Host {host}
-                
-                # Copy Authentik headers to backend
-                ${optionalString service.enableAuth ''
-                header_up X-Authentik-Username {http.reverse_proxy.header.X-Authentik-Username}
-                header_up X-Authentik-Groups {http.reverse_proxy.header.X-Authentik-Groups}
-                header_up X-Authentik-Email {http.reverse_proxy.header.X-Authentik-Email}
-                header_up X-Authentik-Jwt {http.reverse_proxy.header.X-Authentik-Jwt}
-                ''}
-              }
-              
-              # Additional configuration
-              ${service.extraConfig}
-            '';
-          };
-        }) cfg.services)
-        
-        # Default catch-all for unknown domains
-        ++ [
-          {
-            "${cfg.primaryDomain}" = {
-              extraConfig = ''
-                # Default page
-                tls ${cfg.tlsCertPath} ${cfg.tlsKeyPath}
-                respond "NixMox Proxy - Service not found" 404
-              '';
-            };
-          }
-        ]
-      );
+      # Basic virtual host for now - services will be configured via services.nix
+      virtualHosts = {
+        "${cfg.domain}" = {
+          extraConfig = ''
+            respond "NixMox Proxy - Service not found" 404
+          '';
+        };
+      };
     };
-    
-    # Create log directory
-    systemd.tmpfiles.rules = [
-      "d /var/log/caddy 0755 caddy caddy"
-    ];
-    
-    # Firewall rules for Caddy
+
+    # Basic firewall rules
     networking.firewall = {
       allowedTCPPorts = [
         80   # HTTP
         443  # HTTPS
+        9090 # Caddy metrics
       ];
     };
-    
+
     # Systemd service configuration
     systemd.services.caddy = {
-      # Ensure Caddy starts after network
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
       
-      # Service configuration
       serviceConfig = {
-        # User and group
-        User = "caddy";
-        Group = "caddy";
-        
-        # Capabilities
-        AmbientCapabilities = "CAP_NET_BIND_SERVICE";
-        CapabilityBoundingSet = "CAP_NET_BIND_SERVICE";
-        
-        # Security settings
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        
-        # Logging
-        StandardOutput = "journal";
-        StandardError = "journal";
-        ExecReload = lib.mkForce "${pkgs.coreutils}/bin/true"; # avoid failing reloads while admin API is disabled
+        Restart = mkForce "always";
+        RestartSec = mkForce "10s";
       };
     };
-    
-    # Health check disabled to avoid flapping during admin reload
-    
-    # Create Caddy user
-    users.users.caddy = {
-      isSystemUser = true;
-      group = "caddy";
-      home = "/var/lib/caddy";
-      createHome = true;
-    };
-    
-    users.groups.caddy = {};
-    # Do not predefine example services; rely on caller to populate cfg.services
   };
-} 
+}

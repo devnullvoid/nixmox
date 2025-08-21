@@ -77,55 +77,96 @@ let
 
   # Container configurations
   containers = {
-    # Authentik container (POC stack: also runs Caddy and Vaultwarden)
+    # Caddy container (dedicated reverse proxy)
+    caddy = { config, pkgs, lib, ... }: {
+      imports = [
+        commonConfig
+        ../modules/caddy
+        ../modules/localtls
+      ];
+
+      networking.hostName = "caddy";
+
+      # Caddy configuration
+      services.nixmox.caddy.enable = true;
+      services.nixmox.localtls.enable = true;
+
+      # Firewall rules for Caddy
+      networking.firewall = {
+        allowedTCPPorts = [
+          80   # HTTP
+          443  # HTTPS
+          9090 # Caddy metrics
+        ];
+      };
+    };
+
+    # Authentik container (core identity service only)
     authentik = { config, pkgs, lib, ... }: {
       imports = [
         commonConfig
         ../modules/authentik
-        ../modules/vaultwarden
-        ../modules/vaultwarden/oci.nix
-        ../modules/caddy
-        ../modules/guacamole
-        ../modules/localtls
         inputs.authentik-nix.nixosModules.default
       ];
 
       networking.hostName = "authentik";
 
-      # Core services
+      # Core Authentik service only
       services.nixmox.authentik.enable = true;
 
-      # Resolve local hostnames (until DNS exists); rely on modules for their own host entries
-      networking.hosts."127.0.0.1" = [ ];
-
-      # Caddy via module only
-      services.nixmox.caddy.enable = true;
-
-      # Local TLS certs used by Caddy
-      services.nixmox.localtls.enable = true;
-
-      # Firewall is managed by the Caddy module
-
-      # Switch Vaultwarden to OCI container (module)
-      services.nixmox.vaultwarden.oci.enable = true;
-
-      # Enable Guacamole stack (Tomcat + guacd + Postgres) behind Caddy
-      services.nixmox.guacamole.enable = true;
+      # Firewall rules for Authentik services
+      networking.firewall = {
+        allowedTCPPorts = [
+          389  # LDAP
+          636  # LDAPS
+          9000 # Authentik HTTP
+          9443 # Authentik HTTPS
+        ];
+        allowedUDPPorts = [
+          1812 # RADIUS
+          1813 # RADIUS accounting
+        ];
+      };
     };
 
-    # Caddy reverse proxy container
-    caddy = { config, pkgs, lib, ... }: {
+    # Guacamole container (separate from Authentik)
+    guacamole = { config, pkgs, lib, ... }: {
       imports = [
         commonConfig
-        ../modules/caddy
+        ../modules/guacamole
       ];
 
-      networking.hostName = "caddy";
+      networking.hostName = "guacamole";
 
-      # Caddy-specific settings
-      services.caddy = {
-        enable = true;
-        # Configuration will be added in the caddy module
+      # Guacamole service
+      services.nixmox.guacamole.enable = true;
+
+      # Firewall rules for Guacamole
+      networking.firewall = {
+        allowedTCPPorts = [
+          8280 # Tomcat/Guacamole
+        ];
+      };
+    };
+
+    # Vaultwarden container (separate from Authentik)
+    vaultwarden = { config, pkgs, lib, ... }: {
+      imports = [
+        commonConfig
+        ../modules/vaultwarden
+        ../modules/vaultwarden/oci.nix
+      ];
+
+      networking.hostName = "vaultwarden";
+
+      # Vaultwarden service
+      services.nixmox.vaultwarden.oci.enable = true;
+
+      # Firewall rules for Vaultwarden
+      networking.firewall = {
+        allowedTCPPorts = [
+          8080 # Vaultwarden web interface
+        ];
       };
     };
 
@@ -134,7 +175,6 @@ let
       imports = [
         commonConfig
         ../modules/monitoring
-        ../modules/caddy
       ];
 
       networking.hostName = "monitoring";
@@ -142,8 +182,14 @@ let
       # Monitoring stack
       services.nixmox.monitoring.enable = true;
 
-      # Enable Caddy for reverse proxy
-      services.nixmox.caddy.enable = true;
+      # Firewall rules - only allow backend access since we're behind Caddy
+      networking.firewall = {
+        allowedTCPPorts = [
+          9090  # Prometheus backend (behind Caddy)
+          9093  # Alertmanager backend (behind Caddy)
+          3000  # Grafana backend (behind Caddy)
+        ];
+      };
     };
 
     # Mail server container
@@ -164,7 +210,6 @@ let
       imports = [
         commonConfig
         ../modules/media
-        ../modules/caddy
       ];
 
       networking.hostName = "media";
@@ -182,8 +227,19 @@ let
         password = "changeme"; # Should be overridden via SOPS
       };
 
-      # Enable Caddy for reverse proxy
-      services.nixmox.caddy.enable = true;
+      # Firewall rules - only allow backend access since we're behind Caddy
+      networking.firewall = {
+        allowedTCPPorts = [
+          8096  # Jellyfin backend (behind Caddy)
+          8989  # Sonarr backend (behind Caddy)
+          7878  # Radarr backend (behind Caddy)
+          9696  # Prowlarr backend (behind Caddy)
+          9091  # Transmission web interface
+        ];
+        allowedUDPPorts = [
+          51413  # Transmission peer port
+        ];
+      };
     };
 
     # Nextcloud container
@@ -191,7 +247,6 @@ let
       imports = [
         commonConfig
         ../modules/nextcloud
-        ../modules/caddy
       ];
 
       networking.hostName = "nextcloud";
@@ -206,23 +261,15 @@ let
         port = 5432;
         name = "nextcloud";
         user = "nextcloud";
+        password = "changeme"; # Should be overridden via SOPS
       };
 
-      # Enable Caddy for reverse proxy
-      services.nixmox.caddy.enable = true;
-    };
-
-    # Vaultwarden container
-    vaultwarden = { config, pkgs, lib, ... }: {
-      imports = [
-        commonConfig
-        ../modules/vaultwarden
-      ];
-
-      networking.hostName = "vaultwarden";
-
-      # Vaultwarden configuration
-      services.nixmox.vaultwarden.enable = true;
+      # Firewall rules - only allow backend access since we're behind Caddy
+      networking.firewall = {
+        allowedTCPPorts = [
+          8080  # Nextcloud backend (behind Caddy)
+        ];
+      };
     };
 
     # DNS container (Unbound)

@@ -52,7 +52,7 @@ in {
 
     authDomain = mkOption {
       type = types.str;
-      default = config.services.nixmox.authentik.domain;
+      default = "authentik.nixmox.lan";
       description = "Authentik domain for SSO Authority";
     };
   };
@@ -113,15 +113,6 @@ in {
         # Ensure correct provider slug and trailing slash
         SSO_AUTHORITY = "https://${cfg.authDomain}/application/o/vaultwarden/";
       };
-    };
-
-    # Expose Caddy vhost for Vaultwarden
-    services.nixmox.caddy.services.vaultwarden = {
-      domain = builtins.replaceStrings ["https://"] [""] cfg.domain;
-      # With host networking, bind to the host LAN IP
-      backend = cfg.lanIp;
-      port = cfg.listenPort;
-      enableAuth = false;
     };
   };
 }
