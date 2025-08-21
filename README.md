@@ -1,5 +1,7 @@
 # NixMox - NixOS LXC Orchestration on Proxmox
 
+### WIP / Proof of Concept ONLY, not yet functional
+
 NixMox is a comprehensive NixOS-based container orchestration system designed for Proxmox VE. It provides a complete self-hosted infrastructure with identity management, monitoring, media services, file sharing, and more.
 
 ## 🏗️ Architecture
