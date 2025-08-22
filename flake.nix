@@ -147,6 +147,17 @@
         };
 
         # Colmena deployment configuration
+        # Hostname mapping (update your local /etc/hosts file):
+        # - caddy.nixmox.lan -> 192.168.99.10 (VMID 901)
+        # - postgresql.nixmox.lan -> 192.168.99.11 (VMID 902) 
+        # - authentik.nixmox.lan -> 192.168.99.12 (VMID 903)
+        # - dns.nixmox.lan -> 192.168.99.13 (VMID 904)
+        # - vaultwarden.nixmox.lan -> 192.168.99.14 (VMID 905)
+        # - nextcloud.nixmox.lan -> 192.168.99.15 (VMID 906)
+        # - guacamole.nixmox.lan -> 192.168.99.16 (VMID 907)
+        # - media.nixmox.lan -> 192.168.99.17 (VMID 908)
+        # - monitoring.nixmox.lan -> 192.168.99.18 (VMID 909)
+        # - mail.nixmox.lan -> 192.168.99.19 (VMID 910)
         colmenaHive = inputs.colmena.lib.makeHive {
           meta = {
             nixpkgs = import inputs.nixpkgs {
@@ -192,6 +203,15 @@
           };
 
           # Application services
+          vaultwarden = { name, nodes, pkgs, ... }: {
+            deployment = {
+              targetHost = "vaultwarden.nixmox.lan";
+              targetUser = "root";
+              tags = [ "services" "security" ];
+            };
+            imports = [ inputs.self.outputs.nixosConfigurations.vaultwarden._module.args.modules ];
+          };
+
           nextcloud = { name, nodes, pkgs, ... }: {
             deployment = {
               targetHost = "nextcloud.nixmox.lan";
@@ -199,6 +219,15 @@
               tags = [ "services" "storage" ];
             };
             imports = [ inputs.self.outputs.nixosConfigurations.nextcloud._module.args.modules ];
+          };
+
+          guacamole = { name, nodes, pkgs, ... }: {
+            deployment = {
+              targetHost = "guacamole.nixmox.lan";
+              targetUser = "root";
+              tags = [ "services" "remote" ];
+            };
+            imports = [ inputs.self.outputs.nixosConfigurations.guacamole._module.args.modules ];
           };
 
           media = { name, nodes, pkgs, ... }: {
@@ -217,24 +246,6 @@
               tags = [ "services" "monitoring" ];
             };
             imports = [ inputs.self.outputs.nixosConfigurations.monitoring._module.args.modules ];
-          };
-
-          guacamole = { name, nodes, pkgs, ... }: {
-            deployment = {
-              targetHost = "guacamole.nixmox.lan";
-              targetUser = "root";
-              tags = [ "services" "remote" ];
-            };
-            imports = [ inputs.self.outputs.nixosConfigurations.guacamole._module.args.modules ];
-          };
-
-          vaultwarden = { name, nodes, pkgs, ... }: {
-            deployment = {
-              targetHost = "vaultwarden.nixmox.lan";
-              targetUser = "root";
-              tags = [ "services" "security" ];
-            };
-            imports = [ inputs.self.outputs.nixosConfigurations.vaultwarden._module.args.modules ];
           };
 
           mail = { name, nodes, pkgs, ... }: {
