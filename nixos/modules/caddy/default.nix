@@ -44,7 +44,7 @@ in {
         }
       '';
       
-      # Basic virtual host for now - services will be configured via services.nix
+      # Basic virtual host for now
       virtualHosts = {
         "${cfg.domain}" = {
           extraConfig = ''

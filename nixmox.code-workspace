@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "../../nix/justinhschaaf_nixos-config"
+		},
+		{
+			"path": "../../nix/nixmox"
 		}
 	],
 	"settings": {}
