@@ -4,11 +4,6 @@
 # Global settings
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# Default environment (override with: just ENV=prod <recipe>)
-ENV := "dev"
-TERRANIX_FILE := "terranix/" + ENV + ".nix"
-TF_DIR := "terraform/environments/" + ENV
-
 # List all recipes
 default:
 	@just --list
@@ -18,64 +13,65 @@ default:
 # =============================================================================
 
 # Render Terranix to Terraform JSON
-terranix-render:
-	nix run nixpkgs#terranix -- {{TERRANIX_FILE}} > {{TF_DIR}}/main.tf.json
-	@echo "Rendered {{TERRANIX_FILE}} -> {{TF_DIR}}/main.tf.json"
+terranix-render env="dev":
+	mkdir -p terraform/environments/{{env}}
+	nix run nixpkgs#terranix -- terranix/{{env}}.nix > terraform/environments/{{env}}/main.tf.json
+	@echo "Rendered terranix/{{env}}.nix -> terraform/environments/{{env}}/main.tf.json"
 
 # Terraform commands (always render first)
-tf-init:
-	just terranix-render ENV={{ENV}}
-	nix run nixpkgs#terraform -- -chdir={{TF_DIR}} init
+tf-init env="dev":
+	just terranix-render env={{env}}
+	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} init
 
-tf-plan:
-	just terranix-render ENV={{ENV}}
-	nix run nixpkgs#terraform -- -chdir={{TF_DIR}} plan
+tf-plan env="dev":
+	just terranix-render env={{env}}
+	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} plan
 
-tf-apply:
-	just terranix-render ENV={{ENV}}
-	nix run nixpkgs#terraform -- -chdir={{TF_DIR}} apply
+tf-apply env="dev":
+	just terranix-render env={{env}}
+	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} apply
 
-tf-apply-auto:
-	just terranix-render ENV={{ENV}}
-	nix run nixpkgs#terraform -- -chdir={{TF_DIR}} apply -auto-approve
+tf-apply-auto env="dev":
+	just terranix-render env={{env}}
+	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} apply -auto-approve
 
-tf-destroy:
-	just terranix-render ENV={{ENV}}
-	nix run nixpkgs#terraform -- -chdir={{TF_DIR}} destroy
+tf-destroy env="dev":
+	just terranix-render env={{env}}
+	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} destroy
 
 # =============================================================================
 # Phased Deployment Commands
 # =============================================================================
 
 # Deploy Phase 1: Infrastructure Foundation (Proxmox LXC containers)
-deploy-phase1 ENV=dev:
+deploy-phase1 env="dev":
 	@echo "Deploying Phase 1: Infrastructure Foundation"
-	./scripts/deploy-phases.sh -e {{ENV}} -p 1
+	./scripts/deploy-phases.sh -e {{env}} -p 1
 
 # Deploy Phase 2: Core Services (NixOS configurations)
-deploy-phase2 ENV=dev:
+deploy-phase2 env="dev":
 	@echo "Deploying Phase 2: Core Services"
-	./scripts/deploy-phases.sh -e {{ENV}} -p 2
+	./scripts/deploy-phases.sh -e {{env}} -p 2
 
 # Deploy Phase 3: Application Services
-deploy-phase3 ENV=dev:
+deploy-phase3 env="dev":
 	@echo "Deploying Phase 3: Application Services"
-	./scripts/deploy-phases.sh -e {{ENV}} -p 3
+	./scripts/deploy-phases.sh -e {{env}} -p 3
 
 # Deploy Phase 4: Advanced Configuration (Authentik outposts)
-deploy-phase4 ENV=dev:
+deploy-phase4 env="dev":
 	@echo "Deploying Phase 4: Advanced Configuration"
-	./scripts/deploy-phases.sh -e {{ENV}} -p 4
+	./scripts/deploy-phases.sh -e {{env}} -p 4
 
 # Deploy to specific phase
-deploy-to-phase ENV=dev PHASE=1:
-	@echo "Deploying to Phase {{PHASE}}"
-	./scripts/deploy-phases.sh -e {{ENV}} -p {{PHASE}}
+deploy-to-phase phase env="dev":
+	@echo "Deploying to Phase {{phase}}"
+	./scripts/deploy-phases.sh -e {{env}} -p {{phase}}
 
 # Deploy everything
-deploy-all ENV=dev:
+deploy-all env="dev":
 	@echo "Deploying all phases"
-	./scripts/deploy-phases.sh -e {{ENV}} -p 4
+	./scripts/deploy-phases.sh -e {{env}} -p 4
 
 # =============================================================================
 # NixOS Image Building
@@ -140,11 +136,16 @@ colmena-apply-host host:
 # Test NixOS configurations
 test-configs:
 	@echo "Testing all NixOS configurations..."
-	@for host in caddy postgresql authentik nextcloud media monitoring guacamole vaultwarden dns mail; do \
-		echo "Testing $$host..."; \
-		nix build .#nixosConfigurations.$$host.config.system.build.toplevel >/dev/null 2>&1 && \
-		echo "  ✓ $$host" || echo "  ✗ $$host"; \
-	done
+	./scripts/deploy-test.sh caddy
+	./scripts/deploy-test.sh postgresql  
+	./scripts/deploy-test.sh authentik
+	./scripts/deploy-test.sh nextcloud
+	./scripts/deploy-test.sh media
+	./scripts/deploy-test.sh monitoring
+	./scripts/deploy-test.sh guacamole
+	./scripts/deploy-test.sh vaultwarden
+	./scripts/deploy-test.sh dns
+	./scripts/deploy-test.sh mail
 
 # Validate flake
 validate-flake:
@@ -153,14 +154,14 @@ validate-flake:
 	@echo "✓ Flake validation passed"
 
 # Show deployment status
-deployment-status ENV=dev:
-	@echo "Deployment Status for {{ENV}} environment:"
-	@if [ -f "{{TF_DIR}}/terraform.tfstate" ]; then \
+deployment-status env="dev":
+	@echo "Deployment Status for {{env}} environment:"
+	@if [ -f "terraform/environments/{{env}}/terraform.tfstate" ]; then \
 		echo "  ✓ Phase 1: Infrastructure containers created"; \
 	else \
 		echo "  ✗ Phase 1: Infrastructure containers not created"; \
 	fi
-	@echo "  Next step: just deploy-phase1 ENV={{ENV}}"
+	@echo "  Next step: just deploy-phase1 env={{env}}"
 
 # =============================================================================
 # Utility Commands
@@ -202,6 +203,6 @@ show-help:
 	@echo "  just validate-flake                 # Validate flake"
 	@echo ""
 	@echo "Examples:"
-	@echo "  just deploy-phase1 ENV=staging      # Deploy Phase 1 to staging"
-	@echo "  just build-images -c                # Clean and build all images"
-	@echo "  just tf-plan ENV=prod               # Plan production changes"
+	@echo "  just deploy-phase1 env=staging      # Deploy Phase 1 to staging"
+	@echo "  just build-images                   # Build all images"
+	@echo "  just tf-plan env=prod               # Plan production changes"
