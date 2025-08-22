@@ -6,8 +6,13 @@ images/
 terraform/.terraform/
 terraform/phases/.terraform/
 terraform/environments/*/.terraform/
+**/.terraform/
 *.tfstate
 *.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+*.plan
 .terraform.lock.hcl
 
 # SOPS decrypted files (security)
