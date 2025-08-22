@@ -65,13 +65,13 @@ variable "pm_tls_insecure" {
 variable "node" {
   description = "Proxmox node name"
   type        = string
-  default     = "proxmox"
+  default     = "kuiper-belt"
 }
 
 variable "pool" {
   description = "Proxmox resource pool"
   type        = string
-  default     = "nixmox"
+  default     = ""
 }
 
 variable "bridge" {
@@ -83,7 +83,7 @@ variable "bridge" {
 variable "cidr" {
   description = "Network CIDR for containers"
   type        = string
-  default     = "10.10.0.0/24"
+  default     = "192.168.99.0/24"
 }
 
 variable "storage" {
@@ -187,100 +187,110 @@ locals {
   # Container definitions by phase
   phase1_containers = {
     postgresql = {
-      vmid = 202
+      vmid = 902
       hostname = "postgresql"
       cores = 4
       memory = 2048
       disk_gb = 20
-      ip = "10.10.0.11"
-      gw = "10.10.0.1"
+      ip = "192.168.99.11"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     caddy = {
-      vmid = 201
+      vmid = 901
       hostname = "caddy"
       cores = 2
       memory = 1024
       disk_gb = 8
-      ip = "10.10.0.10"
-      gw = "10.10.0.1"
+      ip = "192.168.99.10"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
   }
 
   phase2_containers = {
     authentik = {
-      vmid = 203
+      vmid = 903
       hostname = "authentik"
       cores = 2
       memory = 2048
       disk_gb = 16
-      ip = "10.10.0.12"
-      gw = "10.10.0.1"
+      ip = "192.168.99.12"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     dns = {
-      vmid = 204
+      vmid = 904
       hostname = "dns"
       cores = 1
       memory = 512
       disk_gb = 8
-      ip = "10.10.0.13"
-      gw = "10.10.0.1"
+      ip = "192.168.99.13"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
   }
 
   phase3_containers = {
     vaultwarden = {
-      vmid = 205
+      vmid = 905
       hostname = "vaultwarden"
       cores = 2
       memory = 1024
       disk_gb = 16
-      ip = "10.10.0.14"
-      gw = "10.10.0.1"
+      ip = "192.168.99.14"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     nextcloud = {
-      vmid = 206
+      vmid = 906
       hostname = "nextcloud"
       cores = 4
       memory = 4096
       disk_gb = 32
-      ip = "10.10.0.15"
-      gw = "10.10.0.1"
+      ip = "192.168.99.15"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     guacamole = {
-      vmid = 207
+      vmid = 907
       hostname = "guacamole"
       cores = 2
       memory = 2048
       disk_gb = 16
-      ip = "10.10.0.16"
-      gw = "10.10.0.1"
+      ip = "192.168.99.16"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     media = {
-      vmid = 208
+      vmid = 908
       hostname = "media"
       cores = 2
       memory = 2048
       disk_gb = 32
-      ip = "10.10.0.17"
-      gw = "10.10.0.1"
+      ip = "192.168.99.17"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     monitoring = {
-      vmid = 209
+      vmid = 909
       hostname = "monitoring"
       cores = 2
       memory = 1024
       disk_gb = 16
-      ip = "10.10.0.18"
-      gw = "10.10.0.1"
+      ip = "192.168.99.18"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
     mail = {
-      vmid = 210
+      vmid = 910
       hostname = "mail"
       cores = 2
       memory = 1024
       disk_gb = 16
-      ip = "10.10.0.19"
-      gw = "10.10.0.1"
+      ip = "192.168.99.19"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
     }
   }
 
@@ -331,7 +341,7 @@ module "authentik_outposts" {
   count  = var.deployment_phase >= 4 ? 1 : 0
   source = "../modules/authentik"
 
-  authentik_url = "http://10.10.0.12:9000"
+  authentik_url = "http://192.168.99.12:9000"
   authentik_bootstrap_token = try(local.secrets_data.authentik_bootstrap_token, var.authentik_bootstrap_token)
   
   ldap_outpost_config = {

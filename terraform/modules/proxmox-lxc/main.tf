@@ -203,6 +203,8 @@ resource "null_resource" "bootstrap_config" {
       nixos_version      = self.triggers.nixos_version
       privileged         = "false"
       ssh_authorized_key = self.triggers.ssh_key
+      ip                 = self.triggers.ip
+      gw                 = each.value.gw
     })
     destination = "/root/configuration.${self.triggers.vmid}.nix"
   }
@@ -212,9 +214,17 @@ resource "null_resource" "bootstrap_config" {
       #!/usr/bin/env bash
       set -euo pipefail
       pct push ${self.triggers.vmid} /root/configuration.${self.triggers.vmid}.nix /etc/nixos/configuration.nix
-      # Run internal nixos-rebuild to activate config (enables SSH, etc.).
-      # If nixos-rebuild is missing, fall back to running via nix.
-      pct exec ${self.triggers.vmid} -- sh -lc 'if [ -f /etc/set-environment ]; then . /etc/set-environment; fi; if command -v nixos-rebuild >/dev/null 2>&1; then nixos-rebuild switch --fast; else nix run nixpkgs#nixos-rebuild -- switch --fast; fi'
+      
+      # Follow the official NixOS Proxmox LXC setup procedure:
+      # 1. First run nix-channel --update to ensure channels are available
+      # 2. Then run nixos-rebuild switch --upgrade
+      echo "Running nix-channel --update..."
+      pct exec ${self.triggers.vmid} -- sh -lc 'source /etc/set-environment; nix-channel --update'
+      
+      echo "Running nixos-rebuild switch --upgrade..."
+      pct exec ${self.triggers.vmid} -- sh -lc 'source /etc/set-environment; nixos-rebuild switch --upgrade'
+      
+      echo "Bootstrap complete for ${self.triggers.hostname} (VMID: ${self.triggers.vmid})"
     EOT
     destination = "/root/bootstrap_nixos_${self.triggers.vmid}.sh"
   }

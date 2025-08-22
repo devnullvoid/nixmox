@@ -9,10 +9,10 @@
   };
 
   provider.proxmox = {
-    endpoint = "${var.proxmox_url}";
-    username = "${var.proxmox_username}";
-    password = "${var.proxmox_password}";
-    insecure = var.proxmox_insecure;
+    endpoint = lib.terraformRef "var.proxmox_url";
+    username = lib.terraformRef "var.proxmox_username";
+    password = lib.terraformRef "var.proxmox_password";
+    insecure = lib.terraformRef "var.proxmox_insecure";
     ssh = {
       agent = true;
     };
@@ -54,13 +54,13 @@
   data = {
     proxmox_virtual_environment_nodes = {
       available = {
-        node_name = var.proxmox_node_name;
+        node_name = lib.terraformRef "var.proxmox_node_name";
       };
     };
 
     proxmox_virtual_environment_storage_classes = {
       available = {
-        node_name = var.proxmox_node_name;
+        node_name = lib.terraformRef "var.proxmox_node_name";
         content_type = "rootdir";
       };
     };
@@ -70,45 +70,45 @@
   resource = {
     # Caddy reverse proxy container
     proxmox_virtual_environment_container.caddy = {
-      node_name = var.proxmox_node_name;
+      node_name = lib.terraformRef "var.proxmox_node_name";
       vm_id = 100;
       name = "caddy";
       description = "Caddy reverse proxy and TLS termination";
-      tags = ["nixos", "infra", "core"];
+      tags = [ "nixos" "infra" "core" ];
 
       # Container specifications
-      cores = var.container_cpus;
-      memory = var.container_memory;
-      swap = var.container_swap;
+      cores = lib.terraformRef "var.container_cpus";
+      memory = lib.terraformRef "var.container_memory";
+      swap = lib.terraformRef "var.container_swap";
       disk = {
-        datastore_id = var.storage_pool;
-        size = var.container_disk;
+        datastore_id = lib.terraformRef "var.storage_pool";
+        size = lib.terraformRef "var.container_disk";
       };
 
       # Network configuration
       network_interface = {
         name = "eth0";
-        bridge = var.network_bridge;
+        bridge = lib.terraformRef "var.network_bridge";
         ip_address = "10.10.0.10";
-        ip_gateway = var.network_gateway;
-        ip_cidr = var.network_cidr;
+        ip_gateway = lib.terraformRef "var.network_gateway";
+        ip_cidr = lib.terraformRef "var.network_cidr";
       };
 
       # NixOS configuration
       initialization = {
         hostname = "caddy.nixmox.lan";
-        dns = var.network_dns;
+        dns = lib.terraformRef "var.network_dns";
         user_account = {
           username = "root";
-          password = var.container_root_password;
-          ssh_keys = var.container_ssh_keys;
+          password = lib.terraformRef "var.container_root_password";
+          ssh_keys = lib.terraformRef "var.container_ssh_keys";
         };
       };
 
       # Operating system
       operating_system = {
         type = "l26";
-        template_file_id = var.nixos_template_id;
+        template_file_id = lib.terraformRef "var.nixos_template_id";
       };
 
       # Start on boot
@@ -121,41 +121,41 @@
 
     # PostgreSQL database container
     proxmox_virtual_environment_container.postgresql = {
-      node_name = var.proxmox_node_name;
+      node_name = lib.terraformRef "var.proxmox_node_name";
       vm_id = 101;
       name = "postgresql";
       description = "PostgreSQL database server";
-      tags = ["nixos", "infra", "database"];
+      tags = [ "nixos" "infra" "database" ];
 
-      cores = var.container_cpus;
-      memory = var.container_memory;
-      swap = var.container_swap;
+      cores = lib.terraformRef "var.container_cpus";
+      memory = lib.terraformRef "var.container_memory";
+      swap = lib.terraformRef "var.container_swap";
       disk = {
-        datastore_id = var.storage_pool;
-        size = var.container_disk;
+        datastore_id = lib.terraformRef "var.storage_pool";
+        size = lib.terraformRef "var.container_disk";
       };
 
       network_interface = {
         name = "eth0";
-        bridge = var.network_bridge;
+        bridge = lib.terraformRef "var.network_bridge";
         ip_address = "10.10.0.11";
-        ip_gateway = var.network_gateway;
-        ip_cidr = var.network_cidr;
+        ip_gateway = lib.terraformRef "var.network_gateway";
+        ip_cidr = lib.terraformRef "var.network_cidr";
       };
 
       initialization = {
         hostname = "postgresql.nixmox.lan";
-        dns = var.network_dns;
+        dns = lib.terraformRef "var.network_dns";
         user_account = {
           username = "root";
-          password = var.container_root_password;
-          ssh_keys = var.container_ssh_keys;
+          password = lib.terraformRef "var.container_root_password";
+          ssh_keys = lib.terraformRef "var.container_ssh_keys";
         };
       };
 
       operating_system = {
         type = "l26";
-        template_file_id = var.nixos_template_id;
+        template_file_id = lib.terraformRef "var.nixos_template_id";
       };
 
       startup = {
@@ -171,37 +171,37 @@
       vm_id = 102;
       name = "authentik";
       description = "Authentik identity provider";
-      tags = ["nixos", "infra", "auth"];
+      tags = [ "nixos" "infra" "auth" ];
 
-      cores = var.container_cpus;
-      memory = var.container_memory;
-      swap = var.container_swap;
+      cores = lib.terraformRef "var.container_cpus";
+      memory = lib.terraformRef "var.container_memory";
+      swap = lib.terraformRef "var.container_swap";
       disk = {
-        datastore_id = var.storage_pool;
-        size = var.container_disk;
+        datastore_id = lib.terraformRef "var.storage_pool";
+        size = lib.terraformRef "var.container_disk";
       };
 
       network_interface = {
         name = "eth0";
-        bridge = var.network_bridge;
+        bridge = lib.terraformRef "var.network_bridge";
         ip_address = "10.10.0.12";
-        ip_gateway = var.network_gateway;
-        ip_cidr = var.network_cidr;
+        ip_gateway = lib.terraformRef "var.network_gateway";
+        ip_cidr = lib.terraformRef "var.network_cidr";
       };
 
       initialization = {
         hostname = "authentik.nixmox.lan";
-        dns = var.network_dns;
+        dns = lib.terraformRef "var.network_dns";
         user_account = {
           username = "root";
-          password = var.container_root_password;
-          ssh_keys = var.container_ssh_keys;
+          password = lib.terraformRef "var.container_root_password";
+          ssh_keys = lib.terraformRef "var.container_ssh_keys";
         };
       };
 
       operating_system = {
         type = "l26";
-        template_file_id = var.nixos_template_id;
+        template_file_id = lib.terraformRef "var.nixos_template_id";
       };
 
       startup = {
@@ -217,37 +217,37 @@
       vm_id = 103;
       name = "dns";
       description = "DNS server (Unbound)";
-      tags = ["nixos", "infra", "core"];
+      tags = [ "nixos" "infra" "core" ];
 
-      cores = var.container_cpus;
-      memory = var.container_memory;
-      swap = var.container_swap;
+      cores = lib.terraformRef "var.container_cpus";
+      memory = lib.terraformRef "var.container_memory";
+      swap = lib.terraformRef "var.container_swap";
       disk = {
-        datastore_id = var.storage_pool;
-        size = var.container_disk;
+        datastore_id = lib.terraformRef "var.storage_pool";
+        size = lib.terraformRef "var.container_disk";
       };
 
       network_interface = {
         name = "eth0";
-        bridge = var.network_bridge;
+        bridge = lib.terraformRef "var.network_bridge";
         ip_address = "10.10.0.13";
-        ip_gateway = var.network_gateway;
-        ip_cidr = var.network_cidr;
+        ip_gateway = lib.terraformRef "var.network_gateway";
+        ip_cidr = lib.terraformRef "var.network_cidr";
       };
 
       initialization = {
         hostname = "dns.nixmox.lan";
-        dns = var.network_dns;
+        dns = lib.terraformRef "var.network_dns";
         user_account = {
           username = "root";
-          password = var.container_root_password;
-          ssh_keys = var.container_ssh_keys;
+          password = lib.terraformRef "var.container_root_password";
+          ssh_keys = lib.terraformRef "var.container_ssh_keys";
         };
       };
 
       operating_system = {
         type = "l26";
-        template_file_id = var.nixos_template_id;
+        template_file_id = lib.terraformRef "var.nixos_template_id";
       };
 
       startup = {

@@ -1,23 +1,30 @@
 # Minimal NixOS configuration for LXC container bootstrap
 # This file is templated by Terraform and pushed to each container
+# Based on: https://nixos.wiki/wiki/Proxmox_Linux_Container
 
-{ config, pkgs, ... }:
+{ config, modulesPath, pkgs, lib, ... }:
 
 {
-  imports = [
-    <nixpkgs/nixos/modules/virtualisation/lxc-container.nix>
-  ];
-
-  # Basic system configuration
-  system.stateVersion = "${nixos_version}";
-
-  # Hostname
-  networking.hostName = "${hostname}";
-
-  # Enable SSH
-  services.openssh.enable = true;
-  services.openssh.settings.PermitRootLogin = "yes";
-  services.openssh.settings.PasswordAuthentication = false;
+  imports = [ (modulesPath + "/virtualisation/proxmox-lxc.nix") ];
+  
+  nix.settings = { sandbox = false; };
+  
+  proxmoxLXC = {
+    manageNetwork = false;
+    privileged = false;
+  };
+  
+  security.pam.services.sshd.allowNullPassword = true;
+  
+  services.openssh = {
+    enable = true;
+    openFirewall = true;
+    settings = {
+      PermitRootLogin = "yes";
+      PasswordAuthentication = false;
+      PermitEmptyPasswords = false;
+    };
+  };
 
   # SSH authorized keys
   users.users.root.openssh.authorizedKeys.keys = [
@@ -34,21 +41,27 @@
     tmux
   ];
 
-  # Enable Nix daemon
-  services.nix-daemon.enable = true;
-
-  # LXC-specific settings
-  virtualisation.lxc.enable = true;
-
-  # Container is unprivileged
-  virtualisation.lxc.unprivileged = ${privileged};
-
-  # Enable nesting for Nix builds
-  boot.enableContainers = true;
-
-  # Basic networking
+  # Basic networking - explicitly configure static IP from Proxmox
   networking.useDHCP = false;
-  networking.interfaces.eth0.useDHCP = true;
+  networking.interfaces.eth0 = {
+    useDHCP = false;
+    ipv4.addresses = [
+      {
+        address = "${ip}";
+        prefixLength = 24;
+      }
+    ];
+    ipv4.routes = [
+      {
+        address = "0.0.0.0";
+        prefixLength = 0;
+        via = "${gw}";
+      }
+    ];
+  };
+  
+  # DNS configuration
+  networking.nameservers = [ "8.8.8.8" "1.1.1.1" ];
 
   # Time zone
   time.timeZone = "UTC";
@@ -66,4 +79,9 @@
 
   # Allow unfree packages (needed for some proprietary software)
   nixpkgs.config.allowUnfree = true;
+
+  system.stateVersion = "${nixos_version}";
+  
+  # Hostname
+  networking.hostName = "${hostname}";
 }
