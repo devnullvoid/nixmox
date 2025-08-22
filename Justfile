@@ -1,5 +1,5 @@
 # NixMox Deployment Justfile
-# Integrates Terranix, Terraform, and phased deployment
+# Integrates Terraform and phased deployment
 
 # Global settings
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -9,35 +9,46 @@ default:
 	@just --list
 
 # =============================================================================
-# Terranix and Terraform Commands
+# Terraform Commands (using existing Terraform config)
 # =============================================================================
 
-# Render Terranix to Terraform JSON
-terranix-render env="dev":
-	mkdir -p terraform/environments/{{env}}
-	nix run nixpkgs#terranix -- terranix/{{env}}.nix > terraform/environments/{{env}}/main.tf.json
-	@echo "Rendered terranix/{{env}}.nix -> terraform/environments/{{env}}/main.tf.json"
-
-# Terraform commands (always render first)
+# Terraform commands for the main configuration
 tf-init env="dev":
-	just terranix-render env={{env}}
-	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} init
+	@echo "Initializing Terraform for {{env}} environment..."
+	cd terraform && terraform init
 
 tf-plan env="dev":
-	just terranix-render env={{env}}
-	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} plan
+	@echo "Planning Terraform changes for {{env}} environment..."
+	cd terraform && terraform plan -var="environment={{env}}"
 
 tf-apply env="dev":
-	just terranix-render env={{env}}
-	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} apply
+	@echo "Applying Terraform changes for {{env}} environment..."
+	cd terraform && terraform apply -var="environment={{env}}"
 
 tf-apply-auto env="dev":
-	just terranix-render env={{env}}
-	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} apply -auto-approve
+	@echo "Applying Terraform changes for {{env}} environment (auto-approve)..."
+	cd terraform && terraform apply -auto-approve -var="environment={{env}}"
 
 tf-destroy env="dev":
-	just terranix-render env={{env}}
-	nix run nixpkgs#terraform -- -chdir=terraform/environments/{{env}} destroy
+	@echo "Destroying Terraform resources for {{env}} environment..."
+	cd terraform && terraform destroy -var="environment={{env}}"
+
+# Terraform commands for phased deployment
+tf-init-phases env="dev":
+	@echo "Initializing Terraform phases for {{env}} environment..."
+	cd terraform/phases && terraform init
+
+tf-plan-phase env="dev" phase="1":
+	@echo "Planning Phase {{phase}} for {{env}} environment..."
+	cd terraform/phases && terraform plan -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
+
+tf-apply-phase env="dev" phase="1":
+	@echo "Applying Phase {{phase}} for {{env}} environment..."
+	cd terraform/phases && terraform apply -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
+
+tf-apply-phase-auto env="dev" phase="1":
+	@echo "Applying Phase {{phase}} for {{env}} environment (auto-approve)..."
+	cd terraform/phases && terraform apply -auto-approve -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
 
 # =============================================================================
 # Phased Deployment Commands
@@ -102,7 +113,7 @@ colmena-build:
 	nix run nixpkgs#colmena -- build
 
 colmena-apply:
-	nix run nixpkgs#terraform -- apply
+	nix run nixpkgs#colmena -- apply
 
 # Deploy by tags
 colmena-apply-infra:
@@ -111,7 +122,7 @@ colmena-apply-infra:
 
 colmena-apply-core:
 	@echo "Deploying core services (caddy, dns, postgresql)"
-	nix run nixpkgs#terraform -- apply --on @core
+	nix run nixpkgs#colmena -- apply --on @core
 
 colmena-apply-auth:
 	@echo "Deploying authentication (authentik)"
@@ -156,7 +167,7 @@ validate-flake:
 # Show deployment status
 deployment-status env="dev":
 	@echo "Deployment Status for {{env}} environment:"
-	@if [ -f "terraform/environments/{{env}}/terraform.tfstate" ]; then \
+	@if [ -f "terraform/phases/terraform.tfstate" ]; then \
 		echo "  ✓ Phase 1: Infrastructure containers created"; \
 	else \
 		echo "  ✗ Phase 1: Infrastructure containers not created"; \
@@ -171,8 +182,8 @@ deployment-status env="dev":
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf images/
-	rm -rf terraform/environments/*/main.tf.json
-	rm -rf terraform/environments/*/.terraform
+	rm -rf terraform/.terraform
+	rm -rf terraform/phases/.terraform
 	@echo "✓ Cleaned"
 
 # Show help
@@ -185,14 +196,20 @@ show-help:
 	@echo "  just deploy-phase3 ENV=dev          # Deploy applications"
 	@echo "  just deploy-phase4 ENV=dev          # Deploy advanced config"
 	@echo ""
+	@echo "Terraform (Main):"
+	@echo "  just tf-init ENV=dev                # Initialize main Terraform"
+	@echo "  just tf-plan ENV=dev                # Plan main Terraform changes"
+	@echo "  just tf-apply ENV=dev               # Apply main Terraform changes"
+	@echo ""
+	@echo "Terraform (Phased):"
+	@echo "  just tf-init-phases ENV=dev         # Initialize phased Terraform"
+	@echo "  just tf-plan-phase ENV=dev PHASE=1 # Plan specific phase"
+	@echo "  just tf-apply-phase ENV=dev PHASE=1 # Apply specific phase"
+	@echo ""
 	@echo "Image Building:"
 	@echo "  just build-images                    # Build all LXC images"
 	@echo "  just build-host caddy               # Build specific host"
 	@echo "  just list-hosts                     # List available hosts"
-	@echo ""
-	@echo "Terraform:"
-	@echo "  just tf-plan ENV=dev                # Plan Terraform changes"
-	@echo "  just tf-apply ENV=dev               # Apply Terraform changes"
 	@echo ""
 	@echo "Colmena:"
 	@echo "  just colmena-apply-infra            # Deploy infrastructure"
@@ -205,4 +222,4 @@ show-help:
 	@echo "Examples:"
 	@echo "  just deploy-phase1 env=staging      # Deploy Phase 1 to staging"
 	@echo "  just build-images                   # Build all images"
-	@echo "  just tf-plan env=prod               # Plan production changes"
+	@echo "  just tf-plan-phase env=prod PHASE=2 # Plan Phase 2 for production"

@@ -1,0 +1,69 @@
+# Minimal NixOS configuration for LXC container bootstrap
+# This file is templated by Terraform and pushed to each container
+
+{ config, pkgs, ... }:
+
+{
+  imports = [
+    <nixpkgs/nixos/modules/virtualisation/lxc-container.nix>
+  ];
+
+  # Basic system configuration
+  system.stateVersion = "${nixos_version}";
+
+  # Hostname
+  networking.hostName = "${hostname}";
+
+  # Enable SSH
+  services.openssh.enable = true;
+  services.openssh.settings.PermitRootLogin = "yes";
+  services.openssh.settings.PasswordAuthentication = false;
+
+  # SSH authorized keys
+  users.users.root.openssh.authorizedKeys.keys = [
+    "${ssh_authorized_key}"
+  ];
+
+  # Basic packages
+  environment.systemPackages = with pkgs; [
+    vim
+    wget
+    curl
+    git
+    htop
+    tmux
+  ];
+
+  # Enable Nix daemon
+  services.nix-daemon.enable = true;
+
+  # LXC-specific settings
+  virtualisation.lxc.enable = true;
+
+  # Container is unprivileged
+  virtualisation.lxc.unprivileged = ${privileged};
+
+  # Enable nesting for Nix builds
+  boot.enableContainers = true;
+
+  # Basic networking
+  networking.useDHCP = false;
+  networking.interfaces.eth0.useDHCP = true;
+
+  # Time zone
+  time.timeZone = "UTC";
+
+  # Locale
+  i18n.defaultLocale = "en_US.UTF-8";
+  i18n.supportedLocales = [ "en_US.UTF-8/UTF-8" ];
+
+  # Security settings
+  security.sudo.wheelNeedsPassword = false;
+  users.users.root.extraGroups = [ "wheel" ];
+
+  # Enable flakes
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  # Allow unfree packages (needed for some proprietary software)
+  nixpkgs.config.allowUnfree = true;
+}

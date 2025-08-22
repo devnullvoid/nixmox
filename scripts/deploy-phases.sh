@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # NixMox Phased Deployment Script
-# This script handles the deployment of infrastructure in logical phases
+# This script handles the deployment of infrastructure using existing Terraform configuration
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -36,7 +36,7 @@ show_usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Deploy NixMox infrastructure in phases.
+Deploy NixMox infrastructure using existing Terraform configuration.
 
 OPTIONS:
     -e, --environment ENV    Environment to deploy to (dev, staging, prod)
@@ -45,9 +45,9 @@ OPTIONS:
     -h, --help              Show this help message
 
 PHASES:
-    1 - Infrastructure Foundation (Proxmox LXC containers)
-    2 - Core Services (Caddy, PostgreSQL, DNS, Authentik)
-    3 - Application Services (Nextcloud, Media, Monitoring, etc.)
+    1 - Infrastructure Foundation (PostgreSQL, Caddy)
+    2 - Core Services (Authentik, DNS)
+    3 - Application Services (Vaultwarden, Nextcloud, Guacamole, Media, Monitoring, Mail)
     4 - Advanced Configuration (Authentik outposts, OAuth2)
 
 EXAMPLES:
@@ -102,23 +102,35 @@ if [[ ! "$PHASE" =~ ^[1-4]$ ]]; then
 fi
 
 # Set paths
-TERRANIX_FILE="terranix/${ENVIRONMENT}.nix"
-TF_DIR="terraform/environments/${ENVIRONMENT}"
-PHASES_DIR="terraform/phases"
+TF_DIR="terraform/phases"
+SECRETS_FILE="terraform/environments/${ENVIRONMENT}/secrets.sops.yaml"
 
 print_status "Deploying Phase $PHASE to $ENVIRONMENT environment"
 
-# Function to render Terranix to Terraform
-render_terranix() {
-    print_status "Rendering Terranix configuration..."
-    if [[ ! -f "$TERRANIX_FILE" ]]; then
-        print_error "Terranix file not found: $TERRANIX_FILE"
+# Function to check prerequisites
+check_prerequisites() {
+    print_status "Checking prerequisites..."
+    
+    # Check if Terraform is available
+    if ! command -v terraform >/dev/null 2>&1; then
+        print_error "Terraform is not installed or not in PATH"
         exit 1
     fi
     
-    mkdir -p "$TF_DIR"
-    nix run nixpkgs#terranix -- "$TERRANIX_FILE" > "$TF_DIR/main.tf.json"
-    print_success "Rendered $TERRANIX_FILE -> $TF_DIR/main.tf.json"
+    # Check if SOPS is available
+    if ! command -v sops >/dev/null 2>&1; then
+        print_error "SOPS is not installed or not in PATH"
+        exit 1
+    fi
+    
+    # Check if secrets file exists
+    if [[ ! -f "$SECRETS_FILE" ]]; then
+        print_error "Secrets file not found: $SECRETS_FILE"
+        print_status "Please create the secrets file with required Proxmox credentials"
+        exit 1
+    fi
+    
+    print_success "Prerequisites check passed"
 }
 
 # Function to run Terraform commands
@@ -134,13 +146,13 @@ run_terraform() {
             terraform init
             ;;
         plan)
-            terraform plan $args
+            terraform plan -var="environment=${ENVIRONMENT}" -var="deployment_phase=${PHASE}" $args
             ;;
         apply)
-            terraform apply $args
+            terraform apply -var="environment=${ENVIRONMENT}" -var="deployment_phase=${PHASE}" $args
             ;;
         destroy)
-            terraform destroy $args
+            terraform destroy -var="environment=${ENVIRONMENT}" -var="deployment_phase=${PHASE}" $args
             ;;
         *)
             print_error "Unknown terraform command: $cmd"
@@ -154,9 +166,7 @@ run_terraform() {
 # Function to deploy Phase 1: Infrastructure Foundation
 deploy_phase1() {
     print_status "Deploying Phase 1: Infrastructure Foundation"
-    print_status "This will create base Proxmox LXC containers"
-    
-    render_terranix
+    print_status "This will create base Proxmox LXC containers (PostgreSQL, Caddy)"
     
     # Check if we need to initialize
     if [[ ! -d "$TF_DIR/.terraform" ]]; then
@@ -178,7 +188,7 @@ deploy_phase1() {
 # Function to deploy Phase 2: Core Services
 deploy_phase2() {
     print_status "Deploying Phase 2: Core Services"
-    print_status "This will deploy NixOS configurations to the containers"
+    print_status "This will deploy Authentik and DNS containers"
     
     # Check if Phase 1 is complete
     if [[ ! -f "$TF_DIR/terraform.tfstate" ]]; then
@@ -186,13 +196,13 @@ deploy_phase2() {
         exit 1
     fi
     
-    # Build NixOS images
-    print_status "Building NixOS LXC images..."
-    just build-images
+    # Plan and apply Phase 2
+    run_terraform "plan" "$ADDITIONAL_ARGS"
     
-    # Deploy core services using Colmena
-    print_status "Deploying core services..."
-    just colmena-apply-infra
+    print_warning "Review the plan above. Press Enter to continue or Ctrl+C to abort..."
+    read -r
+    
+    run_terraform "apply" "$ADDITIONAL_ARGS"
     
     print_success "Phase 2 deployment completed!"
     print_status "Core services are now running on the containers"
@@ -201,17 +211,21 @@ deploy_phase2() {
 # Function to deploy Phase 3: Application Services
 deploy_phase3() {
     print_status "Deploying Phase 3: Application Services"
-    print_status "This will deploy application services to the containers"
+    print_status "This will deploy application containers (Vaultwarden, Nextcloud, Guacamole, Media, Monitoring, Mail)"
     
     # Check if Phase 2 is complete
-    if ! just colmena-apply-infra >/dev/null 2>&1; then
+    if ! terraform -chdir="$TF_DIR" output -raw phase2_ready 2>/dev/null | grep -q "true"; then
         print_error "Phase 2 must be completed first. Run: $0 -e $ENVIRONMENT -p 2"
         exit 1
     fi
     
-    # Deploy application services
-    print_status "Deploying application services..."
-    just colmena-apply-services
+    # Plan and apply Phase 3
+    run_terraform "plan" "$ADDITIONAL_ARGS"
+    
+    print_warning "Review the plan above. Press Enter to continue or Ctrl+C to abort..."
+    read -r
+    
+    run_terraform "apply" "$ADDITIONAL_ARGS"
     
     print_success "Phase 3 deployment completed!"
     print_status "Application services are now running on the containers"
@@ -223,14 +237,18 @@ deploy_phase4() {
     print_status "This will configure Authentik outposts and OAuth2 providers"
     
     # Check if Phase 3 is complete
-    if ! just colmena-apply-services >/dev/null 2>&1; then
+    if ! terraform -chdir="$TF_DIR" output -raw phase3_ready 2>/dev/null | grep -q "true"; then
         print_error "Phase 3 must be completed first. Run: $0 -e $ENVIRONMENT -p 3"
         exit 1
     fi
     
-    # Deploy advanced configuration
-    print_status "Deploying advanced configuration..."
-    just colmena-apply-auth
+    # Plan and apply Phase 4
+    run_terraform "plan" "$ADDITIONAL_ARGS"
+    
+    print_warning "Review the plan above. Press Enter to continue or Ctrl+C to abort..."
+    read -r
+    
+    run_terraform "apply" "$ADDITIONAL_ARGS"
     
     print_success "Phase 4 deployment completed!"
     print_status "Advanced configuration is now active"
@@ -239,15 +257,19 @@ deploy_phase4() {
 # Main deployment logic
 case "$PHASE" in
     1)
+        check_prerequisites
         deploy_phase1
         ;;
     2)
+        check_prerequisites
         deploy_phase2
         ;;
     3)
+        check_prerequisites
         deploy_phase3
         ;;
     4)
+        check_prerequisites
         deploy_phase4
         ;;
     *)
@@ -261,18 +283,18 @@ print_status "Next steps:"
 case "$PHASE" in
     1)
         echo "  - Run: $0 -e $ENVIRONMENT -p 2"
-        echo "  - Or run: just deploy-phase2 ENV=$ENVIRONMENT"
+        echo "  - Or run: just deploy-phase2 env=$ENVIRONMENT"
         ;;
     2)
         echo "  - Run: $0 -e $ENVIRONMENT -p 3"
-        echo "  - Or run: just deploy-phase3 ENV=$ENVIRONMENT"
+        echo "  - Or run: just deploy-phase3 env=$ENVIRONMENT"
         ;;
     3)
         echo "  - Run: $0 -e $ENVIRONMENT -p 4"
-        echo "  - Or run: just deploy-phase4 ENV=$ENVIRONMENT"
+        echo "  - Or run: just deploy-phase4 env=$ENVIRONMENT"
         ;;
     4)
         echo "  - All phases completed!"
-        echo "  - Run: just deployment-status ENV=$ENVIRONMENT"
+        echo "  - Run: just deployment-status env=$ENVIRONMENT"
         ;;
 esac

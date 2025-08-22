@@ -1,63 +1,36 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-# Editor/IDE
-# .idea/
-# .vscode/
-
-# Nix build artifacts
-result*
-builds/
-*.tar.xz
+# Build artifacts
+images/
 *.tar.gz
-*.qcow2
-*.vmdk
-*.ova
 
 # Terraform
-**/.terraform/*
+terraform/.terraform/
+terraform/phases/.terraform/
+terraform/environments/*/.terraform/
 *.tfstate
 *.tfstate.*
-crash.log
-crash.*.log
-*.tfvars
-*.tfvars.json
-*.tfplan
-*.plan
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-.terraformrc
-terraform.rc
+.terraform.lock.hcl
 
-# Secrets: ignore backup and temp files (but keep tracked encrypted files)
-secrets/*.backup*
-secrets/*.bak
-secrets/sops-temp-*.yaml
+# SOPS decrypted files (security)
+**/secrets.decrypted.yaml
+**/secrets.decrypted.yml
+**/*.decrypted.*
+
+# Nix
+result/
+result-*
+.direnv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
