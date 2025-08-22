@@ -1,287 +1,178 @@
 # NixMox Deployment Guide
 
-This guide explains how to deploy NixMox infrastructure using the integrated Terranix, Terraform, and phased deployment system.
+## 🏗️ **Architecture Overview**
 
-## 🏗️ Architecture Overview
+NixMox uses a **phased deployment approach** with Terraform and NixOS:
 
-NixMox uses a **phased deployment approach** that separates infrastructure creation from service deployment:
+```
+Phase 1: Infrastructure Foundation
+├── PostgreSQL (VMID 902) - Database backend
+├── Caddy (VMID 901) - Reverse proxy & load balancer  
+├── DNS (VMID 904) - Internal DNS resolution
 
-- **Phase 1**: Create base Proxmox LXC containers
-- **Phase 2**: Deploy NixOS configurations to containers
-- **Phase 3**: Deploy application services
-- **Phase 4**: Configure advanced features (Authentik outposts, OAuth2)
+Phase 2: Core Services
+├── Authentik (VMID 903) - Identity & access management
+├── Vaultwarden (VMID 905) - Password manager
+├── Nextcloud (VMID 906) - File storage
+├── Guacamole (VMID 907) - Remote desktop gateway
+├── Media (VMID 908) - Media server
+├── Monitoring (VMID 909) - System monitoring
+└── Mail (VMID 910) - Email services
+```
 
-## 🚀 Quick Start
+## 🚀 **Quick Start Deployment**
 
-### Prerequisites
+### 1. **Prerequisites**
+- Proxmox VE server running
+- Terraform installed
+- SOPS for secrets management
+- SSH key configured in `nixos/modules/common/default.nix`
 
-1. **Proxmox VE** running and accessible
-2. **NixOS LXC template** available on Proxmox
-3. **SSH access** to Proxmox node
-4. **Network configuration** planned (IP ranges, gateway, etc.)
+### 2. **Deploy Infrastructure (Phase 1)**
+```bash
+# From project root
+just deploy-phase1 env=dev
 
-### 1. Configure Environment
+# Or manually:
+cd terraform/phases
+terraform apply \
+  -var="environment=dev" \
+  -var="deployment_phase=1" \
+  -var="secrets_file=../environments/dev/secrets.sops.yaml" \
+  -auto-approve
+```
 
-Copy and customize the Terraform variables:
+### 3. **Deploy Core Services (Phase 2)**
+```bash
+just deploy-phase2 env=dev
+
+# Or manually:
+terraform apply \
+  -var="environment=dev" \
+  -var="deployment_phase=2" \
+  -var="secrets_file=../environments/dev/secrets.sops.yaml" \
+  -auto-approve
+```
+
+## 🔧 **Service Deployment**
+
+### **NixOS Configuration Deployment**
+After containers are running, deploy NixOS configurations:
 
 ```bash
-cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
-# Edit terraform.tfvars with your Proxmox details
+# Deploy to specific service
+nix run nixpkgs#nixos-rebuild -- switch \
+  --flake .#caddy \
+  --target-host root@caddy.nixmox.lan \
+  --fast
+
+# Deploy to all services
+nix run nixpkgs#colmena -- apply-local
 ```
 
-### 2. Deploy Infrastructure
-
+### **Service-Specific Deployment**
 ```bash
-# Phase 1: Create base LXC containers
-just deploy-phase1 ENV=dev
+# Deploy Authentik (includes database setup)
+just deploy-authentik
 
-# Phase 2: Deploy NixOS configurations
-just deploy-phase2 ENV=dev
-
-# Phase 3: Deploy application services
-just deploy-phase3 ENV=dev
-
-# Phase 4: Configure advanced features
-just deploy-phase4 ENV=dev
+# Deploy with custom configuration
+just deploy-authentik config=production
 ```
 
-## 📋 Detailed Deployment Process
+## 📁 **File Structure**
 
-### Phase 1: Infrastructure Foundation
+```
+nixmox/
+├── nixos/
+│   ├── hosts/           # Host-specific configurations
+│   ├── modules/         # Reusable NixOS modules
+│   └── flake.nix        # NixOS flake configuration
+├── terraform/
+│   ├── phases/          # Phased deployment configuration
+│   ├── modules/         # Terraform modules
+│   └── environments/    # Environment-specific settings
+├── scripts/             # Deployment scripts
+└── Justfile            # Deployment commands
+```
 
-Creates base Proxmox LXC containers with minimal configuration:
+## 🔑 **Key Configuration Files**
 
-- **Caddy** (10.10.0.10) - Reverse proxy and TLS termination
-- **PostgreSQL** (10.10.0.11) - Database server
-- **Authentik** (10.10.0.12) - Identity provider
-- **DNS** (10.10.0.13) - DNS server (Unbound)
+### **Terraform Configuration**
+- `terraform/phases/main.tf` - Main deployment configuration
+- `terraform/environments/dev/secrets.sops.yaml` - Encrypted secrets
+- `terraform/environments/dev/terraform.tfvars.example` - Configuration template
 
-**Commands:**
+### **NixOS Configuration**
+- `nixos/hosts/*.nix` - Host-specific configurations
+- `nixos/modules/*/default.nix` - Service modules
+- `nixos/modules/common/default.nix` - Common configuration (SSH, users)
+
+## 🚨 **Troubleshooting**
+
+### **Container Access Issues**
 ```bash
-# Plan the deployment
-just tf-plan ENV=dev
+# Check container status
+just deployment-status env=dev
 
-# Apply the deployment
-just deploy-phase1 ENV=dev
+# SSH to container
+ssh root@caddy.nixmox.lan
+
+# Access via Proxmox console
+# Go to Proxmox UI → Container → Console
 ```
 
-### Phase 2: Core Services
-
-Deploys NixOS configurations to the containers:
-
-1. **Build LXC images** from NixOS configurations
-2. **Deploy core services** using Colmena
-3. **Verify connectivity** between containers
-
-**Commands:**
-```bash
-# Build all LXC images
-just build-images
-
-# Deploy core services
-just deploy-phase2 ENV=dev
-```
-
-### Phase 3: Application Services
-
-Deploys application services to the containers:
-
-- Nextcloud, Media services, Monitoring, etc.
-- Configures inter-service communication
-- Sets up authentication flows
-
-**Commands:**
-```bash
-just deploy-phase3 ENV=dev
-```
-
-### Phase 4: Advanced Configuration
-
-Configures advanced features:
-
-- Authentik OAuth2 providers
-- Service integrations
-- Production hardening
-
-**Commands:**
-```bash
-just deploy-phase4 ENV=dev
-```
-
-## 🛠️ Available Commands
-
-### Phased Deployment
-
-```bash
-just deploy-phase1 ENV=dev          # Deploy infrastructure
-just deploy-phase2 ENV=dev          # Deploy core services
-just deploy-phase3 ENV=dev          # Deploy applications
-just deploy-phase4 ENV=dev          # Deploy advanced config
-just deploy-all ENV=dev             # Deploy everything
-```
-
-### Image Building
-
-```bash
-just build-images                    # Build all LXC images
-just build-host caddy               # Build specific host
-just list-hosts                     # List available hosts
-```
-
-### Terraform Operations
-
-```bash
-just tf-init ENV=dev                # Initialize Terraform
-just tf-plan ENV=dev                # Plan changes
-just tf-apply ENV=dev               # Apply changes
-just tf-destroy ENV=dev             # Destroy infrastructure
-```
-
-### Colmena Deployment
-
-```bash
-just colmena-apply-infra            # Deploy infrastructure
-just colmena-apply-services         # Deploy application services
-just colmena-apply-auth             # Deploy authentication
-```
-
-### Development and Testing
-
-```bash
-just test-configs                   # Test all NixOS configs
-just validate-flake                 # Validate flake
-just deployment-status ENV=dev      # Show deployment status
-```
-
-## 🔧 Configuration
-
-### Environment-Specific Settings
-
-Create environment-specific configurations:
-
-```bash
-# Development
-cp terranix/dev.nix terranix/staging.nix
-cp terranix/dev.nix terranix/prod.nix
-
-# Customize each environment file
-```
-
-### Terraform Variables
-
-Key variables to configure:
-
-- `proxmox_url` - Proxmox API endpoint
-- `proxmox_username` - Proxmox username
-- `proxmox_password` - Proxmox password
-- `network_gateway` - Network gateway IP
-- `proxmox_node_name` - Target Proxmox node
-- `nixos_template_id` - LXC template to use
-
-### Network Configuration
-
-Default network layout:
-
-```
-Network: 10.10.0.0/24
-Gateway: 10.10.0.1
-Caddy:   10.10.0.10
-PostgreSQL: 10.10.0.11
-Authentik: 10.10.0.12
-DNS:     10.10.0.13
-```
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-1. **Terraform initialization fails**
-   - Check Proxmox API connectivity
-   - Verify credentials and permissions
-
-2. **Container creation fails**
-   - Check storage pool availability
-   - Verify LXC template exists
-   - Check network bridge configuration
-
-3. **NixOS deployment fails**
-   - Verify container connectivity
-   - Check SSH key configuration
-   - Review NixOS configuration syntax
-
-### Debug Commands
-
+### **Deployment Failures**
 ```bash
 # Check Terraform state
-cd terraform/environments/dev
-terraform show
+cd terraform/phases
+terraform state list
 
-# Validate NixOS configurations
-just test-configs
+# Destroy and recreate specific container
+terraform destroy -target='module.lxc.proxmox_lxc.container["caddy"]'
 
-# Check deployment status
-just deployment-status ENV=dev
-
-# View Terraform plan
-just tf-plan ENV=dev
+# Redeploy phase
+just deploy-phase1 env=dev
 ```
 
-## 📚 Advanced Usage
-
-### Custom Host Configurations
-
-Add new hosts to the deployment:
-
-1. **Create NixOS host configuration** in `nixos/hosts/`
-2. **Add to Terranix configuration** in `terranix/proxmox-lxc.nix`
-3. **Update build script** in `scripts/build-images.sh`
-4. **Add to Colmena configuration** in `flake.nix`
-
-### Multi-Environment Deployment
-
-Deploy to different environments:
-
+### **NixOS Configuration Issues**
 ```bash
-# Development
-just deploy-phase1 ENV=dev
+# Check configuration syntax
+nix run nixpkgs#nixos-rebuild -- build --flake .#caddy
 
-# Staging
-just deploy-phase1 ENV=staging
-
-# Production
-just deploy-phase1 ENV=prod
+# View generated configuration
+nix run nixpkgs#nixos-rebuild -- build-vm --flake .#caddy
 ```
 
-### Custom Terraform Variables
+## 🔄 **Common Workflows**
 
-Pass custom variables:
+### **Adding a New Service**
+1. Add container definition to `terraform/phases/main.tf`
+2. Create NixOS host configuration in `nixos/hosts/`
+3. Create service module in `nixos/modules/`
+4. Deploy container with Terraform
+5. Deploy NixOS configuration
 
-```bash
-just deploy-phase1 ENV=dev -a "-var='container_cpus=4'"
-```
+### **Updating Service Configuration**
+1. Modify NixOS module
+2. Deploy configuration: `nixos-rebuild switch --flake .#service`
+3. Test service functionality
 
-## 🔐 Security Considerations
+### **Infrastructure Changes**
+1. Modify Terraform configuration
+2. Plan changes: `terraform plan -var="environment=dev"`
+3. Apply changes: `terraform apply -var="environment=dev"`
 
-- **SSH keys**: Use strong SSH keys for container access
-- **Passwords**: Change default passwords in production
-- **Network**: Restrict container network access as needed
-- **Secrets**: Use SOPS for sensitive configuration
+## 📝 **Notes**
 
-## 📖 Next Steps
+- **DNS is in Phase 1** so containers can resolve each other's hostnames
+- **SSH keys** are configured in `nixos/modules/common/default.nix`
+- **Secrets** are managed with SOPS and stored in `secrets.sops.yaml`
+- **Container networking** uses VLAN 99 with IP range 192.168.99.10-19
+- **Hostname mapping** should be added to your local `/etc/hosts` file for development
 
-After successful deployment:
+## 🆘 **Getting Help**
 
-1. **Configure DNS** to point to your containers
-2. **Set up SSL certificates** via Caddy
-3. **Configure Authentik** OAuth2 providers
-4. **Set up monitoring** and alerting
-5. **Implement backup** strategies
-
-## 🆘 Getting Help
-
-- **Check logs**: Review Terraform and Colmena output
-- **Validate configs**: Use `just test-configs`
-- **Review state**: Check Terraform state files
-- **Debug connectivity**: Test container network access
-
-For more information, see the main [README.md](README.md) and [TESTING.md](TESTING.md). 
+- Check `just --list` for available commands
+- Review Terraform logs for infrastructure issues
+- Check NixOS logs: `journalctl -u service-name`
+- Use Proxmox console for container access when SSH fails 

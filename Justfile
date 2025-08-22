@@ -223,3 +223,19 @@ show-help:
 	@echo "  just deploy-phase1 env=staging      # Deploy Phase 1 to staging"
 	@echo "  just build-images                   # Build all images"
 	@echo "  just tf-plan-phase env=prod PHASE=2 # Plan Phase 2 for production"
+
+# Simplified deployment commands using the new script
+deploy-simple: deploy-simple-help
+    @echo "Use the simplified deployment script:"
+    @echo "  ./scripts/deploy-simple.sh help"
+
+deploy-simple-help:
+    @echo "Quick deployment commands:"
+    @echo "  ./scripts/deploy-simple.sh status                    # Show deployment status"
+    @echo "  ./scripts/deploy-simple.sh -p 1 plan               # Plan Phase 1"
+    @echo "  ./scripts/deploy-simple.sh -p 1 deploy             # Deploy Phase 1 (infrastructure)"
+    @echo "  ./scripts/deploy-simple.sh -p 2 deploy             # Deploy Phase 2 (services)"
+    @echo "  ./scripts/deploy-simple.sh ssh caddy               # SSH to Caddy container"
+    @echo "  ./scripts/deploy-simple.sh logs caddy              # Show Caddy logs"
+
+# Legacy deployment commands (keeping for backward compatibility)

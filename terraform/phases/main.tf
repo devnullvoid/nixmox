@@ -206,6 +206,16 @@ locals {
       gw = "192.168.99.1"
       vlan_tag = "99"
     }
+    dns = {
+      vmid = 904
+      hostname = "dns"
+      cores = 1
+      memory = 512
+      disk_gb = 8
+      ip = "192.168.99.13"
+      gw = "192.168.99.1"
+      vlan_tag = "99"
+    }
   }
 
   phase2_containers = {
@@ -216,16 +226,6 @@ locals {
       memory = 2048
       disk_gb = 16
       ip = "192.168.99.12"
-      gw = "192.168.99.1"
-      vlan_tag = "99"
-    }
-    dns = {
-      vmid = 904
-      hostname = "dns"
-      cores = 1
-      memory = 512
-      disk_gb = 8
-      ip = "192.168.99.13"
       gw = "192.168.99.1"
       vlan_tag = "99"
     }
