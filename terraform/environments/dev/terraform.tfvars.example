@@ -1,0 +1,29 @@
+# Proxmox connection settings
+proxmox_url = "https://proxmox.example.com:8006/api2/json"
+proxmox_username = "root@pam"
+proxmox_password = "your_proxmox_password"
+proxmox_insecure = true
+
+# Proxmox node and template
+proxmox_node_name = "pve"
+nixos_template_id = "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
+
+# Network configuration
+network_bridge = "vmbr0"
+network_gateway = "10.10.0.1"
+network_dns = "1.1.1.1"
+network_cidr = "24"
+
+# Storage configuration
+storage_pool = "local-lvm"
+storage_images = "local"
+
+# Container defaults (development - reduced resources)
+container_cpus = 1
+container_memory = 1024
+container_disk = 4
+container_swap = 256
+
+# Container credentials
+container_root_password = "changeme"
+container_ssh_keys = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC..."

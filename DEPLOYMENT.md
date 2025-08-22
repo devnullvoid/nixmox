@@ -1,360 +1,287 @@
 # NixMox Deployment Guide
 
-This guide explains how to deploy and test NixMox containers on Proxmox VE.
+This guide explains how to deploy NixMox infrastructure using the integrated Terranix, Terraform, and phased deployment system.
+
+## 🏗️ Architecture Overview
+
+NixMox uses a **phased deployment approach** that separates infrastructure creation from service deployment:
+
+- **Phase 1**: Create base Proxmox LXC containers
+- **Phase 2**: Deploy NixOS configurations to containers
+- **Phase 3**: Deploy application services
+- **Phase 4**: Configure advanced features (Authentik outposts, OAuth2)
 
 ## 🚀 Quick Start
 
-### 1. Build a Container
+### Prerequisites
+
+1. **Proxmox VE** running and accessible
+2. **NixOS LXC template** available on Proxmox
+3. **SSH access** to Proxmox node
+4. **Network configuration** planned (IP ranges, gateway, etc.)
+
+### 1. Configure Environment
+
+Copy and customize the Terraform variables:
 
 ```bash
-# Build the authentik container
-./scripts/deploy-test.sh authentik
-
-# Build the caddy container
-./scripts/deploy-test.sh caddy
-
-# Build the monitoring container
-./scripts/deploy-test.sh monitoring
+cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
+# Edit terraform.tfvars with your Proxmox details
 ```
 
-### 2. Generate LXC Images (Optional)
+### 2. Deploy Infrastructure
 
 ```bash
-# Generate Proxmox LXC image for authentik
-./scripts/generate-lxc.sh authentik
+# Phase 1: Create base LXC containers
+just deploy-phase1 ENV=dev
 
-# List available containers
-./scripts/generate-lxc.sh -l
+# Phase 2: Deploy NixOS configurations
+just deploy-phase2 ENV=dev
+
+# Phase 3: Deploy application services
+just deploy-phase3 ENV=dev
+
+# Phase 4: Configure advanced features
+just deploy-phase4 ENV=dev
 ```
 
-### 3. Deploy to Existing NixOS Container (Recommended for Testing)
+## 📋 Detailed Deployment Process
 
+### Phase 1: Infrastructure Foundation
+
+Creates base Proxmox LXC containers with minimal configuration:
+
+- **Caddy** (10.10.0.10) - Reverse proxy and TLS termination
+- **PostgreSQL** (10.10.0.11) - Database server
+- **Authentik** (10.10.0.12) - Identity provider
+- **DNS** (10.10.0.13) - DNS server (Unbound)
+
+**Commands:**
 ```bash
-# Deploy authentik to existing NixOS container
-./scripts/deploy-remote.sh authentik 192.168.1.100
+# Plan the deployment
+just tf-plan ENV=dev
 
-# Deploy with custom SSH settings
-./scripts/deploy-remote.sh -u nixmox -p 2222 caddy 192.168.1.101
-
-# Deploy with SSH key
-./scripts/deploy-remote.sh -k ~/.ssh/id_rsa monitoring 192.168.1.102
-
-# Test SSH connection first
-./scripts/deploy-remote.sh -t authentik 192.168.1.100
-
-# List available containers
-./scripts/deploy-remote.sh -l
+# Apply the deployment
+just deploy-phase1 ENV=dev
 ```
 
-**What this does:**
-1. Copies only essential flake files (`flake.nix`, `flake.lock`, `modules/`) to `/tmp/nixmox-deploy/` on the remote host
-2. Runs `nixos-rebuild switch --flake /tmp/nixmox-deploy#CONTAINER_NAME`
-3. Builds and applies the configuration directly on the remote NixOS container
+### Phase 2: Core Services
 
-## 🔧 Deployment Options
+Deploys NixOS configurations to the containers:
 
-### Option 1: Deploy to Existing NixOS Container (Recommended for Testing)
+1. **Build LXC images** from NixOS configurations
+2. **Deploy core services** using Colmena
+3. **Verify connectivity** between containers
 
-**⚠️ Important**: The NixMox configuration is designed to work with Proxmox LXC containers where Proxmox manages the network configuration. The flake keeps networking services enabled but disables systemd-networkd management to avoid conflicts.
-
-This is the easiest way to test our configurations:
-
+**Commands:**
 ```bash
-# Deploy authentik to existing NixOS container
-./scripts/deploy-remote.sh authentik 192.168.1.100
+# Build all LXC images
+just build-images
 
-# The script will:
-# 1. Test SSH connection
-# 2. Verify NixOS environment
-# 3. Copy only essential flake files to remote host
-# 4. Run nixos-rebuild switch with flake reference
-# 5. Build and apply the configuration directly on remote host
+# Deploy core services
+just deploy-phase2 ENV=dev
 ```
 
-### Option 2: Manual LXC Deployment
+### Phase 3: Application Services
 
-For creating new containers from scratch:
+Deploys application services to the containers:
 
-#### Step 1: Create LXC Container on Proxmox
+- Nextcloud, Media services, Monitoring, etc.
+- Configures inter-service communication
+- Sets up authentication flows
 
-1. **Create a new LXC container** in Proxmox VE
-2. **Use a minimal template** (Ubuntu 22.04 or similar)
-3. **Configure resources**:
-   - CPU: 2 cores
-   - RAM: 2GB
-   - Storage: 10GB
-   - Network: Bridge with static IP
-
-#### Step 2: Upload and Extract NixOS System
-
+**Commands:**
 ```bash
-# On your development machine
-cd builds/authentik
-tar -czf authentik-system.tar.gz *
-
-# Upload to Proxmox host
-scp authentik-system.tar.gz root@proxmox-host:/tmp/
-
-# On Proxmox host
-cd /var/lib/lxc/YOUR_CONTAINER_ID/rootfs
-tar -xzf /tmp/authentik-system.tar.gz
+just deploy-phase3 ENV=dev
 ```
 
-#### Step 3: Configure Container for NixOS
+### Phase 4: Advanced Configuration
 
+Configures advanced features:
+
+- Authentik OAuth2 providers
+- Service integrations
+- Production hardening
+
+**Commands:**
 ```bash
-# On Proxmox host, inside container rootfs
-mkdir -p /etc/nixos
-cp /nix/store/*/etc/nixos/configuration.nix /etc/nixos/
-
-# Set up Nix
-curl -L https://nixos.org/nix/install | sh
-source /root/.nix-profile/etc/profile.d/nix.sh
-
-# Activate the NixOS configuration
-/nix/store/*/activate
+just deploy-phase4 ENV=dev
 ```
 
-## 🧪 Testing with SSH
+## 🛠️ Available Commands
 
-### Default Credentials
-
-All containers use these default credentials for initial testing:
-
-- **Username**: `nixmox`
-- **Password**: `nixmox`
-- **SSH Port**: `22`
-
-### SSH Connection
+### Phased Deployment
 
 ```bash
-# Connect to the container
-ssh nixmox@CONTAINER_IP
-
-# Test basic functionality
-systemctl status sshd
-systemctl status postgresql  # For authentik container
-systemctl status redis       # For authentik container
+just deploy-phase1 ENV=dev          # Deploy infrastructure
+just deploy-phase2 ENV=dev          # Deploy core services
+just deploy-phase3 ENV=dev          # Deploy applications
+just deploy-phase4 ENV=dev          # Deploy advanced config
+just deploy-all ENV=dev             # Deploy everything
 ```
 
-### Security Notes
-
-⚠️ **Important**: These are development/testing credentials. For production:
-
-1. **Change the password immediately** after first login
-2. **Set up SSH keys** for key-based authentication
-3. **Disable password authentication** in production
-4. **Use SOPS** for secret management
-
-## 📋 Container-Specific Testing
-
-### Authentik Container
+### Image Building
 
 ```bash
-# Test PostgreSQL
-sudo -u postgres psql -c "SELECT version();"
-
-# Test Redis
-redis-cli ping
-
-# Test Authentik (when implemented)
-curl http://localhost:9000/health/
+just build-images                    # Build all LXC images
+just build-host caddy               # Build specific host
+just list-hosts                     # List available hosts
 ```
 
-### Caddy Container
+### Terraform Operations
 
 ```bash
-# Test Caddy
-curl http://localhost:2019/config/
-systemctl status caddy
+just tf-init ENV=dev                # Initialize Terraform
+just tf-plan ENV=dev                # Plan changes
+just tf-apply ENV=dev               # Apply changes
+just tf-destroy ENV=dev             # Destroy infrastructure
 ```
 
-### Monitoring Container
+### Colmena Deployment
 
 ```bash
-# Test Prometheus
-curl http://localhost:9090/api/v1/status/config
+just colmena-apply-infra            # Deploy infrastructure
+just colmena-apply-services         # Deploy application services
+just colmena-apply-auth             # Deploy authentication
+```
 
-# Test Grafana
-curl http://localhost:3000/api/health
+### Development and Testing
+
+```bash
+just test-configs                   # Test all NixOS configs
+just validate-flake                 # Validate flake
+just deployment-status ENV=dev      # Show deployment status
+```
+
+## 🔧 Configuration
+
+### Environment-Specific Settings
+
+Create environment-specific configurations:
+
+```bash
+# Development
+cp terranix/dev.nix terranix/staging.nix
+cp terranix/dev.nix terranix/prod.nix
+
+# Customize each environment file
+```
+
+### Terraform Variables
+
+Key variables to configure:
+
+- `proxmox_url` - Proxmox API endpoint
+- `proxmox_username` - Proxmox username
+- `proxmox_password` - Proxmox password
+- `network_gateway` - Network gateway IP
+- `proxmox_node_name` - Target Proxmox node
+- `nixos_template_id` - LXC template to use
+
+### Network Configuration
+
+Default network layout:
+
+```
+Network: 10.10.0.0/24
+Gateway: 10.10.0.1
+Caddy:   10.10.0.10
+PostgreSQL: 10.10.0.11
+Authentik: 10.10.0.12
+DNS:     10.10.0.13
 ```
 
 ## 🔍 Troubleshooting
 
 ### Common Issues
 
-1. **SSH Connection Refused**
-   - Check if container is running
-   - Verify SSH service is enabled
-   - Check firewall rules
+1. **Terraform initialization fails**
+   - Check Proxmox API connectivity
+   - Verify credentials and permissions
 
-2. **Services Not Starting**
-   - Check systemd logs: `journalctl -xe`
-   - Verify dependencies are installed
-   - Check configuration syntax
+2. **Container creation fails**
+   - Check storage pool availability
+   - Verify LXC template exists
+   - Check network bridge configuration
 
-3. **Network Issues**
-   - Verify container has network access
-   - Check DNS resolution
-   - Test connectivity: `ping 8.8.8.8`
+3. **NixOS deployment fails**
+   - Verify container connectivity
+   - Check SSH key configuration
+   - Review NixOS configuration syntax
 
 ### Debug Commands
 
 ```bash
-# Check system status
-systemctl status
+# Check Terraform state
+cd terraform/environments/dev
+terraform show
 
-# View recent logs
-journalctl -f
+# Validate NixOS configurations
+just test-configs
 
-# Check network
-ip addr show
-ping google.com
+# Check deployment status
+just deployment-status ENV=dev
 
-# Check disk space
-df -h
-
-# Check memory usage
-free -h
+# View Terraform plan
+just tf-plan ENV=dev
 ```
 
-## 🚀 Production Deployment
+## 📚 Advanced Usage
 
-### 1. Security Hardening
+### Custom Host Configurations
+
+Add new hosts to the deployment:
+
+1. **Create NixOS host configuration** in `nixos/hosts/`
+2. **Add to Terranix configuration** in `terranix/proxmox-lxc.nix`
+3. **Update build script** in `scripts/build-images.sh`
+4. **Add to Colmena configuration** in `flake.nix`
+
+### Multi-Environment Deployment
+
+Deploy to different environments:
 
 ```bash
-# Change default password
-passwd nixmox
+# Development
+just deploy-phase1 ENV=dev
 
-# Set up SSH keys
-ssh-keygen -t ed25519 -C "nixmox@production"
-# Add public key to ~/.ssh/authorized_keys
+# Staging
+just deploy-phase1 ENV=staging
 
-# Disable password authentication
-sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
+# Production
+just deploy-phase1 ENV=prod
 ```
 
-### 2. Backup Configuration
+### Custom Terraform Variables
+
+Pass custom variables:
 
 ```bash
-# Backup current configuration
-sudo cp /etc/nixos/configuration.nix /etc/nixos/configuration.nix.backup
-
-# Create deployment script
-cat > deploy.sh << 'EOF'
-#!/bin/bash
-nixos-rebuild switch
-EOF
-chmod +x deploy.sh
+just deploy-phase1 ENV=dev -a "-var='container_cpus=4'"
 ```
 
-### 3. Monitoring Setup
+## 🔐 Security Considerations
 
-```bash
-# Enable monitoring
-sudo systemctl enable prometheus-node-exporter
-sudo systemctl start prometheus-node-exporter
+- **SSH keys**: Use strong SSH keys for container access
+- **Passwords**: Change default passwords in production
+- **Network**: Restrict container network access as needed
+- **Secrets**: Use SOPS for sensitive configuration
 
-# Check metrics
-curl http://localhost:9100/metrics
-```
+## 📖 Next Steps
 
-## 📊 Performance Tuning
+After successful deployment:
 
-### Resource Optimization
+1. **Configure DNS** to point to your containers
+2. **Set up SSL certificates** via Caddy
+3. **Configure Authentik** OAuth2 providers
+4. **Set up monitoring** and alerting
+5. **Implement backup** strategies
 
-```bash
-# Monitor resource usage
-htop
-iotop
-nethogs
+## 🆘 Getting Help
 
-# Optimize PostgreSQL (for authentik)
-sudo -u postgres psql -c "ALTER SYSTEM SET shared_buffers = '256MB';"
-sudo -u postgres psql -c "ALTER SYSTEM SET effective_cache_size = '1GB';"
-sudo systemctl restart postgresql
-```
+- **Check logs**: Review Terraform and Colmena output
+- **Validate configs**: Use `just test-configs`
+- **Review state**: Check Terraform state files
+- **Debug connectivity**: Test container network access
 
-### Network Optimization
-
-```bash
-# Optimize network settings
-echo 'net.core.rmem_max = 16777216' | sudo tee -a /etc/sysctl.conf
-echo 'net.core.wmem_max = 16777216' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-```
-
-## 🔄 Updates and Maintenance
-
-### System Updates
-
-```bash
-# Update NixOS
-sudo nixos-rebuild switch --upgrade
-
-# Update specific packages
-sudo nix-env -u '*'
-
-# Garbage collection
-sudo nix-collect-garbage -d
-```
-
-### Service Updates
-
-```bash
-# Restart services
-sudo systemctl restart postgresql
-sudo systemctl restart redis
-sudo systemctl restart caddy
-
-# Check service status
-sudo systemctl status postgresql redis caddy
-```
-
-## 🔧 Troubleshooting
-
-### Network Connectivity Issues
-
-If the container loses network connectivity after deployment:
-
-1. **Access container console from Proxmox**:
-   ```bash
-   pct enter YOUR_CONTAINER_ID
-   ```
-
-2. **Restore networking**:
-   ```bash
-   systemctl start systemd-networkd
-   systemctl start systemd-resolved
-   ip link set eth0 up
-   dhclient eth0
-   ```
-
-3. **Rollback to previous generation**:
-   ```bash
-   nixos-rebuild switch --rollback
-   ```
-
-4. **Redeploy with fixed configuration**:
-   ```bash
-   ./scripts/deploy-remote.sh CONTAINER_NAME CONTAINER_IP
-   ```
-
-### Flake Build Issues
-
-If you encounter flake-related errors:
-
-1. **Enable flakes on remote host**:
-   ```bash
-   echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
-   ```
-
-2. **Check flake syntax**:
-   ```bash
-   nix flake check
-   ```
-
----
-
-**Next Steps**: After successful testing, proceed to Phase 2 of the TODO to implement additional service modules. 
+For more information, see the main [README.md](README.md) and [TESTING.md](TESTING.md). 
