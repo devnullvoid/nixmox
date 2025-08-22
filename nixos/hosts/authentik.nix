@@ -11,7 +11,6 @@ in {
     
     # Authentik service module
     ../modules/authentik
-    # inputs.authentik-nix.nixosModules.default - temporarily disabled
   ];
 
   # Host-specific configuration

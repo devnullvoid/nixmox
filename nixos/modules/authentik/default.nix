@@ -89,6 +89,18 @@ in {
     
     users.groups.authentik = {};
 
+    # Enable local Redis for Authentik
+    services.redis.servers."".enable = true;
+    services.redis.servers."".settings = {
+      bind = "127.0.0.1";
+      port = cfg.redis.port;
+      # Basic security settings
+      protected-mode = "yes";
+      # Performance settings
+      maxmemory = "256mb";
+      maxmemory-policy = "allkeys-lru";
+    };
+
     # SOPS secrets for Authentik - temporarily disabled for testing
     # sops.secrets = {
     #   "authentik/env" = {
@@ -118,67 +130,98 @@ in {
     #   };
     # };
 
-    # Use the official authentik-nix module - temporarily disabled
-    # services.authentik = {
-    #   enable = true;
-    #   
-    #   # Use SOPS environment file for secrets - temporarily disabled
-    #   # environmentFile = "/run/secrets/authentik/env";
-    #   
-    #   # Configure settings
-    #   settings = {
-    #     # Email configuration (optional - can be configured later via UI)
-    #     email = {
-    #       host = "smtp.nixmox.lan";
-    #       port = 587;
-    #       username = "authentik@nixmox.lan";
-    #       use_tls = true;
-    #       use_ssl = false;
-    #       from = "authentik@nixmox.lan";
-    #     };
-    #     
-    #     # Disable startup analytics
-    #     disable_startup_analytics = true;
-    #     
-    #     # Use initials for avatars
-    #     avatars = "initials";
-    #     
-    #     # Error reporting
-    #     error_reporting.enabled = false;
-    #     
-    #     # Bootstrap settings to ensure default flows and initial objects exist
-    #     # bootstrap = {
-    #     #   email = cfg.adminEmail;
-    #     # };
-    #     
-    #     # Host configuration for correct redirects/cookies behind proxy
-    #     authentik.host = cfg.domain;
-    #     
-    #     # Listen configuration
-    #     listen = {
-    #       http = "0.0.0.0:9000";
-    #       https = "0.0.0.0:9443";
-    #     };
-    #     
-    #     # PostgreSQL configuration - use external database
-    #     postgresql = {
-    #       host = cfg.database.host;
-    #       port = cfg.database.port;
-    #       user = cfg.database.user;
-    #       name = cfg.database.name;
-    #       password = cfg.database.password;
-    #     };
-    #     
-    #     # Redis configuration - use external Redis
-    #     redis = {
-    #       host = cfg.redis.host;
-    #       port = cfg.redis.port;
-    #     };
-    #   };
-    # };
+    # Use the official Nixpkgs Authentik packages
+    environment.systemPackages = with pkgs; [
+      authentik
+      authentik-outposts.ldap
+      authentik-outposts.proxy
+      authentik-outposts.radius
+    ];
 
-    # Add blueprints directory for declarative configuration - temporarily disabled
-    # services.authentik.settings.blueprints_dir = blueprintDir;
+    # Create Authentik systemd service
+    systemd.services.authentik = {
+      description = "Authentik Identity Provider";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "postgresql.service" "redis.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/var/lib/authentik";
+        ExecStart = "${pkgs.authentik}/bin/ak server";
+        Restart = "always";
+        RestartSec = "10s";
+        
+        # Environment variables for configuration
+        Environment = [
+          "AUTHENTIK_LISTEN__HTTP=0.0.0.0:9000"
+          "AUTHENTIK_LISTEN__HTTPS=0.0.0.0:9443"
+          "AUTHENTIK_POSTGRESQL__HOST=${cfg.database.host}"
+          "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
+          "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
+          "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
+          "AUTHENTIK_POSTGRESQL__PASSWORD=${cfg.database.password}"
+          "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
+          "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
+          "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
+          "AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true"
+          "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
+          "AUTHENTIK_AVATARS=initials"
+        ];
+      };
+    };
+
+    # Create Authentik LDAP outpost service
+    systemd.services.authentik-ldap = {
+      description = "Authentik LDAP Outpost";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "authentik.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/var/lib/authentik";
+        ExecStart = "${pkgs.authentik-outposts.ldap}/bin/authentik-ldap";
+        Restart = "always";
+        RestartSec = "10s";
+      };
+    };
+
+    # Create Authentik Radius outpost service
+    systemd.services.authentik-radius = {
+      description = "Authentik Radius Outpost";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "authentik.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/var/lib/authentik";
+        ExecStart = "${pkgs.authentik-outposts.radius}/bin/authentik-radius";
+        Restart = "always";
+        RestartSec = "10s";
+      };
+    };
+
+    # Create Authentik Proxy outpost service
+    systemd.services.authentik-proxy = {
+      description = "Authentik Proxy Outpost";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "authentik.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/var/lib/authentik";
+        ExecStart = "${pkgs.authentik-outposts.proxy}/bin/authentik-proxy";
+        Restart = "always";
+        RestartSec = "10s";
+      };
+    };
 
     # Ensure host resolution for self before DNS exists
     networking.hosts."127.0.0.1" = [ cfg.domain ];
