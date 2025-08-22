@@ -20,9 +20,11 @@ with lib;
   
   # Basic boot configuration for containers
   boot = {
-    # Use systemd-boot for containers
-    loader.systemd-boot.enable = true;
-    loader.efi.canTouchEfiVariables = true;
+    # Minimal bootloader configuration for LXC containers
+    loader.grub = {
+      enable = false;
+      device = "nodev";
+    };
     
     # Basic kernel modules
     kernelModules = [ "overlay" ];
@@ -33,9 +35,11 @@ with lib;
   
   # Basic file systems for containers
   fileSystems = {
+    # Root filesystem - minimal configuration for LXC containers
     "/" = {
-      device = "/dev/disk/by-label/nixos";
-      fsType = "ext4";
+      device = "none";
+      fsType = "tmpfs";
+      options = [ "defaults" "size=100%" ];
     };
     
     "/tmp" = {

@@ -46,31 +46,13 @@ in {
         };
       };
 
-      # Define all our containers as hosts
-      # Each container will be deployed as a separate NixOS host
+      # Define all our containers as hosts using existing NixOS configurations
       "caddy" = { name, nodes, ... }: {
         deployment = {
           targetHost = "caddy.nixmox.lan";
           targetUser = "root";
-          # For local testing, we can use localhost
-          # targetHost = "localhost";
         };
-        imports = [
-          ./containers.nix
-        ];
-        # Enable only the caddy container
-        services.nixmox.caddy.enable = true;
-      };
-
-      "authentik" = { name, nodes, ... }: {
-        deployment = {
-          targetHost = "authentik.nixmox.lan";
-          targetUser = "root";
-        };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.authentik.enable = true;
+        imports = [ ../nixos/hosts/caddy.nix ];
       };
 
       "postgresql" = { name, nodes, ... }: {
@@ -78,65 +60,15 @@ in {
           targetHost = "postgresql.nixmox.lan";
           targetUser = "root";
         };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.postgresql.enable = true;
+        imports = [ ../nixos/hosts/postgresql.nix ];
       };
 
-      "nextcloud" = { name, nodes, ... }: {
+      "authentik" = { name, nodes, ... }: {
         deployment = {
-          targetHost = "nextcloud.nixmox.lan";
+          targetHost = "authentik.nixmox.lan";
           targetUser = "root";
         };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.nextcloud.enable = true;
-      };
-
-      "media" = { name, nodes, ... }: {
-        deployment = {
-          targetHost = "media.nixmox.lan";
-          targetUser = "root";
-        };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.media.enable = true;
-      };
-
-      "monitoring" = { name, nodes, ... }: {
-        deployment = {
-          targetHost = "monitoring.nixmox.lan";
-          targetUser = "root";
-        };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.monitoring.enable = true;
-      };
-
-      "guacamole" = { name, nodes, ... }: {
-        deployment = {
-          targetHost = "guacamole.nixmox.lan";
-          targetUser = "root";
-        };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.guacamole.enable = true;
-      };
-
-      "vaultwarden" = { name, nodes, ... }: {
-        deployment = {
-          targetHost = "vaultwarden.nixmox.lan";
-          targetUser = "root";
-        };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.vaultwarden.oci.enable = true;
+        imports = [ ../nixos/hosts/authentik.nix ];
       };
 
       "dns" = { name, nodes, ... }: {
@@ -144,10 +76,47 @@ in {
           targetHost = "dns.nixmox.lan";
           targetUser = "root";
         };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.dns.enable = true;
+        imports = [ ../nixos/hosts/dns.nix ];
+      };
+
+      "nextcloud" = { name, nodes, ... }: {
+        deployment = {
+          targetHost = "nextcloud.nixmox.lan";
+          targetUser = "root";
+        };
+        imports = [ ../nixos/hosts/nextcloud.nix ];
+      };
+
+      "media" = { name, nodes, ... }: {
+        deployment = {
+          targetHost = "media.nixmox.lan";
+          targetUser = "root";
+        };
+        imports = [ ../nixos/hosts/media.nix ];
+      };
+
+      "monitoring" = { name, nodes, ... }: {
+        deployment = {
+          targetHost = "monitoring.nixmox.lan";
+          targetUser = "root";
+        };
+        imports = [ ../nixos/hosts/monitoring.nix ];
+      };
+
+      "guacamole" = { name, nodes, ... }: {
+        deployment = {
+          targetHost = "guacamole.nixmox.lan";
+          targetUser = "root";
+        };
+        imports = [ ../nixos/hosts/guacamole.nix ];
+      };
+
+      "vaultwarden" = { name, nodes, ... }: {
+        deployment = {
+          targetHost = "vaultwarden.nixmox.lan";
+          targetUser = "root";
+        };
+        imports = [ ../nixos/hosts/vaultwarden.nix ];
       };
 
       "mail" = { name, nodes, ... }: {
@@ -155,10 +124,7 @@ in {
           targetHost = "mail.nixmox.lan";
           targetUser = "root";
         };
-        imports = [
-          ./containers.nix
-        ];
-        services.nixmox.mail.enable = true;
+        imports = [ ../nixos/hosts/mail.nix ];
       };
     };
   };

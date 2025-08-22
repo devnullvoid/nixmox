@@ -5,6 +5,10 @@ with lib;
 let
   cfg = config.services.nixmox.caddy;
 in {
+  imports = [
+    ./services.nix
+  ];
+
   options.services.nixmox.caddy = {
     enable = mkEnableOption "Caddy reverse proxy";
 
@@ -27,6 +31,38 @@ in {
       default = "authentik.nixmox.lan:9000";
       description = "Authentik upstream for forward auth";
     };
+
+    # Service definitions
+    services = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          domain = mkOption {
+            type = types.str;
+            description = "Domain for this service";
+          };
+          backend = mkOption {
+            type = types.str;
+            description = "Backend host for this service";
+          };
+          port = mkOption {
+            type = types.int;
+            description = "Backend port for this service";
+          };
+          enableAuth = mkOption {
+            type = types.bool;
+            default = false;
+            description = "Whether to enable Authentik forward auth";
+          };
+          extraConfig = mkOption {
+            type = types.str;
+            default = "";
+            description = "Extra Caddy configuration for this service";
+          };
+        };
+      });
+      default = {};
+      description = "Services to proxy through Caddy";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -44,14 +80,17 @@ in {
         }
       '';
       
-      # Basic virtual host for now
-      virtualHosts = {
-        "${cfg.domain}" = {
+      # Virtual hosts will be configured by the services.nix import
+      virtualHosts = mkIf (cfg.services != null) (
+        builtins.mapAttrs (name: service: {
           extraConfig = ''
-            respond "NixMox Proxy - Service not found" 404
+            ${service.extraConfig or ""}
+            
+            # Basic reverse proxy configuration
+            reverse_proxy ${service.backend}:${toString service.port}
           '';
-        };
-      };
+        }) cfg.services
+      );
     };
 
     # Basic firewall rules
