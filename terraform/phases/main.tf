@@ -89,7 +89,7 @@ variable "cidr" {
 variable "storage" {
   description = "Storage pool for containers"
   type        = string
-  default     = "local-lvm"
+  default     = "callisto-ssd"
 }
 
 # SSH and deployment configuration
@@ -184,14 +184,32 @@ locals {
   # Try to read from SOPS file if provided, otherwise use variables
   secrets_data = var.secrets_file != "" ? data.sops_file.secrets[0].data : {}
 
-  # Container definitions by phase
+  # Container resource requirements
+  # 
+  # Memory requirements:
+  # - Minimum 2GB for NixOS operations (nixos-rebuild, package downloads)
+  # - PostgreSQL: 4GB for database operations and caching
+  # - Nextcloud: 4GB for file operations and web server
+  # - Other services: 2GB minimum for reliable operation
+  #
+  # CPU requirements:
+  # - Infrastructure services: 2 cores minimum
+  # - Database services: 4 cores for better performance
+  # - Media services: 2-4 cores depending on workload
+  #
+  # Disk requirements:
+  # - Infrastructure: 16GB minimum for NixOS and packages
+  # - Database: 64GB for data storage and backups
+  # - Media: 32GB for media files and metadata
+  # - Other services: 16GB minimum for reliable operation
+
   phase1_containers = {
     postgresql = {
       vmid = 902
       hostname = "postgresql"
       cores = 4
-      memory = 2048
-      disk_gb = 20
+      memory = 4096
+      disk_gb = 64
       ip = "192.168.99.11"
       gw = "192.168.99.1"
       vlan_tag = "99"
@@ -200,8 +218,8 @@ locals {
       vmid = 901
       hostname = "caddy"
       cores = 2
-      memory = 1024
-      disk_gb = 8
+      memory = 2048
+      disk_gb = 16
       ip = "192.168.99.10"
       gw = "192.168.99.1"
       vlan_tag = "99"
@@ -209,9 +227,9 @@ locals {
     dns = {
       vmid = 904
       hostname = "dns"
-      cores = 1
-      memory = 512
-      disk_gb = 8
+      cores = 2
+      memory = 2048
+      disk_gb = 16
       ip = "192.168.99.13"
       gw = "192.168.99.1"
       vlan_tag = "99"
@@ -236,7 +254,7 @@ locals {
       vmid = 905
       hostname = "vaultwarden"
       cores = 2
-      memory = 1024
+      memory = 2048
       disk_gb = 16
       ip = "192.168.99.14"
       gw = "192.168.99.1"
@@ -276,7 +294,7 @@ locals {
       vmid = 909
       hostname = "monitoring"
       cores = 2
-      memory = 1024
+      memory = 2048
       disk_gb = 16
       ip = "192.168.99.18"
       gw = "192.168.99.1"
@@ -286,7 +304,7 @@ locals {
       vmid = 910
       hostname = "mail"
       cores = 2
-      memory = 1024
+      memory = 2048
       disk_gb = 16
       ip = "192.168.99.19"
       gw = "192.168.99.1"

@@ -224,6 +224,21 @@ show-help:
 	@echo "  just build-images                   # Build all images"
 	@echo "  just tf-plan-phase env=prod PHASE=2 # Plan Phase 2 for production"
 
+# NixOS Configuration Deployment
+deploy-nixos: deploy-nixos-help
+    @echo "Use the NixOS deployment script:"
+    @echo "  ./scripts/deploy-nixos.sh help"
+
+deploy-nixos-help:
+    @echo "NixOS deployment commands:"
+    @echo "  ./scripts/deploy-nixos.sh caddy                    # Deploy to Caddy container"
+    @echo "  ./scripts/deploy-nixos.sh postgresql               # Deploy to PostgreSQL container"
+    @echo "  ./scripts/deploy-nixos.sh dns                      # Deploy to DNS container"
+    @echo "  ./scripts/deploy-nixos.sh --all-phase1             # Deploy to all Phase 1 containers"
+    @echo "  ./scripts/deploy-nixos.sh --all                    # Deploy to all containers"
+    @echo "  ./scripts/deploy-nixos.sh -n caddy                 # Dry run for Caddy"
+    @echo "  ./scripts/deploy-nixos.sh -t 600 caddy             # Deploy with 10 min timeout"
+
 # Simplified deployment commands using the new script
 deploy-simple: deploy-simple-help
     @echo "Use the simplified deployment script:"
