@@ -52,11 +52,11 @@ in {
   };
 
   config = mkIf cfg.enable {
-        # Unbound DNS server configuration
+        # Unbound DNS server configuration - minimal for debugging
     services.unbound = {
       enable = true;
       
-      # Use settings to directly configure Unbound based on NixOS Wiki example
+      # Use settings to directly configure Unbound
       settings = {
         # Server configuration
         server = {
@@ -80,25 +80,34 @@ in {
           harden-referral-path = "yes";
           use-caps-for-id = "yes";
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
-          # Local zone for our primary domain
+          
+          # Local zone for our primary domain  
           local-zone = [ "${cfg.primaryDomain} static" ];
-          # Local data entries for internal services
+          
+          # Local data entries - try with proper quoting
           local-data = [
-            "${cfg.primaryDomain}. IN NS ${cfg.domain}."
+            "\"${cfg.primaryDomain}. NS ${cfg.domain}.\""
           ] ++ (mapAttrsToList (name: service: 
-            "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-          ) cfg.services);
+            "\"${name}.${cfg.primaryDomain}. A ${service.ip}\""
+          ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+            map (alias: "\"${alias}.${cfg.primaryDomain}. CNAME ${name}.${cfg.primaryDomain}.\"") service.aliases
+          ) cfg.services));
         };
         
-        # Forward zone - must be an array as per NixOS Wiki example
+        # Forward zone - minimal configuration
         forward-zone = [
           {
             name = ".";
             forward-addr = cfg.upstreamServers;
           }
         ];
+        
+
       };
     };
+    
+    # Disable systemd-resolve to avoid port conflict with Unbound
+    services.resolved.enable = lib.mkForce false;
     
     # Firewall rules for DNS
     networking.firewall = {
