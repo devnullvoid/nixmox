@@ -67,7 +67,7 @@ in {
           access-control = [
             "0.0.0.0/0 refuse"
             "127.0.0.0/8 allow"
-            "192.168.50.0/24 allow"
+            "192.168.99.0/24 allow"
             "10.0.0.0/8 allow"
             "172.16.0.0/12 allow"
           ];
@@ -101,9 +101,6 @@ in {
           
           # DNSSEC
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
-          trust-anchor = [
-            "\".\" 20326 8 2 E06D44B80B8F1D39A95C0D0E4E041F15E4F915A5"
-          ];
           
           # Forward zones for internal services
           local-zone = [
@@ -111,24 +108,22 @@ in {
           ];
         };
         
-        # Forward zones
-        forward-zone = [
-          {
-            name = ".";
-            forward-addr = cfg.upstreamServers;
-          }
-        ];
-        
-        # Local data for internal services
-        local-data = [
-          # NS record for primary domain
-          "${cfg.primaryDomain}. IN NS ${cfg.domain}."
-        ] ++ (mapAttrsToList (name: service: 
-          "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-        ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
-          map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
-        ) cfg.services));
       };
+      
+      # Forward zones
+      forward-zones = {
+        "." = cfg.upstreamServers;
+      };
+      
+      # Local data for internal services
+      local-data = [
+        # NS record for primary domain
+        "${cfg.primaryDomain}. IN NS ${cfg.domain}."
+      ] ++ (mapAttrsToList (name: service: 
+        "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
+      ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+        map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
+      ) cfg.services));
     };
     
     # Firewall rules for DNS
@@ -197,45 +192,57 @@ in {
     
     # Default service configurations
     services.nixmox.dns.services = {
-      # Core services
-      authentik = {
-        ip = "192.168.50.2";
-        aliases = [ "auth" "identity" ];
+      # Core services (Phase 1)
+      postgresql = {
+        ip = "192.168.99.11";
+        aliases = [ "db" "database" ];
       };
       
       caddy = {
-        ip = "192.168.50.3";
+        ip = "192.168.99.10";
         aliases = [ "proxy" "reverse-proxy" ];
       };
       
+      dns = {
+        ip = "192.168.99.13";
+        aliases = [ "ns" "nameserver" ];
+      };
+      
+      # Phase 2 services
+      authentik = {
+        ip = "192.168.99.12";
+        aliases = [ "auth" "identity" ];
+      };
+      
+      # Phase 3 services
+      vaultwarden = {
+        ip = "192.168.99.14";
+        aliases = [ "vault" "passwords" ];
+      };
+      
+      nextcloud = {
+        ip = "192.168.99.15";
+        aliases = [ "files" "cloud" ];
+      };
+      
+      guacamole = {
+        ip = "192.168.99.16";
+        aliases = [ "remote" "rdp" ];
+      };
+      
+      media = {
+        ip = "192.168.99.17";
+        aliases = [ "jellyfin" "sonarr" "radarr" "prowlarr" ];
+      };
+      
       monitoring = {
-        ip = "192.168.50.4";
+        ip = "192.168.99.18";
         aliases = [ "grafana" "prometheus" ];
       };
       
       mail = {
-        ip = "192.168.50.5";
+        ip = "192.168.99.19";
         aliases = [ "smtp" "imap" "mail" ];
-      };
-      
-      media = {
-        ip = "192.168.50.6";
-        aliases = [ "jellyfin" "sonarr" "radarr" "prowlarr" ];
-      };
-      
-      nextcloud = {
-        ip = "192.168.50.7";
-        aliases = [ "files" "cloud" ];
-      };
-      
-      vaultwarden = {
-        ip = "192.168.50.8";
-        aliases = [ "vault" "passwords" ];
-      };
-      
-      dns = {
-        ip = "192.168.50.9";
-        aliases = [ "ns" "nameserver" ];
       };
     };
   };

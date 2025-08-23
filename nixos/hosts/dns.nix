@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "dns";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable DNS service
   services.nixmox.dns.enable = true;
 

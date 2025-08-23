@@ -16,13 +16,13 @@ in {
     
     internalNetwork = mkOption {
       type = types.str;
-      default = "192.168.50.0/24";
+      default = "192.168.99.0/24";
       description = "Internal network CIDR";
     };
     
     gateway = mkOption {
       type = types.str;
-      default = "192.168.50.1";
+      default = "192.168.99.1";
       description = "Gateway IP address";
     };
   };
