@@ -453,3 +453,31 @@ output "monitoring_level" {
   description = "Monitoring level for current environment"
   value       = local.current_env.monitoring_level
 }
+
+# Network configuration outputs for NixOS
+output "network_config" {
+  description = "Complete network configuration for NixOS"
+  value = {
+    dns_server = "192.168.99.13"
+    gateway = "192.168.99.1"
+    network_cidr = "192.168.99.0/24"
+    vlan_tag = 99
+    containers = {
+      for name, container in local.containers_to_deploy : name => {
+        ip = container.ip
+        hostname = container.hostname
+        vmid = container.vmid
+        cores = container.cores
+        memory = container.memory
+        disk_gb = container.disk_gb
+      }
+    }
+  }
+}
+
+output "dns_records" {
+  description = "DNS records for internal resolution"
+  value = {
+    for name, container in local.containers_to_deploy : "${name}.nixmox.lan" => container.ip
+  }
+}

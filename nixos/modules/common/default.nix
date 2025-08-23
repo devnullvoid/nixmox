@@ -28,6 +28,9 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Enable network configuration
+    services.nixmox.network.enable = true;
+    
     # Common system packages
 environment.systemPackages = with pkgs; [
   # Basic utilities
@@ -79,8 +82,8 @@ environment.systemPackages = with pkgs; [
 
     # Common networking settings
     networking = {
-      # DNS settings
-      nameservers = [ "1.1.1.1" "1.0.0.1" ];
+      # DNS settings (use network configuration)
+      nameservers = [ cfg.network.dns_server "8.8.8.8" "1.1.1.1" ];
       
       # Firewall common rules
       firewall = {

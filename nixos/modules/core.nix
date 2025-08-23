@@ -14,6 +14,9 @@ with lib;
     # NixMox common configuration
     ./common/default.nix
     
+    # Network configuration
+    ./network
+    
     # SOPS secrets management
     inputs.sops-nix.nixosModules.sops
   ];
@@ -76,8 +79,8 @@ with lib;
     # Enable IPv6
     enableIPv6 = true;
     
-    # Use our internal DNS server as primary resolver
-    nameservers = [ "192.168.99.13" "8.8.8.8" "1.1.1.1" ];
+    # Use our internal DNS server as primary resolver (from network config)
+    nameservers = [ config.services.nixmox.network.dns_server "8.8.8.8" "1.1.1.1" ];
     
     # Common firewall settings
     firewall = {
@@ -97,9 +100,9 @@ with lib;
   # Disable systemd-resolved in LXC containers (can conflict with other DNS services)
   services.resolved.enable = lib.mkForce false;
   
-  # Manually configure DNS resolution to use our internal DNS server
+  # Manually configure DNS resolution to use our internal DNS server (from network config)
   environment.etc."resolv.conf".text = ''
-    nameserver 192.168.99.13
+    nameserver ${config.services.nixmox.network.dns_server}
     nameserver 8.8.8.8
     nameserver 1.1.1.1
     options timeout:2 attempts:3
