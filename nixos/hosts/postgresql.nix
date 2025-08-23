@@ -33,7 +33,7 @@ in {
 
     users.authentik = {
       name = "authentik";
-      password = "authentik123"; # TODO: Use SOPS for production
+      password = "authentik123"; # TODO: Use SOPS for production - will be overridden by Authentik service
       databases = [ "authentik" ];
       superuser = false;
     };

@@ -109,6 +109,40 @@ check_host_access() {
     return 0
 }
 
+# Copy age key to host for SOPS decryption
+copy_age_key() {
+    local host="$1"
+    local ip="${HOST_IPS[$host]}"
+    
+    # Check if age key exists locally
+    local age_key_path="$HOME/.config/sops/age/keys.txt"
+    if [[ ! -f "$age_key_path" ]]; then
+        log_warning "Age key not found at $age_key_path - SOPS decryption may fail"
+        return 0
+    fi
+    
+    log_info "Copying age key to $host ($ip)..."
+    
+    # Create age directory and copy key
+    if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$ip" "mkdir -p /etc/age && chmod 700 /etc/age"; then
+        if scp -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$age_key_path" "root@$ip:/etc/age/keys.txt"; then
+            if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$ip" "chmod 600 /etc/age/keys.txt"; then
+                log_success "Age key copied to $host successfully"
+                return 0
+            else
+                log_error "Failed to set permissions on age key for $host"
+                return 1
+            fi
+        else
+            log_error "Failed to copy age key to $host"
+            return 1
+        fi
+    else
+        log_error "Failed to create age directory on $host"
+        return 1
+    fi
+}
+
 # Deploy to a single host
 deploy_host() {
     local host="$1"
@@ -118,6 +152,11 @@ deploy_host() {
     # Check host access
     if ! check_host_access "$host"; then
         return 1
+    fi
+    
+    # Copy age key for SOPS decryption
+    if ! copy_age_key "$host"; then
+        log_warning "Age key copy failed for $host - continuing with deployment"
     fi
     
     # Check if the flake configuration is valid (syntax check only)

@@ -75,6 +75,16 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # SOPS secrets for PostgreSQL
+    sops.secrets = {
+      "authentik/postgresql_password" = {
+        owner = "postgres";
+        group = "postgres";
+        mode = "0400";
+        restartUnits = [ "postgresql.service" ];
+      };
+    };
+    
     # PostgreSQL configuration
     services.postgresql = {
       enable = true;
@@ -143,7 +153,7 @@ in {
       # Configure authentication for internal network
       initialScript = pkgs.writeText "init.sql" ''
         -- Create authentik user and database
-        CREATE USER authentik WITH PASSWORD 'authentik123';
+        CREATE USER authentik WITH PASSWORD '$(cat ${config.sops.secrets."authentik/postgresql_password".path})';
         CREATE DATABASE authentik OWNER authentik;
         GRANT ALL PRIVILEGES ON DATABASE authentik TO authentik;
         

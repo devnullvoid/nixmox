@@ -101,34 +101,32 @@ in {
       maxmemory-policy = "allkeys-lru";
     };
 
-    # SOPS secrets for Authentik - temporarily disabled for testing
-    # sops.secrets = {
-    #   "authentik/env" = {
-    #     owner = "authentik";
-    #     group = "authentik";
-    #     mode = "0400";
-    #     # Trigger restarts when secret changes
-    #     restartUnits = [
-    #       "authentik.service"
-    #       "authentik-ldap.service"
-    #       "authentik-radius.service"
-    #     ];
-    #   };
-    #   "authentik-ldap/env" = {
-    #     owner = "authentik";
-    #     group = "authentik";
-    #     mode = "0400";
-    #     path = "/run/secrets/authentik-ldap/env";
-    #     restartUnits = [ "authentik-ldap.service" ];
-    #   };
-    #   "authentik-radius/env" = {
-    #     owner = "authentik";
-    #     group = "authentik";
-    #     mode = "0400";
-    #     path = "/run/secrets/authentik-radius/env";
-    #     restartUnits = [ "authentik-radius.service" ];
-    #   };
-    # };
+    # SOPS secrets for Authentik
+    sops.secrets = {
+      "authentik/env" = {
+        owner = "authentik";
+        group = "authentik";
+        mode = "0400";
+        # Trigger restarts when secret changes
+        restartUnits = [
+          "authentik.service"
+          "authentik-worker.service"
+        ];
+      };
+      "authentik-ldap/env" = {
+        owner = "authentik";
+        group = "authentik";
+        mode = "0400";
+        restartUnits = [ "authentik-ldap.service" ];
+      };
+      "authentik-radius/env" = {
+        owner = "authentik";
+        group = "authentik";
+        mode = "0400";
+        restartUnits = [ "authentik-radius.service" ];
+      };
+    };
+
 
     # Use the official Nixpkgs Authentik packages
     environment.systemPackages = with pkgs; [
@@ -161,7 +159,6 @@ in {
           "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
           "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
           "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
-          "AUTHENTIK_POSTGRESQL__PASSWORD=${cfg.database.password}"
           "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
           "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
           "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
@@ -172,8 +169,10 @@ in {
           "AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true"
           "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
           "AUTHENTIK_AVATARS=initials"
-          "AUTHENTIK_SECRET_KEY=changeme-secret-key-for-development-only" # TODO: Use SOPS for production
         ];
+        
+        # Load secrets from SOPS
+        EnvironmentFile = config.sops.secrets."authentik/env".path;
       };
     };
 
@@ -198,7 +197,6 @@ in {
           "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
           "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
           "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
-          "AUTHENTIK_POSTGRESQL__PASSWORD=${cfg.database.password}"
           "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
           "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
           "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
@@ -209,8 +207,10 @@ in {
           "AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true"
           "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
           "AUTHENTIK_AVATARS=initials"
-          "AUTHENTIK_SECRET_KEY=changeme-secret-key-for-development-only" # TODO: Use SOPS for production
         ];
+        
+        # Load secrets from SOPS
+        EnvironmentFile = config.sops.secrets."authentik/env".path;
       };
     };
 
@@ -231,9 +231,11 @@ in {
         
         # Environment variables for LDAP outpost
         Environment = [
-          "AUTHENTIK_HOST=${cfg.domain}"
-          "AUTHENTIK_TOKEN=changeme" # TODO: Use SOPS for production
+          "AUTHENTIK_HOST=authentik.nixmox.lan"
         ];
+        
+        # Load secrets from SOPS
+        EnvironmentFile = config.sops.secrets."authentik-ldap/env".path;
       };
     };
 
@@ -254,37 +256,17 @@ in {
         
         # Environment variables for Radius outpost
         Environment = [
-          "AUTHENTIK_HOST=${cfg.domain}"
-          "AUTHENTIK_TOKEN=changeme" # TODO: Use SOPS for production
+          "AUTHENTIK_HOST=authentik.nixmox.lan"
         ];
-      };
-    };
-
-    # Create Authentik Proxy outpost service
-    systemd.services.authentik-proxy = {
-      description = "Authentik Proxy Outpost";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" "authentik.service" ];
-      
-      serviceConfig = {
-        Type = "simple";
-        User = "authentik";
-        Group = "authentik";
-        WorkingDirectory = "/tmp"; # Use /tmp temporarily to avoid directory issues
-        ExecStart = "${pkgs.authentik-outposts.proxy}/bin/proxy";
-        Restart = "always";
-        RestartSec = "10s";
         
-        # Environment variables for Proxy outpost
-        Environment = [
-          "AUTHENTIK_HOST=${cfg.domain}"
-          "AUTHENTIK_TOKEN=changeme" # TODO: Use SOPS for production
-        ];
+        # Load secrets from SOPS
+        EnvironmentFile = config.sops.secrets."authentik-radius/env".path;
       };
     };
 
-    # Ensure host resolution for self before DNS exists
-    networking.hosts."127.0.0.1" = [ cfg.domain ];
+
+
+    # Note: Removed hosts entry to allow proper DNS resolution
 
     # Firewall rules for Authentik services
     networking.firewall = {

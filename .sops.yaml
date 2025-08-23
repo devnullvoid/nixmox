@@ -5,3 +5,5 @@
 creation_rules:
   - path_regex: terraform/environments/.*/secrets\.sops\.yaml$
     age: age1jm3etsdme8hwh50sxyzx33gpemt70vqn4zwlsgyscgh86wey4vmsd6lq2s
+  - path_regex: secrets/.*\.yaml$
+    age: age1jm3etsdme8hwh50sxyzx33gpemt70vqn4zwlsgyscgh86wey4vmsd6lq2s

@@ -194,7 +194,13 @@ in {
       # Phase 2 services
       authentik = {
         ip = "192.168.99.12";
-        aliases = [ "auth" "identity" ];
+        aliases = [ "identity" ];
+      };
+      
+      # External access services (via Caddy proxy)
+      auth = {
+        ip = "192.168.99.10";
+        aliases = [ "login" ];
       };
       
       # Phase 3 services

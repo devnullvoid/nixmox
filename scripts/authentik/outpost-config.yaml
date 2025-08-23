@@ -1,0 +1,49 @@
+# Authentik Outpost Deployment Configuration
+# This file configures the automated outpost deployment process
+
+# Authentik connection settings
+authentik:
+  host: "https://auth.nixmox.lan"
+  container: "authentik"
+  ip: "192.168.99.12"
+  bootstrap_token_env: "AUTHENTIK_BOOTSTRAP_TOKEN"
+
+# Terraform settings
+terraform:
+  base_dir: "terraform/authentik"
+  outpost_types:
+    - "ldap"
+    - "radius"
+
+# Secrets management
+secrets:
+  encrypted_file: "secrets/default.yaml"
+  decrypted_file: "secrets/default.decrypted.yaml"
+  backup_dir: "secrets/backups"
+
+# Deployment settings
+deployment:
+  max_wait_attempts: 30
+  wait_interval_seconds: 10
+  service_verification_attempts: 20
+  service_verification_interval_seconds: 15
+
+# Outpost-specific configurations
+outposts:
+  ldap:
+    name: "LDAP Outpost"
+    service_name: "authentik-ldap.service"
+    token_env_pattern: "AUTHENTIK_TOKEN="
+    section: "authentik-ldap"
+    
+  radius:
+    name: "Radius Outpost"
+    service_name: "authentik-radius.service"
+    token_env_pattern: "AUTHENTIK_TOKEN="
+    section: "authentik-radius"
+
+# Logging
+logging:
+  level: "info"  # debug, info, warning, error
+  colors: true
+  timestamp: true

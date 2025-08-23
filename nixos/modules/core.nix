@@ -32,6 +32,10 @@ with lib;
 
   # Common configuration
   config = {
+    # SOPS configuration
+    sops.defaultSopsFile = ../../secrets/default.yaml;
+    sops.age.keyFile = "/etc/age/keys.txt";
+    
     # Common system configuration
     system.stateVersion = "25.11";
     
