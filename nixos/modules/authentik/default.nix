@@ -165,6 +165,47 @@ in {
           "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
           "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
           "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
+          "AUTHENTIK_AUTHENTIK__INSECURE=true"
+          "AUTHENTIK_AUTHENTIK__DISABLE_UPDATE_CHECK=true"
+          "AUTHENTIK_AUTHENTIK__CREATE_DEFAULT_FLOWS=true"  
+          "AUTHENTIK_BLUEPRINTS__AUTO_IMPORT=true"
+          "AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true"
+          "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
+          "AUTHENTIK_AVATARS=initials"
+          "AUTHENTIK_SECRET_KEY=changeme-secret-key-for-development-only" # TODO: Use SOPS for production
+        ];
+      };
+    };
+
+    # Create Authentik Celery worker service
+    systemd.services.authentik-worker = {
+      description = "Authentik Celery Worker";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "postgresql.service" "redis.service" "authentik.service" ];
+      
+      serviceConfig = {
+        Type = "simple";
+        User = "authentik";
+        Group = "authentik";
+        WorkingDirectory = "/tmp"; # Use /tmp temporarily to avoid directory issues
+        ExecStart = "${pkgs.authentik}/bin/ak worker";
+        Restart = "always";
+        RestartSec = "10s";
+        
+        # Environment variables for configuration (same as main service)
+        Environment = [
+          "AUTHENTIK_POSTGRESQL__HOST=${cfg.database.host}"
+          "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
+          "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
+          "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
+          "AUTHENTIK_POSTGRESQL__PASSWORD=${cfg.database.password}"
+          "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
+          "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
+          "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
+          "AUTHENTIK_AUTHENTIK__INSECURE=true"
+          "AUTHENTIK_AUTHENTIK__DISABLE_UPDATE_CHECK=true"
+          "AUTHENTIK_AUTHENTIK__CREATE_DEFAULT_FLOWS=true"  
+          "AUTHENTIK_BLUEPRINTS__AUTO_IMPORT=true"
           "AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true"
           "AUTHENTIK_ERROR_REPORTING__ENABLED=false"
           "AUTHENTIK_AVATARS=initials"
