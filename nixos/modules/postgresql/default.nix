@@ -85,6 +85,18 @@ in {
         # Network settings - allow remote connections
         listen_addresses = lib.mkForce "*";
         
+        # Connection pooling settings
+        max_connections = 200;  # Increased from default 100
+        superuser_reserved_connections = 3;
+        
+        # Connection timeout settings
+        tcp_keepalives_idle = 600;
+        tcp_keepalives_interval = 30;
+        tcp_keepalives_count = 3;
+        
+        # Idle connection timeout
+        idle_in_transaction_session_timeout = "300s";
+        
         # Performance settings
         # Memory settings
         shared_buffers = "256MB";
@@ -104,7 +116,6 @@ in {
         work_mem = "4MB";
         
         # Connection settings
-        max_connections = "100";
         
         # Logging
         log_statement = "all";
@@ -141,6 +152,7 @@ in {
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
       '';
       
+
 
     };
 
