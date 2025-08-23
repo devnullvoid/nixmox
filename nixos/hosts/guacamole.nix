@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "guacamole";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable Guacamole service
   services.nixmox.guacamole.enable = true;
 

@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "mail";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable mail services
   services.nixmox.mail.enable = true;
 

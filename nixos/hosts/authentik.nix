@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "authentik";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable Authentik service
   services.nixmox.authentik.enable = true;
 

@@ -1,4 +1,4 @@
-{ config, lib, pkgs, inputs, ... }:
+{ config, lib, pkgs, inputs, modulesPath, ... }:
 
 with lib;
 
@@ -7,6 +7,9 @@ with lib;
   imports = [
     # Basic system configuration
     inputs.nixpkgs.nixosModules.notDetected
+    
+    # Proxmox LXC module for container-specific configurations
+    (modulesPath + "/virtualisation/proxmox-lxc.nix")
     
     # NixMox common configuration
     ./common/default.nix
@@ -17,6 +20,21 @@ with lib;
 
   # Common system configuration
   system.stateVersion = "25.11";
+  
+  # LXC-specific configuration
+  proxmoxLXC = {
+    manageNetwork = false;
+    privileged = false;
+  };
+  
+  # Nix settings for LXC containers
+  nix.settings = { 
+    sandbox = false; 
+    experimental-features = [ "nix-command" "flakes" ];
+  };
+  
+  # Allow unfree packages (needed for some proprietary software)
+  nixpkgs.config.allowUnfree = true;
   
   # Basic boot configuration for containers
   boot = {
@@ -73,16 +91,16 @@ with lib;
     network.enable = true;
   };
 
-  # Enable systemd-resolved
-  services.resolved.enable = true;
+  # Disable systemd-resolved in LXC containers (can conflict with other DNS services)
+  services.resolved.enable = lib.mkForce false;
 
   # Common security settings
   security = {
-    # Enable auditd
-    auditd.enable = true;
+    # Disable auditd in LXC containers (not supported)
+    auditd.enable = lib.mkForce false;
     
-    # Enable apparmor
-    apparmor.enable = true;
+    # Disable apparmor in LXC containers (limited support)
+    apparmor.enable = lib.mkForce false;
   };
 
   # Common system packages

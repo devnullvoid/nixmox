@@ -15,6 +15,9 @@ in {
 
   # Host-specific configuration
   networking.hostName = "postgresql";
+
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
   
   # Enable PostgreSQL service
   services.nixmox.postgresql.enable = true;

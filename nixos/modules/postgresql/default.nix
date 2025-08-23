@@ -137,8 +137,26 @@ in {
     # Systemd services
     systemd.services = {
       postgresql = {
-        after = [ "network.target" ];
+        after = [ "network.target" "postgresql-data-dir.service" ];
+        wants = [ "postgresql-data-dir.service" ];
         wantedBy = [ "multi-user.target" ];
+      };
+      
+      # Create PostgreSQL data directory
+      postgresql-data-dir = {
+        description = "Create PostgreSQL data directory";
+        wantedBy = [ "multi-user.target" ];
+        before = [ "postgresql.service" ];
+        
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${pkgs.coreutils}/bin/mkdir -p ${cfg.dataDir}";
+          ExecStartPost = [
+            "${pkgs.coreutils}/bin/chown postgres:postgres ${cfg.dataDir}"
+            "${pkgs.coreutils}/bin/chmod 700 ${cfg.dataDir}"
+          ];
+          RemainAfterExit = true;
+        };
       };
     };
 
@@ -150,9 +168,11 @@ in {
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.postgresql_16}/bin/psql -h localhost -U postgres -c 'SELECT 1;'";
+        ExecStart = "${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c 'SELECT 1;'";
         Restart = "on-failure";
         RestartSec = "30s";
+        User = "postgres";
+        Group = "postgres";
       };
     };
   };

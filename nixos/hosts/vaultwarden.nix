@@ -17,6 +17,9 @@ in {
   # Host-specific configuration
   networking.hostName = "vaultwarden";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable Vaultwarden OCI service
   services.nixmox.vaultwarden.oci.enable = true;
 

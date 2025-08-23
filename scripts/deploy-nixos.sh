@@ -17,6 +17,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 TIMEOUT=300  # 5 minutes timeout for builds
 
+# Hostname to IP mapping for direct connection
+declare -A HOST_IPS=(
+    ["caddy"]="192.168.99.10"
+    ["postgresql"]="192.168.99.11"
+    ["authentik"]="192.168.99.12"
+    ["dns"]="192.168.99.13"
+    ["vaultwarden"]="192.168.99.14"
+    ["nextcloud"]="192.168.99.15"
+    ["guacamole"]="192.168.99.16"
+    ["media"]="192.168.99.17"
+    ["monitoring"]="192.168.99.18"
+    ["mail"]="192.168.99.19"
+)
+
 # Default values
 HOST=""
 DRY_RUN=false
@@ -77,14 +91,21 @@ log_error() {
 # Check if host is accessible
 check_host_access() {
     local host="$1"
-    log_info "Checking SSH access to $host..."
+    local ip="${HOST_IPS[$host]}"
     
-    if ! ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$host.nixmox.lan" "echo 'SSH test successful'" > /dev/null 2>&1; then
-        log_error "Cannot SSH to $host.nixmox.lan"
+    if [[ -z "$ip" ]]; then
+        log_error "No IP address configured for host: $host"
         return 1
     fi
     
-    log_success "SSH access to $host confirmed"
+    log_info "Checking SSH access to $host ($ip)..."
+    
+    if ! ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$ip" "echo 'SSH test successful'" > /dev/null 2>&1; then
+        log_error "Cannot SSH to $host ($ip)"
+        return 1
+    fi
+    
+    log_success "SSH access to $host ($ip) confirmed"
     return 0
 }
 
@@ -107,9 +128,10 @@ deploy_host() {
     fi
     
     # Deploy to remote host
-    log_info "Deploying to $host.nixmox.lan..."
+    local ip="${HOST_IPS[$host]}"
+    log_info "Deploying to $host ($ip)..."
     
-    local deploy_cmd="nixos-rebuild switch --flake .#$host --target-host root@$host.nixmox.lan"
+    local deploy_cmd="nixos-rebuild switch --flake .#$host --target-host root@$ip"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "DRY RUN: Would run: $deploy_cmd on $host"
@@ -117,7 +139,7 @@ deploy_host() {
     fi
     
     # Use timeout to prevent hanging builds
-    if timeout "$BUILD_TIMEOUT" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$host" --target-host "root@$host.nixmox.lan"; then
+    if timeout "$BUILD_TIMEOUT" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$host" --target-host "root@$ip"; then
         log_success "Successfully deployed to $host"
         return 0
     else

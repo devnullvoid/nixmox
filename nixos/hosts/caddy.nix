@@ -17,6 +17,9 @@ in {
   # Host-specific configuration
   networking.hostName = "caddy";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable Caddy service
   services.nixmox.caddy.enable = true;
   services.nixmox.localtls.enable = true;

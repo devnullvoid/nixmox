@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "nextcloud";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable Nextcloud service
   services.nixmox.nextcloud.enable = true;
 

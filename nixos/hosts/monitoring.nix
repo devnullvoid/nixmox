@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "monitoring";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable monitoring services
   services.nixmox.monitoring.enable = true;
 

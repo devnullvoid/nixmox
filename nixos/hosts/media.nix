@@ -16,6 +16,9 @@ in {
   # Host-specific configuration
   networking.hostName = "media";
   
+  # Enable common services (SSH, monitoring, etc.)
+  services.nixmox.enable = true;
+  
   # Enable media services
   services.nixmox.media.enable = true;
 
