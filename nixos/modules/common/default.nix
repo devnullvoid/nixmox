@@ -209,19 +209,11 @@ environment.systemPackages = with pkgs; [
     systemd = {
       # Global settings
       services = {
-        # Ensure SSH starts early
-        "sshd" = {
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network.target" ];
-        };
-        
         # Node exporter settings
         "prometheus-node-exporter" = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
         };
-
-
       };
       
       # Global targets
