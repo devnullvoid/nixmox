@@ -82,7 +82,7 @@ in {
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
           # Local zone for our primary domain
           local-zone = [ "${cfg.primaryDomain} static" ];
-          # Local data entries - moved inside server block (simplified for now)
+          # Local data entries for internal services
           local-data = [
             "${cfg.primaryDomain}. IN NS ${cfg.domain}."
           ] ++ (mapAttrsToList (name: service: 
