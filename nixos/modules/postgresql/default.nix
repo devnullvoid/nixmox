@@ -82,6 +82,9 @@ in {
       settings = {
         port = cfg.port;
         
+        # Network settings - allow remote connections
+        listen_addresses = lib.mkForce "*";
+        
         # Performance settings
         # Memory settings
         shared_buffers = "256MB";
@@ -125,6 +128,20 @@ in {
       # Enable required extensions
       enableJIT = true;
       package = pkgs.postgresql_16;
+      
+      # Configure authentication for internal network
+      initialScript = pkgs.writeText "init.sql" ''
+        -- Create authentik user and database
+        CREATE USER authentik WITH PASSWORD 'authentik123';
+        CREATE DATABASE authentik OWNER authentik;
+        GRANT ALL PRIVILEGES ON DATABASE authentik TO authentik;
+        
+        -- Enable required extensions
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+      '';
+      
+
     };
 
     # Firewall rules

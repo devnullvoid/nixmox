@@ -22,6 +22,23 @@ in {
   # Enable PostgreSQL service
   services.nixmox.postgresql.enable = true;
 
+  # Configure databases and users
+  services.nixmox.postgresql = {
+    # Create Authentik database and user
+    databases.authentik = {
+      name = "authentik";
+      owner = "authentik";
+      extensions = [ "uuid-ossp" "pgcrypto" ];
+    };
+
+    users.authentik = {
+      name = "authentik";
+      password = "authentik123"; # TODO: Use SOPS for production
+      databases = [ "authentik" ];
+      superuser = false;
+    };
+  };
+
   # Firewall rules for PostgreSQL
   networking.firewall = {
     allowedTCPPorts = [

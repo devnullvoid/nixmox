@@ -8,12 +8,6 @@ in {
   options.services.nixmox = {
     enable = mkEnableOption "NixMox common services";
     
-    domain = mkOption {
-      type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for services";
-    };
-    
     internalNetwork = mkOption {
       type = types.str;
       default = "192.168.99.0/24";
