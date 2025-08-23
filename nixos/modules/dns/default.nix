@@ -82,14 +82,12 @@ in {
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
           # Local zone for our primary domain
           local-zone = [ "${cfg.primaryDomain} static" ];
-          # Local data entries - moved inside server block
+          # Local data entries - moved inside server block (simplified for now)
           local-data = [
             "${cfg.primaryDomain}. IN NS ${cfg.domain}."
           ] ++ (mapAttrsToList (name: service: 
             "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-          ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
-            map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
-          ) cfg.services));
+          ) cfg.services);
         };
         
         # Forward zone - must be an array as per NixOS Wiki example
