@@ -108,20 +108,15 @@ in {
           ];
         };
         
-      };
-      
-      # Forward zones
-      settings = {
+        # Forward zones
         forward-zone = [
           {
             name = ".";
             forward-addr = cfg.upstreamServers;
           }
         ];
-      };
-      
-      # Local data for internal services
-      settings = {
+        
+        # Local data for internal services
         local-data = [
           # NS record for primary domain
           "${cfg.primaryDomain}. IN NS ${cfg.domain}."
