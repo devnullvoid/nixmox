@@ -56,8 +56,9 @@ in {
     services.unbound = {
       enable = true;
       
-      # Basic configuration using proper Unbound syntax
+      # Use settings to directly configure Unbound
       settings = {
+        # Server configuration
         server = {
           interface = [ "0.0.0.0" "::" ];
           port = "53";
@@ -82,13 +83,13 @@ in {
           local-zone = [ "${cfg.primaryDomain} static" ];
         };
         
-        # Forward zone configuration - must be at top level, not under server
+        # Forward zone - must be at top level according to Unbound manual
         forward-zone = {
           name = ".";
           forward-addr = cfg.upstreamServers;
         };
         
-        # Local data entries - must be at top level, not under server
+        # Local data - must be at top level according to Unbound manual
         local-data = [
           "${cfg.primaryDomain}. IN NS ${cfg.domain}."
         ] ++ (mapAttrsToList (name: service: 
