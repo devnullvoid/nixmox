@@ -54,17 +54,17 @@ tf-apply-phase-auto env="dev" phase="1":
 # Phased Deployment Commands
 # =============================================================================
 
-# Deploy Phase 1: Infrastructure Foundation (Proxmox LXC containers)
+# Deploy Phase 1: Infrastructure Foundation (DNS, PostgreSQL, Caddy)
 deploy-phase1 env="dev":
 	@echo "Deploying Phase 1: Infrastructure Foundation"
 	./scripts/deploy-phases.sh -e {{env}} -p 1
 
-# Deploy Phase 2: Core Services (NixOS configurations)
+# Deploy Phase 2: Authentication Foundation (Authentik only)
 deploy-phase2 env="dev":
-	@echo "Deploying Phase 2: Core Services"
+	@echo "Deploying Phase 2: Authentication Foundation (Authentik)"
 	./scripts/deploy-phases.sh -e {{env}} -p 2
 
-# Deploy Phase 3: Application Services
+# Deploy Phase 3: Application Services (all depend on Authentik)
 deploy-phase3 env="dev":
 	@echo "Deploying Phase 3: Application Services"
 	./scripts/deploy-phases.sh -e {{env}} -p 3

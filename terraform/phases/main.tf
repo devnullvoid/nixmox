@@ -236,6 +236,7 @@ locals {
     }
   }
 
+  # Phase 2: Authentik (required by all other services for authentication)
   phase2_containers = {
     authentik = {
       vmid = 903
@@ -249,6 +250,7 @@ locals {
     }
   }
 
+  # Phase 3: Application services (all depend on Authentik for auth)
   phase3_containers = {
     vaultwarden = {
       vmid = 905

@@ -10,8 +10,11 @@ Phase 1: Infrastructure Foundation
 ├── Caddy (VMID 901) - Reverse proxy & load balancer  
 ├── DNS (VMID 904) - Internal DNS resolution
 
-Phase 2: Core Services
-├── Authentik (VMID 903) - Identity & access management
+Phase 2: Authentication Foundation
+└── Authentik (VMID 903) - Identity & access management
+    (Required by all other services)
+
+Phase 3: Application Services
 ├── Vaultwarden (VMID 905) - Password manager
 ├── Nextcloud (VMID 906) - File storage
 ├── Guacamole (VMID 907) - Remote desktop gateway
@@ -42,7 +45,7 @@ terraform apply \
   -auto-approve
 ```
 
-### 3. **Deploy Core Services (Phase 2)**
+### 3. **Deploy Authentication Foundation (Phase 2)**
 ```bash
 just deploy-phase2 env=dev
 
@@ -50,6 +53,18 @@ just deploy-phase2 env=dev
 terraform apply \
   -var="environment=dev" \
   -var="deployment_phase=2" \
+  -var="secrets_file=../environments/dev/secrets.sops.yaml" \
+  -auto-approve
+```
+
+### 4. **Deploy Application Services (Phase 3)**
+```bash
+just deploy-phase3 env=dev
+
+# Or manually:
+terraform apply \
+  -var="environment=dev" \
+  -var="deployment_phase=3" \
   -var="secrets_file=../environments/dev/secrets.sops.yaml" \
   -auto-approve
 ```

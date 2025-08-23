@@ -102,6 +102,7 @@ with lib;
   
   # Manually configure DNS resolution to use our internal DNS server (from network config)
   environment.etc."resolv.conf".text = ''
+    search ${config.services.nixmox.network.domain}
     nameserver ${config.services.nixmox.network.dns_server}
     nameserver 8.8.8.8
     nameserver 1.1.1.1
