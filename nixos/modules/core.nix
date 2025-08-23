@@ -76,6 +76,9 @@ with lib;
     # Enable IPv6
     enableIPv6 = true;
     
+    # Use our internal DNS server as primary resolver
+    nameservers = [ "192.168.99.13" "8.8.8.8" "1.1.1.1" ];
+    
     # Common firewall settings
     firewall = {
       enable = true;
@@ -93,6 +96,14 @@ with lib;
 
   # Disable systemd-resolved in LXC containers (can conflict with other DNS services)
   services.resolved.enable = lib.mkForce false;
+  
+  # Manually configure DNS resolution to use our internal DNS server
+  environment.etc."resolv.conf".text = ''
+    nameserver 192.168.99.13
+    nameserver 8.8.8.8
+    nameserver 1.1.1.1
+    options timeout:2 attempts:3
+  '';
 
   # Common security settings
   security = {

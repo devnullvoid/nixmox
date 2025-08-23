@@ -80,17 +80,26 @@ in {
         }
       '';
       
-      # Virtual hosts will be configured by the services.nix import
-      virtualHosts = mkIf (cfg.services != null) (
-        builtins.mapAttrs (name: service: {
-          extraConfig = ''
-            ${service.extraConfig or ""}
-            
-            # Basic reverse proxy configuration
-            reverse_proxy ${service.backend}:${toString service.port}
-          '';
-        }) cfg.services
-      );
+      # Use a custom Caddyfile instead of virtualHosts to avoid conflicts
+      configFile = pkgs.writeText "Caddyfile" ''
+        {
+          admin off
+          metrics 127.0.0.1:9090
+        }
+        
+        ${builtins.concatStringsSep "\n\n" (
+          builtins.attrValues (builtins.mapAttrs (name: service: ''
+            ${service.domain} {
+              ${service.extraConfig or ""}
+              
+              # Basic reverse proxy configuration
+              reverse_proxy ${service.backend}:${toString service.port}
+            }
+          '') cfg.services)
+        )}
+      '';
+      
+
     };
 
     # Basic firewall rules
