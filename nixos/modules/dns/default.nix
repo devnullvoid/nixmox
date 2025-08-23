@@ -56,7 +56,7 @@ in {
     services.unbound = {
       enable = true;
       
-      # Use settings to directly configure Unbound
+      # Use settings to directly configure Unbound based on NixOS Wiki example
       settings = {
         # Server configuration
         server = {
@@ -80,23 +80,25 @@ in {
           harden-referral-path = "yes";
           use-caps-for-id = "yes";
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
+          # Local zone for our primary domain
           local-zone = [ "${cfg.primaryDomain} static" ];
+          # Local data entries - moved inside server block
+          local-data = [
+            "${cfg.primaryDomain}. IN NS ${cfg.domain}."
+          ] ++ (mapAttrsToList (name: service: 
+            "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
+          ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+            map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
+          ) cfg.services));
         };
         
-        # Forward zone - must be at top level according to Unbound manual
-        forward-zone = {
-          name = ".";
-          forward-addr = cfg.upstreamServers;
-        };
-        
-        # Local data - must be at top level according to Unbound manual
-        local-data = [
-          "${cfg.primaryDomain}. IN NS ${cfg.domain}."
-        ] ++ (mapAttrsToList (name: service: 
-          "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-        ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
-          map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
-        ) cfg.services));
+        # Forward zone - must be an array as per NixOS Wiki example
+        forward-zone = [
+          {
+            name = ".";
+            forward-addr = cfg.upstreamServers;
+          }
+        ];
       };
     };
     
