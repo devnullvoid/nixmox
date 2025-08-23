@@ -52,18 +52,15 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Unbound DNS server configuration
+        # Unbound DNS server configuration
     services.unbound = {
       enable = true;
       
-      # Global settings
+      # Basic configuration
       settings = {
         server = {
-          # Interface and port
           interface = [ "0.0.0.0" "::" ];
           port = "53";
-          
-          # Access control
           access-control = [
             "0.0.0.0/0 refuse"
             "127.0.0.0/8 allow"
@@ -71,26 +68,9 @@ in {
             "10.0.0.0/8 allow"
             "172.16.0.0/12 allow"
           ];
-          
-          # Performance settings
           num-threads = "2";
-          msg-cache-slabs = "4";
-          rrset-cache-slabs = "4";
-          infra-cache-slabs = "4";
-          key-cache-slabs = "4";
-          rrset-cache-size = "256k";
           msg-cache-size = "128k";
-          so-rcvbuf = "1m";
-          private-address = [
-            "192.168.0.0/16"
-            "169.254.0.0/16"
-            "172.16.0.0/12"
-            "10.0.0.0/8"
-            "fd00::/8"
-            "fe80::/10"
-          ];
-          
-          # Security settings
+          rrset-cache-size = "256k";
           hide-identity = "yes";
           hide-version = "yes";
           harden-glue = "yes";
@@ -98,17 +78,10 @@ in {
           harden-below-nxdomain = "yes";
           harden-referral-path = "yes";
           use-caps-for-id = "yes";
-          
-          # DNSSEC
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
-          
-          # Forward zones for internal services
-          local-zone = [
-            "${cfg.primaryDomain} static"
-          ];
+          local-zone = [ "${cfg.primaryDomain} static" ];
         };
         
-        # Forward zones
         forward-zone = [
           {
             name = ".";
@@ -116,9 +89,7 @@ in {
           }
         ];
         
-        # Local data for internal services
         local-data = [
-          # NS record for primary domain
           "${cfg.primaryDomain}. IN NS ${cfg.domain}."
         ] ++ (mapAttrsToList (name: service: 
           "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
