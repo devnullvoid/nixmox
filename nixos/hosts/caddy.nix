@@ -21,7 +21,10 @@ in {
   services.nixmox.enable = true;
   
   # Enable Caddy service
-  services.nixmox.caddy.enable = true;
+  services.nixmox.caddy = {
+    enable = true;
+    developmentMode = true; # Disable automatic HTTPS for development
+  };
   services.nixmox.localtls.enable = true;
 
   # Firewall rules for Caddy

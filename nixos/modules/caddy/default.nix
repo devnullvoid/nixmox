@@ -18,6 +18,13 @@ in {
       default = "nixmox.lan";
       description = "Base domain for all services";
     };
+    
+    # Development mode (disable automatic HTTPS)
+    developmentMode = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Disable automatic HTTPS for development";
+    };
 
     # Authentik configuration
     authentikDomain = mkOption {
@@ -85,11 +92,20 @@ in {
         {
           admin off
           metrics 127.0.0.1:9090
+          ${lib.optionalString cfg.developmentMode ''
+            # Use internal CA for self-signed certificates in development
+            pki {
+              ca {
+                name "NixMox Development CA"
+              }
+            }
+          ''}
         }
         
         ${builtins.concatStringsSep "\n\n" (
           builtins.attrValues (builtins.mapAttrs (name: service: ''
             ${service.domain} {
+              ${lib.optionalString cfg.developmentMode "tls internal"}
               ${service.extraConfig or ""}
               
               # Basic reverse proxy configuration

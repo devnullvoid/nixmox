@@ -14,8 +14,8 @@ in {
     services.nixmox.caddy.services = {
       # Authentik service
       authentik = {
-        domain = "authentik.${baseDomain}";
-        backend = "authentik.nixmox.lan";
+        domain = "auth.${baseDomain}";
+        backend = "192.168.99.12";
         port = 9000;
         enableAuth = false; # No auth for Authentik itself
         extraConfig = ''

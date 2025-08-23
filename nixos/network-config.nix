@@ -75,6 +75,10 @@
       domain = "caddy.nixmox.lan";
       ip = "192.168.99.10";
     };
+    auth = {
+      domain = "auth.nixmox.lan";
+      ip = "192.168.99.10";
+    };
     dns = {
       domain = "dns.nixmox.lan";
       ip = "192.168.99.13";
