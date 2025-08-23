@@ -111,19 +111,26 @@ in {
       };
       
       # Forward zones
-      forward-zones = {
-        "." = cfg.upstreamServers;
+      settings = {
+        forward-zone = [
+          {
+            name = ".";
+            forward-addr = cfg.upstreamServers;
+          }
+        ];
       };
       
       # Local data for internal services
-      local-data = [
-        # NS record for primary domain
-        "${cfg.primaryDomain}. IN NS ${cfg.domain}."
-      ] ++ (mapAttrsToList (name: service: 
-        "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
-      ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
-        map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
-      ) cfg.services));
+      settings = {
+        local-data = [
+          # NS record for primary domain
+          "${cfg.primaryDomain}. IN NS ${cfg.domain}."
+        ] ++ (mapAttrsToList (name: service: 
+          "${name}.${cfg.primaryDomain}. IN A ${service.ip}"
+        ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+          map (alias: "${alias}.${cfg.primaryDomain}. IN CNAME ${name}.${cfg.primaryDomain}.") service.aliases
+        ) cfg.services));
+      };
     };
     
     # Firewall rules for DNS
