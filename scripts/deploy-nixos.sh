@@ -170,6 +170,8 @@ deploy_host() {
     local ip="${HOST_IPS[$host]}"
     log_info "Deploying to $host ($ip)..."
     
+    # Configure SSH options to prevent host key confirmation
+    local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
     local deploy_cmd="nixos-rebuild switch --flake .#$host --target-host root@$ip"
     
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -177,8 +179,8 @@ deploy_host() {
         return 0
     fi
     
-    # Use timeout to prevent hanging builds
-    if timeout "$BUILD_TIMEOUT" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$host" --target-host "root@$ip"; then
+    # Use timeout to prevent hanging builds with NIX_SSHOPTS
+    if NIX_SSHOPTS="$ssh_opts" timeout "$BUILD_TIMEOUT" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$host" --target-host "root@$ip"; then
         log_success "Successfully deployed to $host"
         return 0
     else

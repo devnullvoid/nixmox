@@ -20,6 +20,9 @@ terraform/environments/*/.terraform/
 **/secrets.decrypted.yml
 **/*.decrypted.*
 
+# Internal CA certificates (contain private keys)
+certs/
+
 # Nix
 result/
 result-*

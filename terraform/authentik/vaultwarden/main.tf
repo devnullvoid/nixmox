@@ -53,6 +53,7 @@ resource "authentik_provider_oauth2" "vaultwarden" {
   invalidation_flow  = data.authentik_flow.default_invalidation.id
   client_type        = "confidential"
 
+
   # Token lifetimes to avoid frontend 5min collision
   access_token_validity  = "minutes=60"
   refresh_token_validity = "days=30"

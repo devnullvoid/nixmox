@@ -5,6 +5,7 @@ with lib;
 let
   cfg = config.services.nixmox.vaultwarden.oci;
 in {
+  imports = [ ../../shared/internal-ca.nix ];
   options.services.nixmox.vaultwarden.oci = {
     enable = mkEnableOption "Run Vaultwarden as an OCI container (Timshel SSO-capable build)";
 
@@ -44,20 +45,26 @@ in {
       description = "Data directory on host mounted to /data";
     };
 
-    lanIp = mkOption {
-      type = types.str;
-      default = "192.168.88.194";
-      description = "LAN IP for add-host mappings for auth/vault domains";
-    };
+    # lanIp = mkOption {
+    #   type = types.str;
+    #   default = "192.168.99.10";
+    #   description = "LAN IP for add-host mappings for auth/vault domains";
+    # };
 
-    authDomain = mkOption {
-      type = types.str;
-      default = "authentik.nixmox.lan";
-      description = "Authentik domain for SSO Authority";
-    };
+    # authDomain = mkOption {
+    #   type = types.str;
+    #   default = "auth.nixmox.lan";
+    #   description = "Authentik domain for SSO Authority";
+    # };
   };
 
   config = mkIf cfg.enable {
+    # Enable internal CA certificate distribution
+    services.nixmox.internalCa = {
+      enable = true;
+      caCertPath = ../../../certs/nixmox-internal-ca.crt;
+    };
+    
     # Ensure local firewall permits backend traffic on the Vaultwarden port
     networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
     # Construct DOMAIN by default from base domain
@@ -67,6 +74,8 @@ in {
 
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ "${cfg.subdomain}.${config.services.nixmox.domain}" ];
+    # Ensure auth domain resolution works for OIDC discovery
+    # networking.hosts."${cfg.lanIp}" = [ cfg.authDomain ];
 
     # Podman bridged networking needs nftables (netavark) for port publishing
     networking.nftables.enable = true;
@@ -80,6 +89,8 @@ in {
       restartUnits = [ "podman-vaultwarden.service" ];
     };
 
+    # CA certificate is now handled by the shared internal-ca module
+
     virtualisation.oci-containers.containers.vaultwarden = {
       image = cfg.image;
       autoStart = true;
@@ -87,14 +98,14 @@ in {
       ports = [ ];
       volumes = [
         "${cfg.dataDir}:/data"
-        # Ensure container trusts host CA bundle (incl. local CA) at Debian's default path
-        "/etc/ssl/certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
+        # Mount the shared internal CA certificate
+        "/var/lib/shared-certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro"
       ];
       extraOptions = [
         "--network=host"
         # Ensure name resolution for Authentik and Vaultwarden domains inside the container
-        "--add-host=${cfg.authDomain}:${cfg.lanIp}"
-        "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
+        # "--add-host=${cfg.authDomain}:${cfg.lanIp}"
+        # "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
       ];
       environmentFiles = [ "/run/secrets/vaultwarden/env" ];
       environment = {
@@ -102,16 +113,14 @@ in {
         ROCKET_ADDRESS = "0.0.0.0";
         ROCKET_PORT = toString cfg.listenPort;
         WEB_VAULT_ENABLED = "true";
-        SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
-        SSL_CERT_DIR = "/etc/ssl/certs";
-        REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+        # SSL_CERT_DIR = "/etc/ssl/certs";
         # SSO static config; client/secret via env file
         SSO_ENABLED = "true";
         SSO_ONLY = "false";
         SSO_DISPLAY_NAME = "Authentik";
         SSO_SCOPES = "openid email profile offline_access";
         # Ensure correct provider slug and trailing slash
-        SSO_AUTHORITY = "https://${cfg.authDomain}/application/o/vaultwarden/";
+        # SSO_AUTHORITY = "https://${cfg.authDomain}/application/o/vaultwarden/";
       };
     };
   };

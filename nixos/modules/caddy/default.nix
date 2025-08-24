@@ -26,6 +26,31 @@ in {
       description = "Disable automatic HTTPS for development";
     };
 
+    # Internal CA configuration
+    useInternalCa = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Whether to use the NixMox internal CA";
+    };
+    
+    caCertPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "Path to internal CA certificate (if null, uses Caddy's internal CA)";
+    };
+    
+    caKeyPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "Path to internal CA private key (if null, uses Caddy's internal CA)";
+    };
+    
+    caName = mkOption {
+      type = types.str;
+      default = "NixMox Internal CA";
+      description = "Name for the internal CA";
+    };
+
     # Authentik configuration
     authentikDomain = mkOption {
       type = types.str;
@@ -92,8 +117,18 @@ in {
         {
           admin off
           metrics 127.0.0.1:9090
-          ${lib.optionalString cfg.developmentMode ''
-            # Use internal CA for self-signed certificates in development
+          ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null && cfg.caKeyPath != null) ''
+            # Use NixMox internal CA
+            pki {
+              ca {
+                name "${cfg.caName or "NixMox Internal CA"}"
+                root "${cfg.caCertPath}"
+                key "${cfg.caKeyPath}"
+              }
+            }
+          ''}
+          ${lib.optionalString (cfg.developmentMode && !cfg.useInternalCa) ''
+            # Use Caddy's internal CA for development
             pki {
               ca {
                 name "NixMox Development CA"

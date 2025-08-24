@@ -251,7 +251,7 @@ resource "null_resource" "deploy" {
   }
 
   provisioner "local-exec" {
-    command = "bash -lc 'set -e; echo Waiting for SSH on ${self.triggers.ip}...; for i in $(seq 1 60); do if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@${self.triggers.ip} true 2>/dev/null; then break; fi; sleep 2; done; if command -v nixos-rebuild >/dev/null 2>&1; then nixos-rebuild switch --fast --flake ${self.triggers.flake}#${self.triggers.hostname} --target-host root@${self.triggers.ip}; else nix run nixpkgs#nixos-rebuild -- switch --fast --flake ${self.triggers.flake}#${self.triggers.hostname} --target-host root@${self.triggers.ip}; fi'"
+    command = "bash -lc 'set -e; echo Waiting for SSH on ${self.triggers.ip}...; for i in $(seq 1 60); do if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 root@${self.triggers.ip} true 2>/dev/null; then break; fi; sleep 2; done; if command -v nixos-rebuild >/dev/null 2>&1; then nixos-rebuild switch --fast --flake ${self.triggers.flake}#${self.triggers.hostname} --target-host root@${self.triggers.ip}; else nix run nixpkgs#nixos-rebuild -- switch --fast --flake ${self.triggers.flake}#${self.triggers.hostname} --target-host root@${self.triggers.ip}; fi'"
   }
 
   depends_on = [proxmox_lxc.container, null_resource.bootstrap_config]

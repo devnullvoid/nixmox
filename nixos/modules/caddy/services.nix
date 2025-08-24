@@ -240,7 +240,7 @@ in {
         '';
       };
 
-      # Vaultwarden service
+      # Vaultwarden service (internal container access)
       vaultwarden = {
         domain = "vaultwarden.${baseDomain}";
         backend = "vaultwarden.nixmox.lan";
@@ -248,6 +248,26 @@ in {
         enableAuth = true; # Enable Authentik forward auth
         extraConfig = ''
           # Vaultwarden-specific Caddy configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options DENY
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+        '';
+      };
+
+      # Vault service (external user access)
+      vault = {
+        domain = "vault.${baseDomain}";
+        backend = "vaultwarden.nixmox.lan";
+        port = 8080;
+        enableAuth = true; # Enable Authentik forward auth
+        extraConfig = ''
+          # Vault-specific Caddy configuration
           header {
             # Security headers
             X-Content-Type-Options nosniff
