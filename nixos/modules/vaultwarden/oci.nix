@@ -62,7 +62,7 @@ in {
     # Enable internal CA certificate distribution
     services.nixmox.internalCa = {
       enable = true;
-      caCertPath = ../../../certs/nixmox-internal-ca.crt;
+      caCertPath = ../../ca/nixmox-internal-ca.crt;
     };
     
     # Ensure local firewall permits backend traffic on the Vaultwarden port
