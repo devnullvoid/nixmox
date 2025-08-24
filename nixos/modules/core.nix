@@ -19,6 +19,9 @@ with lib;
     
     # SOPS secrets management
     inputs.sops-nix.nixosModules.sops
+    
+    # Internal CA certificate distribution
+    ./shared/internal-ca.nix
   ];
 
   # NixMox service options
@@ -174,6 +177,13 @@ with lib;
         wantedBy = [ "multi-user.target" ];
         after = [ "systemd-networkd-wait-online.service" ];
       };
+    };
+
+    # Enable internal CA certificate distribution for all hosts
+    services.nixmox.internalCa = {
+      enable = true;
+      caCertPath = ../ca/nixmox-internal-ca.crt;
+      wildcardCertPath = ../ca/wildcard-nixmox-lan.crt;
     };
 
     # Common tmpfiles rules

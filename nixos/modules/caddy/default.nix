@@ -117,30 +117,18 @@ in {
         {
           admin off
           metrics 127.0.0.1:9090
-          ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null && cfg.caKeyPath != null) ''
-            # Use NixMox internal CA
-            pki {
-              ca {
-                name "${cfg.caName or "NixMox Internal CA"}"
-                root "${cfg.caCertPath}"
-                key "${cfg.caKeyPath}"
-              }
-            }
-          ''}
-          ${lib.optionalString (cfg.developmentMode && !cfg.useInternalCa) ''
-            # Use Caddy's internal CA for development
-            pki {
-              ca {
-                name "NixMox Development CA"
-              }
-            }
+          # Use our pre-generated wildcard certificate
+          ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null) ''
+            # Note: Using static certificates instead of PKI module
           ''}
         }
         
         ${builtins.concatStringsSep "\n\n" (
           builtins.attrValues (builtins.mapAttrs (name: service: ''
             ${service.domain} {
-              ${lib.optionalString cfg.developmentMode "tls internal"}
+              # Use our wildcard certificate for all services
+              ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null) 
+                "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
               ${service.extraConfig or ""}
               
               # Basic reverse proxy configuration

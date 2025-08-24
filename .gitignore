@@ -22,6 +22,7 @@ terraform/environments/*/.terraform/
 
 # Internal CA certificates (contain private keys)
 certs/
+nixos/ca/*.key
 
 # Nix
 result/

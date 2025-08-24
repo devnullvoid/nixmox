@@ -12,6 +12,9 @@ in {
     # Caddy service module
     ../modules/caddy
     ../modules/localtls
+    
+    # Shared internal CA module
+    ../modules/shared/internal-ca.nix
   ];
 
   # Host-specific configuration
@@ -20,10 +23,13 @@ in {
   # Enable common services (SSH, monitoring, etc.)
   services.nixmox.enable = true;
   
-  # Enable Caddy service
+  # Enable Caddy service with internal CA
   services.nixmox.caddy = {
     enable = true;
-    developmentMode = true; # Disable automatic HTTPS for development
+    developmentMode = false; # Use internal CA instead
+    useInternalCa = true;
+    caCertPath = ../ca/nixmox-internal-ca.crt;
+    caName = "NixMox Internal CA";
   };
   services.nixmox.localtls.enable = true;
 
