@@ -5,7 +5,7 @@ with lib;
 let
   cfg = config.services.nixmox.vaultwarden.oci;
 in {
-  imports = [ ../../shared/internal-ca.nix ];
+  imports = [ ../shared/internal-ca.nix ];
   options.services.nixmox.vaultwarden.oci = {
     enable = mkEnableOption "Run Vaultwarden as an OCI container (Timshel SSO-capable build)";
 
@@ -100,6 +100,8 @@ in {
         "${cfg.dataDir}:/data"
         # Mount the shared internal CA certificate
         "/var/lib/shared-certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro"
+        # Mount the updated CA bundle that includes our internal CA
+        "/var/lib/shared-certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
         "--network=host"
@@ -113,7 +115,8 @@ in {
         ROCKET_ADDRESS = "0.0.0.0";
         ROCKET_PORT = toString cfg.listenPort;
         WEB_VAULT_ENABLED = "true";
-        # SSL_CERT_DIR = "/etc/ssl/certs";
+        # Point to the directory containing our internal CA
+        SSL_CERT_DIR = "/etc/ssl/certs";
         # SSO static config; client/secret via env file
         SSO_ENABLED = "true";
         SSO_ONLY = "false";

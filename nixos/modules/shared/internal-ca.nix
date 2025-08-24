@@ -48,13 +48,17 @@ in {
       sopsFile = ../../../secrets/default.yaml;
       path = "/var/lib/shared-certs/wildcard-nixmox-lan.key";
       mode = "0600";
-      owner = "caddy";
-      group = "caddy";
+      owner = "root";
+      group = "root";
     };
     
     # Copy CA certificate on activation
     system.activationScripts.copyInternalCa = ''
       echo "Installing internal CA certificate..."
+      # Ensure directory exists
+      mkdir -p /var/lib/shared-certs
+      chmod 755 /var/lib/shared-certs
+      
       cp ${cfg.caCertPath} /var/lib/shared-certs/internal-ca.crt
       
       # Copy wildcard certificate if provided
@@ -62,6 +66,10 @@ in {
         echo "Installing wildcard certificate..."
         cp ${cfg.wildcardCertPath} /var/lib/shared-certs/wildcard-nixmox-lan.crt
       ''}
+      
+      # Create a CA bundle that includes our internal CA for containers
+      echo "Creating CA bundle for containers..."
+      cat /etc/ssl/certs/ca-certificates.crt /var/lib/shared-certs/internal-ca.crt > /var/lib/shared-certs/ca-bundle.crt
       
       echo "Internal CA and wildcard certificates installed successfully"
     '';

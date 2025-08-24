@@ -23,14 +23,14 @@ in {
   services.nixmox.monitoring.enable = true;
 
   # Use external PostgreSQL for Grafana
-  services.nixmox.monitoring.grafana.database = {
-    type = "postgresql";
-    host = "postgresql.nixmox.lan";
-    port = 5432;
-    name = "grafana";
-    user = "grafana";
-    password = "changeme"; # Should be overridden via SOPS
-  };
+  # services.nixmox.monitoring.grafana.database = {
+  #   type = "postgresql";
+  #   host = "postgresql.nixmox.lan";
+  #   port = 5432;
+  #   name = "grafana";
+  #   user = "grafana";
+  #   password = "changeme"; # Should be overridden via SOPS
+  # };
 
   # Firewall rules - only allow backend access since we're behind Caddy
   networking.firewall = {
