@@ -27,9 +27,9 @@ variable "vw_client_secret" {
 }
 
 variable "vw_redirect_uri" {
-  description = "Vaultwarden OIDC redirect URI"
+  description = "Vaultwarden OIDC redirect URI (should be https://<domain>/identity/connect/oidc-signin)"
   type        = string
-  default     = "https://vault.nixmox.lan/oidc/callback"
+  default     = "https://vault.nixmox.lan/identity/connect/oidc-signin"
 }
 
 variable "vw_launch_url" {

@@ -25,6 +25,12 @@ in {
       description = "Path to the wildcard private key file";
     };
     
+    enableWildcardKey = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Whether to install the wildcard private key (only needed for hosts serving HTTPS)";
+    };
+    
     caName = mkOption {
       type = types.str;
       default = "NixMox Internal CA";
@@ -43,11 +49,11 @@ in {
       "f /var/lib/shared-certs/wildcard-nixmox-lan.crt 0644 root root"
     ];
     
-    # SOPS secrets for wildcard private key
-    sops.secrets."internal_ca/wildcard_private_key" = {
+    # SOPS secrets for wildcard private key (only when explicitly enabled)
+    sops.secrets."internal_ca/wildcard_private_key" = mkIf cfg.enableWildcardKey {
       sopsFile = ../../../secrets/default.yaml;
       path = "/var/lib/shared-certs/wildcard-nixmox-lan.key";
-      mode = "0600";
+      mode = "0644";
       owner = "root";
       group = "root";
     };
@@ -65,6 +71,13 @@ in {
       ${lib.optionalString (cfg.wildcardCertPath != null) ''
         echo "Installing wildcard certificate..."
         cp ${cfg.wildcardCertPath} /var/lib/shared-certs/wildcard-nixmox-lan.crt
+      ''}
+      
+      # Copy wildcard private key if enabled
+      ${lib.optionalString (cfg.enableWildcardKey && cfg.wildcardKeyPath != null) ''
+        echo "Installing wildcard private key..."
+        cp ${cfg.wildcardKeyPath} /var/lib/shared-certs/wildcard-nixmox-lan.key
+        chmod 644 /var/lib/shared-certs/wildcard-nixmox-lan.key
       ''}
       
       # Create a CA bundle that includes our internal CA for containers

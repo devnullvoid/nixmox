@@ -31,6 +31,15 @@ in {
     caCertPath = ../ca/nixmox-internal-ca.crt;
     caName = "NixMox Internal CA";
   };
+  
+  # Enable internal CA with wildcard private key (needed for HTTPS serving)
+  services.nixmox.internalCa = {
+    enable = true;
+    caCertPath = ../ca/nixmox-internal-ca.crt;
+    wildcardCertPath = ../ca/wildcard-nixmox-lan.crt;
+    enableWildcardKey = true; # Caddy needs the private key to serve HTTPS
+  };
+  
   services.nixmox.localtls.enable = true;
 
   # Firewall rules for Caddy

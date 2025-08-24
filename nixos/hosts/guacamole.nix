@@ -24,7 +24,6 @@ in {
 
   # Use external PostgreSQL
   services.nixmox.guacamole.database = {
-    type = "postgresql";
     host = "postgresql.nixmox.lan";
     port = 5432;
     name = "guacamole";

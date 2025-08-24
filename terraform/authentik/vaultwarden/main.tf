@@ -62,22 +62,6 @@ resource "authentik_provider_oauth2" "vaultwarden" {
     {
       matching_mode = "strict"
       url           = var.vw_redirect_uri
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://vault.nixmox.lan/identity/connect/oidc-signin"
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://vault.nixmox.lan/sso-connector.html"
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://vault.nixmox.lan/identity/callback"
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://vault.nixmox.lan/identity/sso/callback"
     }
   ]
 
