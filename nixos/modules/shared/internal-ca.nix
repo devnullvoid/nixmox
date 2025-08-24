@@ -13,6 +13,18 @@ in {
       description = "Path to the internal CA certificate file";
     };
     
+    wildcardCertPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "Path to the wildcard certificate file";
+    };
+    
+    wildcardKeyPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "Path to the wildcard private key file";
+    };
+    
     caName = mkOption {
       type = types.str;
       default = "NixMox Internal CA";
@@ -28,13 +40,30 @@ in {
     systemd.tmpfiles.rules = [
       "d /var/lib/shared-certs 0755 root root"
       "f /var/lib/shared-certs/internal-ca.crt 0644 root root"
+      "f /var/lib/shared-certs/wildcard-nixmox-lan.crt 0644 root root"
     ];
+    
+    # SOPS secrets for wildcard private key
+    sops.secrets."internal_ca/wildcard_private_key" = {
+      sopsFile = ../../../secrets/default.yaml;
+      path = "/var/lib/shared-certs/wildcard-nixmox-lan.key";
+      mode = "0600";
+      owner = "caddy";
+      group = "caddy";
+    };
     
     # Copy CA certificate on activation
     system.activationScripts.copyInternalCa = ''
       echo "Installing internal CA certificate..."
       cp ${cfg.caCertPath} /var/lib/shared-certs/internal-ca.crt
-      echo "Internal CA certificate installed successfully"
+      
+      # Copy wildcard certificate if provided
+      ${lib.optionalString (cfg.wildcardCertPath != null) ''
+        echo "Installing wildcard certificate..."
+        cp ${cfg.wildcardCertPath} /var/lib/shared-certs/wildcard-nixmox-lan.crt
+      ''}
+      
+      echo "Internal CA and wildcard certificates installed successfully"
     '';
     
     # Ensure the shared-certs directory exists
@@ -46,8 +75,8 @@ in {
       serviceConfig = {
         Type = "oneshot";
         ExecStart = [
-          "mkdir -p /var/lib/shared-certs"
-          "chmod 755 /var/lib/shared-certs"
+          "${pkgs.coreutils}/bin/mkdir -p /var/lib/shared-certs"
+          "${pkgs.coreutils}/bin/chmod 755 /var/lib/shared-certs"
         ];
         RemainAfterExit = true;
       };
