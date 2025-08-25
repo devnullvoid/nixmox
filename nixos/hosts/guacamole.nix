@@ -45,6 +45,13 @@ in {
     password = "guacamole123"; # TODO: Use SOPS for production
   };
 
+  # Bootstrap admin user and rename guacadmin to akadmin for OIDC admin access
+  services.nixmox.guacamole.bootstrapAdmin = {
+    enable = true;
+    username = "akadmin";  # This will be the OIDC admin username
+    password = null;       # Generate a random password (for local auth fallback)
+  };
+
   # Firewall rules - only allow backend access since we're behind Caddy
   networking.firewall = {
     allowedTCPPorts = [

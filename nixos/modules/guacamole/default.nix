@@ -170,6 +170,7 @@ in {
     services.guacamole-client.settings = {
       guacd-hostname = "localhost";
       guacd-port = config.services.guacamole-server.port;
+      # Use OIDC for authentication
       extension-priority = "openid";
 
       # Database config - use external PostgreSQL
@@ -258,7 +259,7 @@ in {
 
     # Bootstrap a local Guacamole admin user if requested
     systemd.services.guacamole-bootstrap-admin = mkIf cfg.bootstrapAdmin.enable {
-      description = "Bootstrap Guacamole local admin user";
+      description = "Bootstrap Guacamole admin user and rename guacadmin to akadmin";
       requires = [ "guacamole-pgsql-schema-import.service" ];
       after = [ "guacamole-pgsql-schema-import.service" ];
       wantedBy = [ "tomcat.service" "multi-user.target" ];
@@ -279,43 +280,153 @@ in {
           exit 0
         fi
 
-        # Generate salt and hash (SHA-256 of salt+password, base64-encoded). If no password provided, generate a random one.
-        PASS=''${GUAC_BOOTSTRAP_PASS}
-        if [ -z ""$PASS"" ]; then
-          PASS=$(${pkgs.openssl}/bin/openssl rand -base64 18)
+        echo "[guacamole-bootstrap-admin] Starting Guacamole admin user setup..."
+
+        # Step 1: Rename existing guacadmin user to akadmin if it exists
+        echo "[guacamole-bootstrap-admin] Checking for existing guacadmin user..."
+        EXISTING_GUACADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+          -U ${cfg.database.user} -d ${cfg.database.name} -c "
+        SELECT COUNT(*) FROM guacamole_entity WHERE name = 'guacadmin' AND type = 'USER';
+        " | tr -d ' ')
+        
+        if [ "$EXISTING_GUACADMIN" -gt 0 ]; then
+          echo "[guacamole-bootstrap-admin] Found existing guacadmin user, renaming to akadmin..."
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+            -U ${cfg.database.user} -d ${cfg.database.name} -c "
+          UPDATE guacamole_entity 
+          SET name = 'akadmin' 
+          WHERE name = 'guacadmin' AND type = 'USER';
+          "
+          echo "[guacamole-bootstrap-admin] Successfully renamed guacadmin to akadmin"
+        else
+          echo "[guacamole-bootstrap-admin] No existing guacadmin user found"
         fi
-        SALT=$(${pkgs.openssl}/bin/openssl rand -base64 32)
-        HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
 
-        # Upsert user
-        ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
-          -v username="''${GUAC_BOOTSTRAP_USER}" \
-          -v hash="''${HASH}" \
-          -v salt="''${SALT}" \
-          -U ${cfg.database.user} -d ${cfg.database.name} <<'PSQL'
-DO $$
-DECLARE
-  uid integer;
-  v_username text := :'username';
-  v_hash text := :'hash';
-  v_salt text := :'salt';
-BEGIN
-  SELECT user_id INTO uid FROM guacamole_user WHERE username = v_username;
-  IF uid IS NULL THEN
-    INSERT INTO guacamole_user (username, password_hash, password_salt, password_date, disabled)
-    VALUES (v_username, v_hash, v_salt, now(), false)
-    RETURNING user_id INTO uid;
-  ELSE
-    UPDATE guacamole_user SET password_hash = v_hash, password_salt = v_salt, password_date = now()
-    WHERE user_id = uid;
-  END IF;
+        # Step 2: Check if akadmin user already exists
+        echo "[guacamole-bootstrap-admin] Checking if akadmin user exists..."
+        EXISTING_AKADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+          -U ${cfg.database.user} -d ${cfg.database.name} -c "
+        SELECT COUNT(*) FROM guacamole_entity WHERE name = 'akadmin' AND type = 'USER';
+        " | tr -d ' ')
+        
+        if [ "$EXISTING_AKADMIN" -gt 0 ]; then
+          echo "[guacamole-bootstrap-admin] akadmin user already exists, ensuring admin permissions..."
+          
+          # Ensure admin permissions exist
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+            -U ${cfg.database.user} -d ${cfg.database.name} -c "
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'ADMINISTER'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_CONNECTION'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_CONNECTION_GROUP'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_SHARING_PROFILE'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_USER'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_USER_GROUP'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          "
+          
+          echo "[guacamole-bootstrap-admin] akadmin user permissions verified"
+        else
+          echo "[guacamole-bootstrap-admin] Creating new akadmin user..."
+          
+          # Generate salt and hash for password (if needed for local auth fallback)
+          PASS=''${GUAC_BOOTSTRAP_PASS}
+          if [ -z "$PASS" ]; then
+            PASS=$(${pkgs.openssl}/bin/openssl rand -base64 18)
+            echo "[guacamole-bootstrap-admin] Generated random password: $PASS"
+          fi
+          SALT=$(${pkgs.openssl}/bin/openssl rand -base64 32)
+          HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
+          
+          # Create new akadmin user
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+            -U ${cfg.database.user} -d ${cfg.database.name} -c "
+          INSERT INTO guacamole_entity (name, type) 
+          VALUES ('akadmin', 'USER')
+          ON CONFLICT (type, name) DO NOTHING;
+          
+          INSERT INTO guacamole_user (entity_id, password_hash, password_salt, password_date, disabled, expired)
+          SELECT e.entity_id, '$HASH', '$SALT', now(), false, false
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT (entity_id) 
+          DO UPDATE SET 
+            password_hash = EXCLUDED.password_hash,
+            password_salt = EXCLUDED.password_salt,
+            password_date = EXCLUDED.password_date;
+          "
+          
+          # Grant admin permissions
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+            -U ${cfg.database.user} -d ${cfg.database.name} -c "
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'ADMINISTER'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_CONNECTION'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_CONNECTION_GROUP'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_SHARING_PROFILE'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_USER'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          
+          INSERT INTO guacamole_system_permission (entity_id, permission)
+          SELECT e.entity_id, 'CREATE_USER_GROUP'
+          FROM guacamole_entity e 
+          WHERE e.name = 'akadmin' AND e.type = 'USER'
+          ON CONFLICT DO NOTHING;
+          "
+          
+          echo "[guacamole-bootstrap-admin] New akadmin user created with admin permissions"
+        fi
 
-  -- Grant system admin permission
-  IF NOT EXISTS (SELECT 1 FROM guacamole_system_permission WHERE user_id = uid AND permission = 'ADMINISTER') THEN
-    INSERT INTO guacamole_system_permission (user_id, permission) VALUES (uid, 'ADMINISTER');
-  END IF;
-END $$;
-PSQL
+        echo "[guacamole-bootstrap-admin] Admin user setup completed successfully"
       '';
     };
   });

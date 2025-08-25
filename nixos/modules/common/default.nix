@@ -156,6 +156,7 @@ environment.systemPackages = with pkgs; [
       ];
       # Simple password for now - will use SOPS later
       # hashedPassword = "$6$rounds=5000$nixmox$changeme";
+      initialPassword = "nixmox";
     };
 
     # Root user configuration for deployment
