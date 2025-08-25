@@ -38,6 +38,40 @@ let
         example = 99;
       };
     };
+    
+    # Core services (always required)
+    core_services = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Whether to enable this core service";
+          };
+          
+          ip = lib.mkOption {
+            type = lib.types.str;
+            description = "Static IP address for the service";
+            example = "192.168.99.11";
+          };
+          
+          hostname = lib.mkOption {
+            type = lib.types.str;
+            description = "Hostname for the service";
+            example = "postgresql.nixmox.lan";
+          };
+          
+          # Service interface implementation
+          interface = lib.mkOption {
+            type = lib.types.nullOr (import ./service-interface.nix { inherit lib config; }).serviceInterfaceSchema;
+            default = null;
+            description = "Service interface implementation";
+          };
+        };
+      });
+      default = {};
+      description = "Core services that are always required";
+    };
 
     # Service definitions
     services = lib.mkOption {
@@ -128,6 +162,13 @@ let
             default = [];
             description = "Volume mounts for the service";
             example = ["/var/lib/postgresql:/var/lib/postgresql"];
+          };
+          
+          # Service interface implementation
+          interface = lib.mkOption {
+            type = lib.types.nullOr (import ./service-interface.nix { inherit lib config; }).serviceInterfaceSchema;
+            default = null;
+            description = "Service interface implementation";
           };
         };
       });

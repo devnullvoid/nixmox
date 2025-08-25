@@ -6,8 +6,10 @@
 let
   # Import all library modules
   serviceManifest = import ./service-manifest.nix { inherit lib config; };
-  deploymentOrchestrator = import ./deployment-orchestrator.nix { inherit lib config pkgs; };
+  serviceInterface = import ./service-interface.nix { inherit lib config; };
+  terraformRunner = import ./terraform-runner.nix { inherit lib pkgs config; };
   healthChecks = import ./health-checks.nix { inherit lib pkgs; };
+  orchestrator = import ./orchestrator.nix { inherit lib config pkgs; };
   
   # Combine all library functions
   nixmoxLib = {
@@ -19,13 +21,22 @@ let
       getDeploymentOrder
       mkService;
     
-    # Deployment orchestration functions
-    inherit (deploymentOrchestrator)
-      generateDeploymentScript
-      generateRollbackScript
-      generateDeploymentPlan
-      generateMonitoringScripts
-      healthChecks;
+    # Service interface functions
+    inherit (serviceInterface)
+      serviceInterfaceSchema
+      validateServiceInterface;
+    
+    # Terraform runner functions
+    inherit (terraformRunner)
+      terraformRunnerConfig
+      generateWorkspaceName
+      generateTerraformVariables
+      generateTerraformVariablesFile
+      generateTerraformInitScript
+      generateTerraformPlanScript
+      generateTerraformApplyScript
+      generateTerraformOutputScript
+      checkTerraformChanges;
     
     # Health check functions
     inherit (healthChecks)
@@ -36,18 +47,31 @@ let
       healthCheckResult
       healthCheckStatus;
     
+    # Orchestrator functions
+    inherit (orchestrator)
+      generateDeploymentPlan
+      generateDeploymentScripts
+      generateMainOrchestratorScript
+      generateRollbackScript
+      generateStatusScript
+      phases
+      coreServices;
+    
     # Utility functions
     utils = {
       # Generate a complete deployment configuration
       generateDeploymentConfig = manifest: let
         validated = serviceManifest.validateServiceManifest manifest;
-        plan = deploymentOrchestrator.generateDeploymentPlan manifest;
-        healthMonitor = healthChecks.generateHealthMonitor manifest.services;
+        plan = orchestrator.generateDeploymentPlan manifest;
+        scripts = orchestrator.generateDeploymentScripts manifest plan;
+        mainScript = orchestrator.generateMainOrchestratorScript manifest plan scripts;
+        rollbackScript = orchestrator.generateRollbackScript manifest plan;
+        statusScript = orchestrator.generateStatusScript manifest plan;
       in
         {
-          inherit validated plan healthMonitor;
-          deploymentOrder = plan.deploymentOrder;
-          phaseScripts = plan.phaseScripts;
+          inherit validated plan scripts mainScript rollbackScript statusScript;
+          deploymentOrder = plan.execution_order;
+          servicePhases = plan.service_phases;
         };
       
       # Generate a service health check script
@@ -65,6 +89,18 @@ let
       # Check service dependencies
       checkDependencies = serviceName: services: 
         serviceManifest.getServiceDependencies services serviceName;
+      
+      # Generate Terraform configuration for a service
+      generateServiceTerraform = service: manifest: let
+        workspaceName = terraformRunner.generateWorkspaceName "service" service.name;
+        variablesFile = terraformRunner.generateTerraformVariablesFile manifest service;
+        initScript = terraformRunner.generateTerraformInitScript "service" service.name workspaceName;
+        planScript = terraformRunner.generateTerraformPlanScript "service" service.name workspaceName variablesFile;
+        applyScript = terraformRunner.generateTerraformApplyScript "service" service.name workspaceName;
+      in
+        {
+          inherit workspaceName variablesFile initScript planScript applyScript;
+        };
     };
   };
 in
