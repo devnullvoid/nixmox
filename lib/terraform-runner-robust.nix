@@ -1,5 +1,5 @@
-# Terraform execution and management
-# Handles Terraform init, plan, apply, and output management
+# Robust Terraform execution and management
+# Handles Terraform init, plan, apply, and output management with better error handling
 
 { lib, pkgs, config, ... }:
 
@@ -40,44 +40,51 @@ let
     else
       "${prefix}-${phase}";
 
+  # Safely get attribute value with fallback
+  safeGetAttr = attr: obj: fallback:
+    if obj != null && lib.hasAttr attr obj then
+      obj.${attr}
+    else
+      fallback;
+
   # Generate Terraform variables from manifest
   generateTerraformVariables = manifest: service: let
     # Extract variables from service interface
     terraformVars = if service.interface != null && service.interface.terraform != null then
-      service.interface.terraform.variables or {}
+      safeGetAttr "variables" service.interface.terraform {}
     else {};
     
     # Add common variables
     commonVars = {
-      service_name = if lib.hasAttr "name" service then service.name else "unknown";
-      service_ip = service.ip;
-      service_hostname = service.hostname;
-      network_cidr = manifest.network.network_cidr;
-      gateway = manifest.network.gateway;
-      dns_server = manifest.network.dns_server;
+      service_name = safeGetAttr "name" service "unknown";
+      service_ip = safeGetAttr "ip" service "0.0.0.0";
+      service_hostname = safeGetAttr "hostname" service "localhost";
+      network_cidr = safeGetAttr "network_cidr" manifest.network "192.168.0.0/24";
+      gateway = safeGetAttr "gateway" manifest.network "192.168.0.1";
+      dns_server = safeGetAttr "dns_server" manifest.network "192.168.0.1";
     };
     
     # Add proxy variables if configured
-    proxyVars = if service.interface != null && service.interface.proxy != null then {
-      domain = service.interface.proxy.domain;
-      path = service.interface.proxy.path;
-      upstream = service.interface.proxy.upstream;
+    proxyVars = if service.interface != null && lib.hasAttr "proxy" service.interface && service.interface.proxy != null then {
+      domain = safeGetAttr "domain" service.interface.proxy "localhost";
+      path = safeGetAttr "path" service.interface.proxy "/";
+      upstream = safeGetAttr "upstream" service.interface.proxy "localhost:8080";
     } else {};
     
     # Add auth variables if configured
-    authVars = if service.interface != null && service.interface.auth != null && service.interface.auth.oidc != null then {
-      oidc_client_id = service.interface.auth.oidc.client_id or "auto";
-      oidc_redirect_uris = service.interface.auth.oidc.redirect_uris;
-      oidc_scopes = service.interface.auth.oidc.scopes;
-      oidc_username_claim = service.interface.auth.oidc.username_claim;
-      oidc_groups_claim = service.interface.auth.oidc.groups_claim;
+    authVars = if service.interface != null && lib.hasAttr "auth" service.interface && service.interface.auth != null && lib.hasAttr "oidc" service.interface.auth && service.interface.auth.oidc != null then {
+      oidc_client_id = safeGetAttr "client_id" service.interface.auth.oidc "auto";
+      oidc_redirect_uris = safeGetAttr "redirect_uris" service.interface.auth.oidc [];
+      oidc_scopes = safeGetAttr "scopes" service.interface.auth.oidc ["openid" "email"];
+      oidc_username_claim = safeGetAttr "username_claim" service.interface.auth.oidc "preferred_username";
+      oidc_groups_claim = safeGetAttr "groups_claim" service.interface.auth.oidc "groups";
     } else {};
     
     # Add database variables if configured
-    dbVars = if service.interface != null && service.interface.db != null then {
-      db_name = if lib.hasAttr "database" service.interface.db then service.interface.db.database else null;
-      db_role = if lib.hasAttr "role" service.interface.db then service.interface.db.role else null;
-      db_mode = if lib.hasAttr "mode" service.interface.db then service.interface.db.mode else null;
+    dbVars = if service.interface != null && lib.hasAttr "db" service.interface && service.interface.db != null then {
+      db_name = safeGetAttr "database" service.interface.db null;
+      db_role = safeGetAttr "role" service.interface.db null;
+      db_mode = safeGetAttr "mode" service.interface.db null;
     } else {};
   in
     commonVars // proxyVars // authVars // dbVars // terraformVars;
@@ -86,9 +93,9 @@ let
   generateTerraformVariablesFile = manifest: service: let
     variables = generateTerraformVariables manifest service;
     variablesContent = lib.concatStringsSep "\n" (lib.mapAttrs (name: value: 
-      "${name} = ${lib.generators.toPlist {} value}"
+      "${name} = ${if lib.isString value then "\"${value}\"" else if lib.isList value then "[${lib.concatStringsSep ", " (lib.map (v: if lib.isString v then "\"${v}\"" else toString v) value)}]" else toString value}"
     ) variables);
-    serviceName = if lib.hasAttr "name" service then service.name else "unknown";
+    serviceName = safeGetAttr "name" service "unknown";
   in
     pkgs.writeText "terraform-variables-${serviceName}.tfvars" variablesContent;
 
@@ -107,7 +114,7 @@ let
       null;
     
     terraformConfig = if serviceConfig != null && serviceConfig.interface != null && serviceConfig.interface.terraform != null then
-      serviceConfig.interface.terraform.modules or []
+      safeGetAttr "modules" serviceConfig.interface.terraform []
     else [];
   in
     if lib.length terraformConfig > 0 then

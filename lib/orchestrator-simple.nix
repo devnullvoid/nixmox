@@ -1,4 +1,4 @@
-# Main NixMox orchestrator
+# Simplified NixMox orchestrator
 # Coordinates Terraform and NixOS deployments based on manifest
 
 { lib, config, pkgs, ... }:

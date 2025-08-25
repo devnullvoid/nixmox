@@ -7,9 +7,9 @@ let
   # Import all library modules
   serviceManifest = import ./service-manifest.nix { inherit lib config; };
   serviceInterface = import ./service-interface.nix { inherit lib config; };
-  terraformRunner = import ./terraform-runner.nix { inherit lib pkgs config; };
-  healthChecks = import ./health-checks.nix { inherit lib pkgs; };
-  orchestrator = import ./orchestrator.nix { inherit lib config pkgs; };
+  terraformRunner = import ./terraform-runner-basic.nix { inherit lib pkgs config; };
+  healthChecks = import ./health-checks-fixed.nix { inherit lib pkgs; };
+  orchestrator = import ./orchestrator-minimal.nix { inherit lib config pkgs; };
   
   # Combine all library functions
   nixmoxLib = {
@@ -91,12 +91,12 @@ let
         serviceManifest.getServiceDependencies services serviceName;
       
       # Generate Terraform configuration for a service
-      generateServiceTerraform = service: manifest: let
-        workspaceName = terraformRunner.generateWorkspaceName "service" service.name;
+      generateServiceTerraform = serviceName: service: manifest: let
+        workspaceName = terraformRunner.generateWorkspaceName "service" serviceName;
         variablesFile = terraformRunner.generateTerraformVariablesFile manifest service;
-        initScript = terraformRunner.generateTerraformInitScript "service" service.name workspaceName;
-        planScript = terraformRunner.generateTerraformPlanScript "service" service.name workspaceName variablesFile;
-        applyScript = terraformRunner.generateTerraformApplyScript "service" service.name workspaceName;
+        initScript = terraformRunner.generateTerraformInitScript "service" serviceName workspaceName;
+        planScript = terraformRunner.generateTerraformPlanScript "service" serviceName workspaceName variablesFile;
+        applyScript = terraformRunner.generateTerraformApplyScript "service" serviceName workspaceName;
       in
         {
           inherit workspaceName variablesFile initScript planScript applyScript;
