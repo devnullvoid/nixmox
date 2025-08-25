@@ -222,27 +222,28 @@ in {
 
       # Guacamole service
       guacamole = {
-        domain = "guacamole.${baseDomain}";
+        domain = "guac.${baseDomain}";
         backend = "guacamole.nixmox.lan";
         port = 8280;
         enableAuth = true; # Enable Authentik forward auth
+        skipDefaultProxy = true; # Handle proxying manually in extraConfig
         extraConfig = ''
-          # Guacamole-specific Caddy configuration
-          header {
-            # Security headers
-            X-Content-Type-Options nosniff
-            X-Frame-Options SAMEORIGIN
-            X-XSS-Protection "1; mode=block"
-            Referrer-Policy strict-origin-when-cross-origin
-            # Remove server header
-            -Server
-          }
+          # Guacamole reverse proxy configuration
+          # Based on https://guacamole.apache.org/doc/gug/reverse-proxy.html
+          
+          # Add proper headers for reverse proxy to prevent redirect loops
+          header_up X-Forwarded-For {remote_host}
+          header_up X-Forwarded-Proto {scheme}
+          header_up X-Forwarded-Host {host}
+          
+          # Simple reverse proxy - let Guacamole handle all paths including OIDC redirects
+          reverse_proxy guacamole.nixmox.lan:8280
         '';
       };
 
       # Vaultwarden service (internal container access)
       vaultwarden = {
-        domain = "vaultwarden.${baseDomain}";
+        domain = "vault.${baseDomain}";
         backend = "vaultwarden.nixmox.lan";
         port = 8080;
         enableAuth = true; # Enable Authentik forward auth
@@ -260,25 +261,6 @@ in {
         '';
       };
 
-      # Vault service (external user access)
-      vault = {
-        domain = "vault.${baseDomain}";
-        backend = "vaultwarden.nixmox.lan";
-        port = 8080;
-        enableAuth = true; # Enable Authentik forward auth
-        extraConfig = ''
-          # Vault-specific Caddy configuration
-          header {
-            # Security headers
-            X-Content-Type-Options nosniff
-            X-Frame-Options DENY
-            X-XSS-Protection "1; mode=block"
-            Referrer-Policy strict-origin-when-cross-origin
-            # Remove server header
-            -Server
-          }
-        '';
-      };
     };
   };
 }

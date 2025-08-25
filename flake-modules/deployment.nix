@@ -32,6 +32,12 @@ in {
         type = "app";
         program = "${pkgs.colmena}/bin/colmena";
       };
+
+      # Smart deployment with dependency resolution
+      deploy-smart = {
+        type = "app";
+        program = "${../scripts/deploy-smart.sh}";
+      };
     };
   };
 
@@ -67,6 +73,7 @@ in {
         deployment = {
           targetHost = "authentik.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" ]; # Authentik needs PostgreSQL
         };
         imports = [ ../nixos/hosts/authentik.nix ];
       };
@@ -83,6 +90,7 @@ in {
         deployment = {
           targetHost = "nextcloud.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" "caddy" ]; # Needs DB and reverse proxy
         };
         imports = [ ../nixos/hosts/nextcloud.nix ];
       };
@@ -91,6 +99,7 @@ in {
         deployment = {
           targetHost = "media.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" "caddy" ]; # Needs DB and reverse proxy
         };
         imports = [ ../nixos/hosts/media.nix ];
       };
@@ -99,6 +108,7 @@ in {
         deployment = {
           targetHost = "monitoring.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" "caddy" ]; # Needs DB and reverse proxy
         };
         imports = [ ../nixos/hosts/monitoring.nix ];
       };
@@ -107,6 +117,7 @@ in {
         deployment = {
           targetHost = "guacamole.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" "caddy" ]; # Needs DB and reverse proxy
         };
         imports = [ ../nixos/hosts/guacamole.nix ];
       };
@@ -115,6 +126,7 @@ in {
         deployment = {
           targetHost = "vaultwarden.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "caddy" ]; # Needs reverse proxy
         };
         imports = [ ../nixos/hosts/vaultwarden.nix ];
       };
@@ -123,6 +135,7 @@ in {
         deployment = {
           targetHost = "mail.nixmox.lan";
           targetUser = "root";
+          dependsOn = [ "postgresql" "caddy" ]; # Needs DB and reverse proxy
         };
         imports = [ ../nixos/hosts/mail.nix ];
       };

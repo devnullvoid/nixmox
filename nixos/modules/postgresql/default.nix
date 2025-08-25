@@ -137,6 +137,22 @@ in {
         log_temp_files = "0";
       };
 
+      # Enable required extensions
+      enableJIT = true;
+      package = pkgs.postgresql_16;
+      
+      # Configure authentication for internal network
+      authentication = ''
+        # TYPE  DATABASE        USER            ADDRESS                 METHOD
+        local   all             all                                     trust
+        host    all             all             127.0.0.1/32            md5
+        host    all             all             ::1/128                 md5
+        # Allow connections from internal network (192.168.99.0/24)
+        host    all             all             192.168.99.0/24         md5
+        # Allow connections from all hosts (for development - restrict in production)
+        host    all             all             0.0.0.0/0               md5
+      '';
+      
       # Create databases
       ensureDatabases = mapAttrsToList (name: db: db.name) cfg.databases;
 
@@ -145,21 +161,30 @@ in {
         name = user.name;
         ensureDBOwnership = true;
       }) cfg.users;
-
-      # Enable required extensions
-      enableJIT = true;
-      package = pkgs.postgresql_16;
       
-      # Configure authentication for internal network
       initialScript = pkgs.writeText "init.sql" ''
-        -- Create authentik user and database
-        CREATE USER authentik WITH PASSWORD '$(cat ${config.sops.secrets."authentik/postgresql_password".path})';
-        CREATE DATABASE authentik OWNER authentik;
-        GRANT ALL PRIVILEGES ON DATABASE authentik TO authentik;
+        -- Create users and databases dynamically
+        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: user: ''
+          -- Create ${user.name} user
+          CREATE USER ${user.name} WITH PASSWORD '${user.password}';
+          ${lib.optionalString (user.databases != []) ''
+            -- Create ${user.name} databases
+            ${lib.concatStringsSep "\n" (map (db: ''
+              CREATE DATABASE ${db} OWNER ${user.name};
+              GRANT ALL PRIVILEGES ON DATABASE ${db} TO ${user.name};
+            '') user.databases)}
+          ''}
+        '') cfg.users)}
         
-        -- Enable required extensions
-        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+        -- Enable required extensions for specific databases
+        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: db: ''
+          ${lib.optionalString (db.extensions != []) ''
+            -- Enable extensions for ${db.name}
+            ${lib.concatStringsSep "\n" (map (ext: ''
+              CREATE EXTENSION IF NOT EXISTS "${ext}";
+            '') db.extensions)}
+          ''}
+        '') cfg.databases)}
       '';
       
 

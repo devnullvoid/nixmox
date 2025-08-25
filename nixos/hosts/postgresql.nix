@@ -37,6 +37,20 @@ in {
       databases = [ "authentik" ];
       superuser = false;
     };
+
+    # Create Guacamole database and user
+    databases.guacamole = {
+      name = "guacamole";
+      owner = "guacamole";
+      extensions = [];
+    };
+
+    users.guacamole = {
+      name = "guacamole";
+      password = "guacamole123"; # TODO: Use SOPS for production
+      databases = [ "guacamole" ];
+      superuser = false;
+    };
   };
 
   # Firewall rules for PostgreSQL

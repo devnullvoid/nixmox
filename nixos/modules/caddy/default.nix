@@ -90,6 +90,12 @@ in {
             default = "";
             description = "Extra Caddy configuration for this service";
           };
+          
+          skipDefaultProxy = mkOption {
+            type = types.bool;
+            default = false;
+            description = "Skip the automatic reverse proxy configuration (use when handling proxying manually in extraConfig)";
+          };
         };
       });
       default = {};
@@ -129,10 +135,12 @@ in {
               # Use our wildcard certificate for all services
               ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null) 
                 "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
-              ${service.extraConfig or ""}
+              
+              ${lib.optionalString (service.extraConfig != "") 
+                (builtins.replaceStrings ["\n"] ["\n              "] service.extraConfig)}
               
               # Basic reverse proxy configuration
-              reverse_proxy ${service.backend}:${toString service.port}
+              ${lib.optionalString (!(service.skipDefaultProxy or false)) "reverse_proxy ${service.backend}:${toString service.port}"}
             }
           '') cfg.services)
         )}

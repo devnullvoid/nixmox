@@ -51,10 +51,6 @@ resource "authentik_provider_oauth2" "guacamole" {
     {
       matching_mode = "strict"
       url           = var.guac_redirect_uri
-    },
-    {
-      matching_mode = "strict"
-      url           = "https://guac.nixmox.lan/guacamole/"
     }
   ]
 
@@ -71,7 +67,7 @@ resource "authentik_application" "guacamole" {
   protocol_provider = authentik_provider_oauth2.guacamole.id
   group             = var.guac_app_group
   # Meta launch URL only (newer provider schema); point to /guacamole/
-  meta_launch_url   = "https://guac.nixmox.lan/guacamole/"
+  meta_launch_url   = var.guac_launch_url
   # Use a built-in icon name known to Authentik (mdi namespace works), or a full URL
   meta_icon         = "https://guac.nixmox.lan/guacamole/images/logo-144.png"
   meta_publisher    = "NixMox"

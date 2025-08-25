@@ -45,7 +45,7 @@ let
     '';
   };
 
-  psql = "${pkgs.postgresql}/bin/psql";
+  psql = "${pkgs.postgresql_16}/bin/psql";
   cat = "${pkgs.coreutils}/bin/cat";
   keytool = "${pkgs.openjdk}/bin/keytool";
 in {
@@ -69,6 +69,13 @@ in {
       type = types.str;
       default = "authentik.nixmox.lan";
       description = "Authentik domain used for OIDC endpoints";
+    };
+
+    # OIDC provider path (e.g., "guacamole" for /application/o/guacamole/)
+    oidcProviderPath = mkOption {
+      type = types.str;
+      default = "guacamole";
+      description = "OIDC provider path in Authentik (used for jwks and issuer endpoints)";
     };
 
     clientId = mkOption {
@@ -174,12 +181,17 @@ in {
 
       # OIDC with Authentik per Guacamole docs
       openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
-      openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/guacamole/jwks/";
-      openid-issuer = "https://${cfg.authentikDomain}/application/o/guacamole/";
+      openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/jwks/";
+      openid-issuer = "https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/";
       openid-client-id = cfg.clientId;
       openid-redirect-uri = "https://${hostNameEffective}/guacamole/";
       openid-username-claim-type = "preferred_username";
       openid-scope = "openid email profile";
+      
+      # Additional OIDC options to fix redirect loops
+      openid-allowed-redirect-uris = "https://${hostNameEffective}/guacamole/";
+      openid-validate-token = "true";
+      openid-max-token-length = "8192";
     };
 
     # Provide required extensions and JDBC driver
@@ -195,11 +207,27 @@ in {
       after = [ "network.target" ];
       wantedBy = [ "tomcat.service" "multi-user.target" ];
       script = ''
-        echo "[guacamole-bootstrapper] Info: checking if database '${cfg.database.name}' exists but is empty..."
+        echo "[guacamole-bootstrapper] Info: testing database connectivity..."
+        echo "Host: ${cfg.database.host}"
+        echo "Port: ${toString cfg.database.port}"
+        echo "User: ${cfg.database.user}"
+        echo "Database: ${cfg.database.name}"
+        
+        # Test basic connectivity first
+        ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
+          echo "Database connection failed"
+          exit 1
+        }
+        
+        echo "Database connection successful"
+        
+        # Check if database is empty
         output=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
         if [[ "$output" == *"Did not find any relations."* ]]; then
           echo "[guacamole-bootstrapper] Info: installing guacamole postgres database schema..."
           ${cat} ${pgExtension}/schema/*.sql | ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
+        else
+          echo "Database already has tables, skipping schema import"
         fi
       '';
       serviceConfig = {
@@ -216,8 +244,8 @@ in {
       serviceConfig = {
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
-          # Import local CA into a Java truststore so Guacamole trusts Authentik TLS (ignore failures)
-          "${pkgs.bash}/bin/bash -lc '${keytool} -importcert -trustcacerts -alias nixmox-local-ca -file /etc/caddy/tls/ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true'"
+          # Import internal CA into a Java truststore so Guacamole trusts Authentik TLS (ignore failures)
+          "${pkgs.bash}/bin/bash -lc '${keytool} -importcert -trustcacerts -alias nixmox-internal-ca -file /var/lib/shared-certs/internal-ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true'"
         ];
       };
     };
