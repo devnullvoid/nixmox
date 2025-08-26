@@ -1,23 +1,56 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.dns;
+  
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+  
+  # Get all services from manifest (core + application services)
+  allServices = (manifest.core_services or {}) // (manifest.services or {});
+  
+  # Generate DNS records from manifest services
+  # Use proxy.domain for hostname and ip for the A record
+  manifestServices = builtins.mapAttrs (serviceName: serviceConfig:
+    let
+      # Extract hostname from proxy.domain (e.g., "postgresql.nixmox.lan" -> "postgresql")
+      hostname = if serviceConfig.interface.proxy.domain or "" != "" then
+        (builtins.head (builtins.split "\\." (serviceConfig.interface.proxy.domain or "")))
+      else
+        serviceName;
+      
+      # Use the service's IP address
+      ip = serviceConfig.ip or "127.0.0.1";
+      
+      # For now, no aliases - we can add this later if needed
+      aliases = [];
+    in
+    {
+      inherit ip aliases;
+      # Store the full domain for reference
+      domain = serviceConfig.interface.proxy.domain or "${serviceName}.${baseDomain}";
+    }
+  ) allServices;
+  
+  # Merge manifest services with manual overrides (manual takes precedence)
+  finalServices = manifestServices // cfg.services;
 in {
   options.services.nixmox.dns = {
     enable = mkEnableOption "DNS server (Unbound)";
     
     domain = mkOption {
       type = types.str;
-      default = "dns.nixmox.lan";
-      description = "Domain for DNS service";
+      default = "";
+      description = "Domain for DNS service; if empty, uses manifest value or default";
     };
     
     primaryDomain = mkOption {
       type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for services";
+      default = "";
+      description = "Primary domain for services; if empty, uses manifest value or default";
     };
     
     upstreamServers = mkOption {
@@ -32,6 +65,7 @@ in {
     };
     
     # Service records for internal services
+    # These can override manifest values if needed
     services = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -44,15 +78,23 @@ in {
             default = [];
             description = "Additional aliases for this service";
           };
+          domain = mkOption {
+            type = types.str;
+            description = "Full domain name for this service";
+          };
         };
       });
       default = {};
-      description = "Internal service DNS records";
+      description = "Internal service DNS records (can override manifest values)";
     };
   };
 
   config = mkIf cfg.enable {
-        # Unbound DNS server configuration - minimal for debugging
+    # Use manifest values with fallbacks to manual configuration
+    services.nixmox.dns.domain = mkDefault (manifest.core_services.dns.hostname or "dns.${baseDomain}");
+    services.nixmox.dns.primaryDomain = mkDefault baseDomain;
+    
+    # Unbound DNS server configuration - minimal for debugging
     services.unbound = {
       enable = true;
       
@@ -84,14 +126,14 @@ in {
           # Local zone for our primary domain  
           local-zone = [ "${cfg.primaryDomain} static" ];
           
-          # Local data entries - try with proper quoting
+          # Local data entries - generate from manifest services
           local-data = [
             "\"${cfg.primaryDomain}. NS ${cfg.domain}.\""
           ] ++ (mapAttrsToList (name: service: 
             "\"${name}.${cfg.primaryDomain}. A ${service.ip}\""
-          ) cfg.services) ++ (concatLists (mapAttrsToList (name: service:
+          ) finalServices) ++ (concatLists (mapAttrsToList (name: service:
             map (alias: "\"${alias}.${cfg.primaryDomain}. CNAME ${name}.${cfg.primaryDomain}.\"") service.aliases
-          ) cfg.services));
+          ) finalServices));
         };
         
         # Forward zone - minimal configuration
@@ -101,8 +143,6 @@ in {
             forward-addr = cfg.upstreamServers;
           }
         ];
-        
-
       };
     };
     
@@ -172,67 +212,5 @@ in {
     };
     
     users.groups.unbound = {};
-    
-    # Default service configurations
-    services.nixmox.dns.services = {
-      # Core services (Phase 1)
-      postgresql = {
-        ip = "192.168.99.11";
-        aliases = [ "db" "database" ];
-      };
-      
-      caddy = {
-        ip = "192.168.99.10";
-        aliases = [ "proxy" "reverse-proxy" ];
-      };
-      
-      dns = {
-        ip = "192.168.99.13";
-        aliases = [ "ns" "nameserver" ];
-      };
-      
-      # Phase 2 services
-      authentik = {
-        ip = "192.168.99.12";
-        aliases = [ "identity" ];
-      };
-      
-      # External access services (via Caddy proxy)
-      auth = {
-        ip = "192.168.99.10";
-        aliases = [ "login" ];
-      };
-      
-      # Phase 3 services
-      vaultwarden = {
-        ip = "192.168.99.14";
-        aliases = [ "vault" "passwords" ];
-      };
-      
-      nextcloud = {
-        ip = "192.168.99.15";
-        aliases = [ "files" "cloud" ];
-      };
-      
-      guacamole = {
-        ip = "192.168.99.16";
-        aliases = [ "remote" "rdp" ];
-      };
-      
-      media = {
-        ip = "192.168.99.17";
-        aliases = [ "jellyfin" "sonarr" "radarr" "prowlarr" ];
-      };
-      
-      monitoring = {
-        ip = "192.168.99.18";
-        aliases = [ "grafana" "prometheus" ];
-      };
-      
-      mail = {
-        ip = "192.168.99.19";
-        aliases = [ "smtp" "imap" "mail" ];
-      };
-    };
   };
 } 

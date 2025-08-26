@@ -16,7 +16,51 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MANIFEST_PATH="$PROJECT_ROOT/nixos/service-manifest.nix"
-LIB_PATH="$PROJECT_ROOT/lib"
+LIB_PATH="$PROJECT_ROOT"
+
+# Global variables
+DRY_RUN=false
+TARGET_SERVICE=""
+
+# Manifest reading functions
+get_service_ip() {
+    local service="$1"
+    
+    # Try to get IP from core_services first, then from services
+    local ip=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.ip" --raw 2>/dev/null || \
+                nix eval -f "$MANIFEST_PATH" "services.$service.ip" --raw 2>/dev/null)
+    
+    if [[ -z "$ip" ]]; then
+        log_error "Could not find IP address for service: $service"
+        return 1
+    fi
+    
+    echo "$ip"
+}
+
+get_service_hostname() {
+    local service="$1"
+    
+    # Try to get hostname from core_services first, then from services
+    local hostname=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.hostname" --raw 2>/dev/null || \
+                     nix eval -f "$MANIFEST_PATH" "services.$service.hostname" --raw 2>/dev/null)
+    
+    if [[ -z "$hostname" ]]; then
+        log_error "Could not find hostname for service: $service"
+        return 1
+    fi
+    
+    echo "$hostname"
+}
+
+get_service_dependencies() {
+    local service="$1"
+    
+    # Try to get dependencies from services (core_services don't have dependencies)
+    local deps=$(nix eval -f "$MANIFEST_PATH" "services.$service.depends_on" --json 2>/dev/null || echo "[]")
+    
+    echo "$deps"
+}
 
 # Logging functions
 log_info() {
@@ -99,7 +143,7 @@ deploy_core_infrastructure() {
         fi
         
         # Deploy the service
-        deploy_service "$service"
+        deploy_core_service "$service"
         
         # Wait for service to be healthy
         wait_for_service_health "$service"
@@ -108,6 +152,23 @@ deploy_core_infrastructure() {
     done
     
     log_success "Core infrastructure deployment completed"
+}
+
+# Deploy a core service
+deploy_core_service() {
+    local service="$1"
+    
+    log_info "Deploying core service: $service"
+    
+    # Get the IP address for the service from manifest
+    local service_ip
+    if ! service_ip=$(get_service_ip "$service"); then
+        log_error "Failed to get IP address for core service $service"
+        return 1
+    fi
+    
+    # Deploy via SSH for core services
+    deploy_via_ssh "$service" "$service_ip"
 }
 
 # Deploy application services
@@ -142,32 +203,12 @@ deploy_application_services() {
 is_service_healthy() {
     local service="$1"
     
-    # Get the IP address for the service from the manifest
+    # Get the IP address for the service from manifest
     local service_ip
-    case "$service" in
-        "postgresql")
-            service_ip="192.168.99.11"
-            ;;
-        "dns")
-            service_ip="192.168.99.13"
-            ;;
-        "caddy")
-            service_ip="192.168.99.10"
-            ;;
-        "authentik")
-            service_ip="192.168.99.12"
-            ;;
-        "vaultwarden")
-            service_ip="192.168.99.14"
-            ;;
-        "guacamole")
-            service_ip="192.168.99.16"
-            ;;
-        *)
-            log_warning "Unknown service: $service"
-            return 1
-            ;;
-    esac
+    if ! service_ip=$(get_service_ip "$service"); then
+        log_warning "Unknown service: $service"
+        return 1
+    fi
     
     # SSH to the target host and run the health check
     case "$service" in
@@ -188,6 +229,18 @@ is_service_healthy() {
             ;;
         "guacamole")
             ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet tomcat && systemctl is-active --quiet guacamole-server" 2>/dev/null
+            ;;
+        "monitoring")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet prometheus && systemctl is-active --quiet grafana" 2>/dev/null
+            ;;
+        "nextcloud")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet nextcloud" 2>/dev/null
+            ;;
+        "media")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet transmission" 2>/dev/null
+            ;;
+        "mail")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet postfix && systemctl is-active --quiet dovecot" 2>/dev/null
             ;;
         *)
             log_warning "Unknown service: $service"
@@ -244,14 +297,161 @@ deploy_service() {
     
     log_info "Deploying $service using NixOS..."
     
-    # Use colmena to deploy the service
-    if command -v colmena &> /dev/null; then
-        colmena apply --on "$service.nixmox.lan"
-    else
-        log_warning "Colmena not available, using nixos-rebuild"
-        # This would need to be run on the target host
-        log_info "Please run 'nixos-rebuild switch' on $service.nixmox.lan"
+    # Get the IP address for the service from manifest
+    local service_ip
+    if ! service_ip=$(get_service_ip "$service"); then
+        log_error "Failed to get IP address for $service"
+        return 1
     fi
+    
+    # Use colmena to deploy the service if available
+    if command -v colmena &> /dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY-RUN] Would use Colmena to deploy $service to $service.nixmox.lan"
+            return 0
+        fi
+        
+        log_info "Using Colmena to deploy $service to $service.nixmox.lan"
+        if colmena apply --on "$service.nixmox.lan"; then
+            log_success "Colmena deployment successful for $service"
+        else
+            log_warning "Colmena deployment failed, falling back to direct SSH"
+            deploy_via_ssh "$service" "$service_ip"
+        fi
+    else
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY-RUN] Would deploy $service via SSH to $service_ip"
+            return 0
+        fi
+        
+        log_warning "Colmena not available, using direct SSH deployment"
+        deploy_via_ssh "$service" "$service_ip"
+    fi
+}
+
+# Deploy via SSH using nixos-rebuild
+deploy_via_ssh() {
+    local service="$1"
+    local service_ip="$2"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would deploy $service to $service_ip via SSH"
+        log_info "[DRY-RUN] Would copy flake to $service_ip:/tmp/nixmox-deploy"
+        log_info "[DRY-RUN] Would execute: cd /tmp/nixmox-deploy && nixos-rebuild switch --flake .#$service"
+        return 0
+    fi
+    
+    log_info "Deploying $service to $service_ip via SSH..."
+    
+    # Copy the flake to the target host
+    log_info "Copying flake to $service_ip..."
+    if ! scp -o ConnectTimeout=10 -o StrictHostKeyChecking=no -r "$PROJECT_ROOT" "root@$service_ip:/tmp/nixmox-deploy"; then
+        log_error "Failed to copy flake to $service_ip"
+        return 1
+    fi
+    
+    # Execute nixos-rebuild on the target host
+    log_info "Executing nixos-rebuild on $service_ip..."
+    if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$service_ip" "cd /tmp/nixmox-deploy && nixos-rebuild switch --flake .#$service"; then
+        log_success "NixOS deployment successful for $service"
+    else
+        log_error "NixOS deployment failed for $service"
+        return 1
+    fi
+    
+    # Clean up
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$service_ip" "rm -rf /tmp/nixmox-deploy"
+}
+
+# Deploy Terraform infrastructure
+deploy_terraform() {
+    local phase="$1"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would execute Terraform for phase: $phase"
+        log_info "[DRY-RUN] Would run: cd terraform/environments/dev && terraform plan && terraform apply"
+        return 0
+    fi
+    
+    if ! command -v terraform &> /dev/null; then
+        log_error "Terraform not available, skipping $phase phase"
+        return 1
+    fi
+    
+    log_info "Executing Terraform for phase: $phase"
+    
+    # Change to Terraform directory
+    cd "$PROJECT_ROOT/terraform/environments/dev" || {
+        log_error "Failed to change to Terraform directory"
+        return 1
+    }
+    
+    # Initialize Terraform if needed
+    if [[ ! -d ".terraform" ]]; then
+        log_info "Initializing Terraform..."
+        if ! terraform init; then
+            log_error "Terraform initialization failed"
+            return 1
+        fi
+    fi
+    
+    # Plan and apply
+    log_info "Planning Terraform changes..."
+    if ! terraform plan -out=tfplan; then
+        log_error "Terraform plan failed"
+        return 1
+    fi
+    
+    log_info "Applying Terraform changes..."
+    if ! terraform apply tfplan; then
+        log_error "Terraform apply failed"
+        return 1
+    fi
+    
+    # Clean up plan file
+    rm -f tfplan
+    
+    log_success "Terraform deployment completed for phase: $phase"
+}
+
+# Deploy a single service and its dependencies
+deploy_single_service() {
+    local service="$1"
+    
+    log_info "Deploying $service and its dependencies..."
+    
+    # Check if this service requires Terraform infrastructure
+    case "$service" in
+        "postgresql"|"dns"|"caddy"|"authentik")
+            log_info "$service requires infrastructure deployment, running Terraform first..."
+            deploy_terraform "infra"
+            ;;
+    esac
+    
+    # First, ensure core dependencies are healthy
+    if ! is_service_healthy "postgresql"; then
+        log_info "PostgreSQL not healthy, deploying core infrastructure first..."
+        deploy_core_infrastructure
+    fi
+    
+    if ! is_service_healthy "caddy"; then
+        log_info "Caddy not healthy, deploying core infrastructure first..."
+        deploy_core_infrastructure
+    fi
+    
+    if ! is_service_healthy "authentik"; then
+        log_info "Authentik not healthy, deploying core infrastructure first..."
+        deploy_core_infrastructure
+    fi
+    
+    # Now deploy the target service
+    log_info "Deploying target service: $service"
+    deploy_service "$service"
+    
+    # Wait for service to be healthy
+    wait_for_service_health "$service"
+    
+    log_success "$service deployment completed"
 }
 
 # Main deployment function
@@ -270,11 +470,18 @@ main() {
     # Generate deployment plan
     generate_plan
     
-    # Deploy core infrastructure
-    deploy_core_infrastructure
-    
-    # Deploy application services
-    deploy_application_services
+    # Check if we're deploying a specific service or everything
+    if [[ -n "${TARGET_SERVICE:-}" ]]; then
+        log_info "Deploying only service: $TARGET_SERVICE"
+        deploy_single_service "$TARGET_SERVICE"
+    else
+        log_info "Deploying all services"
+        # Deploy core infrastructure
+        deploy_core_infrastructure
+        
+        # Deploy application services
+        deploy_application_services
+    fi
     
     log_success "NixMox orchestrator deployment completed successfully!"
 }

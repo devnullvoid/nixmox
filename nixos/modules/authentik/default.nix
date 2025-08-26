@@ -1,9 +1,30 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.authentik;
+  
+  # Get Authentik service configuration from manifest
+  authentikConfig = manifest.core_services.authentik or {};
+  
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+  
+  # Get database configuration from manifest or use defaults
+  dbConfig = authentikConfig.interface.db or {};
+  databaseHost = dbConfig.host or "postgresql.nixmox.lan";
+  databasePort = dbConfig.port or 5432;
+  databaseName = dbConfig.name or "authentik";
+  databaseUser = dbConfig.owner or "authentik";
+  
+  # Get domain from manifest or construct from subdomain
+  serviceDomain = cfg.domain or (authentikConfig.interface.proxy.domain or "auth.${baseDomain}");
+  
+  # Get admin email from manifest or use default
+  adminEmail = authentikConfig.admin_email or "admin@${baseDomain}";
+  
   blueprintDir = "/etc/authentik/blueprints";
 in {
   options.services.nixmox.authentik = {
@@ -18,39 +39,39 @@ in {
     domain = mkOption {
       type = types.str;
       default = "";
-      description = "Domain for Authentik service; if empty, constructed from subdomain + base domain";
+      description = "Domain for Authentik service; if empty, constructed from manifest or subdomain + base domain";
     };
     
     adminEmail = mkOption {
       type = types.str;
-      default = "admin@nixmox.lan";
-      description = "Admin email for Authentik";
+      default = "";
+      description = "Admin email for Authentik; if empty, uses manifest value or default";
     };
 
     # Database configuration
     database = {
       host = mkOption {
         type = types.str;
-        default = "postgresql.nixmox.lan";
-        description = "PostgreSQL host";
+        default = "";
+        description = "PostgreSQL host; if empty, uses manifest value or default";
       };
       
       port = mkOption {
         type = types.int;
-        default = 5432;
-        description = "PostgreSQL port";
+        default = 0;
+        description = "PostgreSQL port; if 0, uses manifest value or default";
       };
       
       name = mkOption {
         type = types.str;
-        default = "authentik";
-        description = "PostgreSQL database name";
+        default = "";
+        description = "PostgreSQL database name; if empty, uses manifest value or default";
       };
       
       user = mkOption {
         type = types.str;
-        default = "authentik";
-        description = "PostgreSQL username";
+        default = "";
+        description = "PostgreSQL username; if empty, uses manifest value or default";
       };
       
       password = mkOption {
@@ -77,8 +98,17 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Default domain derived from base domain unless explicitly set by caller
-    services.nixmox.authentik.domain = mkDefault "${cfg.subdomain}.${config.services.nixmox.domain}";
+    # Use manifest values with fallbacks to manual configuration
+    services.nixmox.authentik.domain = mkDefault serviceDomain;
+    services.nixmox.authentik.adminEmail = mkDefault adminEmail;
+    
+    # Database configuration with manifest fallbacks
+    services.nixmox.authentik.database = {
+      host = mkDefault databaseHost;
+      port = mkDefault databasePort;
+      name = mkDefault databaseName;
+      user = mkDefault databaseUser;
+    };
     
     # Create authentik user and group early in the activation process
     users.users.authentik = {
@@ -126,7 +156,6 @@ in {
         restartUnits = [ "authentik-radius.service" ];
       };
     };
-
 
     # Use the official Nixpkgs Authentik packages
     environment.systemPackages = with pkgs; [
@@ -231,7 +260,7 @@ in {
         
         # Environment variables for LDAP outpost
         Environment = [
-          "AUTHENTIK_HOST=authentik.nixmox.lan"
+          "AUTHENTIK_HOST=${cfg.domain}"
         ];
         
         # Load secrets from SOPS
@@ -256,7 +285,7 @@ in {
         
         # Environment variables for Radius outpost
         Environment = [
-          "AUTHENTIK_HOST=authentik.nixmox.lan"
+          "AUTHENTIK_HOST=${cfg.domain}"
         ];
         
         # Load secrets from SOPS
@@ -264,28 +293,10 @@ in {
       };
     };
 
-
-
-    # Note: Removed hosts entry to allow proper DNS resolution
-
     # Firewall rules for Authentik services
     networking.firewall = {
       allowedTCPPorts = [ 389 636 9000 9443 ];
       allowedUDPPorts = [ 1812 1813 ];
     };
-
-    # Enable outpost services using the same environment file - temporarily disabled
-    # services.authentik-ldap = {
-    #   enable = true;
-    #   environmentFile = "/run/secrets/authentik-ldap/env";
-    # };
-
-    # services.authentik-radius = {
-    #   enable = true;
-    #   environmentFile = "/run/secrets/authentik-radius/env";
-    # };
-
-    # Note: No local PostgreSQL configuration - using external database
-    # Note: No local Redis configuration - using external Redis
   };
 }

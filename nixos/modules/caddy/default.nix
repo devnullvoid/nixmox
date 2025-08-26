@@ -1,9 +1,18 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.caddy;
+  
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = cfg.domain or (network.domain or "nixmox.lan");
+  
+  # Get Authentik configuration from manifest
+  authentikConfig = manifest.core_services.authentik or {};
+  authentikDomain = cfg.authentikDomain or (authentikConfig.hostname or "authentik") + "." + baseDomain;
+  authentikUpstream = cfg.authentikUpstream or (authentikConfig.ip or "192.168.99.12") + ":9000";
 in {
   imports = [
     ./services.nix

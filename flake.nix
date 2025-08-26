@@ -48,6 +48,9 @@
         ./flake-modules/deployment.nix
       ];
 
+      # Import the service manifest
+      _module.args.manifest = import ./nixos/service-manifest.nix;
+
       # Define supported systems
       systems = [
         "x86_64-linux"
@@ -88,61 +91,61 @@
           caddy = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             modules = [ ./nixos/hosts/caddy.nix ];
-            specialArgs = { inherit inputs; };
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 
           postgresql = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ ./nixos/hosts/postgresql.nix ];
-            specialArgs = { inherit inputs; };
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "postgresql"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 
           authentik = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ ./nixos/hosts/authentik.nix ];
-            specialArgs = { inherit inputs; };
-          };
-
-          nextcloud = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ ./nixos/hosts/nextcloud.nix ];
-            specialArgs = { inherit inputs; };
-          };
-
-          media = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ ./nixos/hosts/media.nix ];
-            specialArgs = { inherit inputs; };
-          };
-
-          monitoring = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ ./nixos/hosts/monitoring.nix ];
-            specialArgs = { inherit inputs; };
-          };
-
-          guacamole = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ ./nixos/hosts/guacamole.nix ];
-            specialArgs = { inherit inputs; };
-          };
-
-          vaultwarden = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ ./nixos/hosts/vaultwarden.nix ];
-            specialArgs = { inherit inputs; };
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "authentik"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 
           dns = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ ./nixos/hosts/dns.nix ];
-            specialArgs = { inherit inputs; };
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "dns"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          guacamole = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "guacamole"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          vaultwarden = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "vaultwarden"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          nextcloud = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "nextcloud"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          media = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "media"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          monitoring = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "monitoring"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 
           mail = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ ./nixos/hosts/mail.nix ];
-            specialArgs = { inherit inputs; };
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "mail"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
         };
 

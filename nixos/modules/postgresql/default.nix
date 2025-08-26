@@ -1,9 +1,42 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.postgresql;
+  
+  # Get all services from manifest (core + application services)
+  allServices = (manifest.core_services or {}) // (manifest.services or {});
+  
+  # Extract database requirements from services that have interface.db
+  databaseRequirements = builtins.mapAttrs (serviceName: serviceConfig:
+    serviceConfig.interface.db or {}
+  ) (builtins.filterAttrs (name: config: 
+    builtins.hasAttr "db" (config.interface or {})
+  ) allServices);
+  
+  # Generate database configurations from manifest
+  manifestDatabases = builtins.mapAttrs (serviceName: dbConfig:
+    {
+      name = dbConfig.name or serviceName;
+      owner = dbConfig.owner or serviceName;
+      extensions = dbConfig.extensions or [];
+    }
+  ) databaseRequirements;
+  
+  # Generate user configurations from manifest
+  manifestUsers = builtins.mapAttrs (serviceName: dbConfig:
+    {
+      name = dbConfig.owner or serviceName;
+      password = dbConfig.password or "changeme"; # TODO: Use SOPS
+      databases = [ (dbConfig.name or serviceName) ];
+      superuser = dbConfig.superuser or false;
+    }
+  ) databaseRequirements;
+  
+  # Merge manifest values with manual overrides (manual takes precedence)
+  finalDatabases = manifestDatabases // cfg.databases;
+  finalUsers = manifestUsers // cfg.users;
 in {
   options.services.nixmox.postgresql = {
     enable = mkEnableOption "PostgreSQL database server";
@@ -22,6 +55,7 @@ in {
     };
 
     # Database configurations for different services
+    # These can override manifest values if needed
     databases = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -41,10 +75,11 @@ in {
         };
       });
       default = {};
-      description = "Databases to create";
+      description = "Databases to create (can override manifest values)";
     };
 
     # User configurations
+    # These can override manifest values if needed
     users = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -70,7 +105,7 @@ in {
         };
       });
       default = {};
-      description = "PostgreSQL users to create";
+      description = "PostgreSQL users to create (can override manifest values)";
     };
   };
 
@@ -153,14 +188,14 @@ in {
         host    all             all             0.0.0.0/0               md5
       '';
       
-      # Create databases
-      ensureDatabases = mapAttrsToList (name: db: db.name) cfg.databases;
+      # Create databases from manifest + manual overrides
+      ensureDatabases = mapAttrsToList (name: db: db.name) finalDatabases;
 
-      # Create users
+      # Create users from manifest + manual overrides
       ensureUsers = mapAttrsToList (name: user: {
         name = user.name;
         ensureDBOwnership = true;
-      }) cfg.users;
+      }) finalUsers;
       
       initialScript = pkgs.writeText "init.sql" ''
         -- Create users and databases dynamically
@@ -174,7 +209,7 @@ in {
               GRANT ALL PRIVILEGES ON DATABASE ${db} TO ${user.name};
             '') user.databases)}
           ''}
-        '') cfg.users)}
+        '') finalUsers)}
         
         -- Enable required extensions for specific databases
         ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: db: ''
@@ -184,11 +219,8 @@ in {
               CREATE EXTENSION IF NOT EXISTS "${ext}";
             '') db.extensions)}
           ''}
-        '') cfg.databases)}
+        '') finalDatabases)}
       '';
-      
-
-
     };
 
     # Firewall rules
