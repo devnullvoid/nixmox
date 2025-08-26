@@ -28,7 +28,7 @@
         proxy = {
           domain = "dns.nixmox.lan";
           path = "/";
-          upstream = "localhost:53";
+          upstream = "192.168.99.13:53";
           tls = true;
           authz = false;
         };
@@ -62,7 +62,7 @@
         proxy = {
           domain = "postgresql.nixmox.lan";
           path = "/";
-          upstream = "localhost:5432";
+          upstream = "192.168.99.11:5432";
           tls = true;
           authz = false;
         };
@@ -91,7 +91,7 @@
         proxy = {
           domain = "caddy.nixmox.lan";
           path = "/";
-          upstream = "localhost:80";
+          upstream = "192.168.99.10:80";
           tls = true;
           authz = false;
         };
@@ -130,7 +130,7 @@
         proxy = {
           domain = "auth.nixmox.lan";
           path = "/";
-          upstream = "localhost:9000";
+          upstream = "192.168.99.12:9000";
           tls = true;
           authz = false;
         };
@@ -176,7 +176,7 @@
         proxy = {
           domain = "vaultwarden.nixmox.lan";
           path = "/";
-          upstream = "localhost:8080";
+          upstream = "192.168.99.14:8080";
           tls = true;
           authz = true;
         };
@@ -219,7 +219,7 @@
         proxy = {
           domain = "guac.nixmox.lan";
           path = "/guacamole/";
-          upstream = "localhost:8280";
+          upstream = "192.168.99.16:8280";
           tls = true;
           authz = true;
         };
@@ -262,7 +262,7 @@
         proxy = {
           domain = "monitoring.nixmox.lan";
           path = "/";
-          upstream = "localhost:9090";
+          upstream = "192.168.99.18:9090";
           tls = true;
           authz = true;
         };
@@ -305,7 +305,7 @@
         proxy = {
           domain = "nextcloud.nixmox.lan";
           path = "/";
-          upstream = "localhost:8080";
+          upstream = "192.168.99.15:8080";
           tls = true;
           authz = true;
         };
@@ -348,7 +348,7 @@
         proxy = {
           domain = "media.nixmox.lan";
           path = "/";
-          upstream = "localhost:8096";
+          upstream = "192.168.99.17:8096";
           tls = true;
           authz = true;
         };
@@ -391,7 +391,7 @@
         proxy = {
           domain = "mail.nixmox.lan";
           path = "/";
-          upstream = "localhost:8080";
+          upstream = "192.168.99.19:8080";
           tls = true;
           authz = true;
         };

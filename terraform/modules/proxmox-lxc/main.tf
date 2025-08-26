@@ -98,6 +98,12 @@ variable "pve_ssh_port" {
   default     = 22
 }
 
+variable "start_on_boot" {
+  description = "Whether to start containers automatically on boot"
+  type        = bool
+  default     = true
+}
+
 # Ensure Hydra template exists on the Proxmox node (download if not provided)
 resource "null_resource" "ensure_template" {
   count = var.hydra_template == "" ? 1 : 0
@@ -167,6 +173,7 @@ resource "proxmox_lxc" "container" {
   }
 
   start = true
+  onboot = var.start_on_boot
   
   features {
     nesting = true

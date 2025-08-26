@@ -231,11 +231,6 @@ in {
           # Guacamole reverse proxy configuration
           # Based on https://guacamole.apache.org/doc/gug/reverse-proxy.html
           
-          # Add proper headers for reverse proxy to prevent redirect loops
-          header_up X-Forwarded-For {remote_host}
-          header_up X-Forwarded-Proto {scheme}
-          header_up X-Forwarded-Host {host}
-          
           # Simple reverse proxy - let Guacamole handle all paths including OIDC redirects
           reverse_proxy guacamole.nixmox.lan:8280
         '';

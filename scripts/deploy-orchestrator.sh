@@ -142,25 +142,52 @@ deploy_application_services() {
 is_service_healthy() {
     local service="$1"
     
-    # This would use the health check patterns from our manifest
+    # Get the IP address for the service from the manifest
+    local service_ip
     case "$service" in
         "postgresql")
-            systemctl is-active --quiet postgresql
+            service_ip="192.168.99.11"
             ;;
         "dns")
-            systemctl is-active --quiet unbound
+            service_ip="192.168.99.13"
             ;;
         "caddy")
-            systemctl is-active --quiet caddy
+            service_ip="192.168.99.10"
             ;;
         "authentik")
-            systemctl is-active --quiet authentik
+            service_ip="192.168.99.12"
             ;;
         "vaultwarden")
-            curl -f -s "http://localhost:8080/alive" > /dev/null
+            service_ip="192.168.99.14"
             ;;
         "guacamole")
-            systemctl is-active --quiet tomcat && systemctl is-active --quiet guacamole-server
+            service_ip="192.168.99.16"
+            ;;
+        *)
+            log_warning "Unknown service: $service"
+            return 1
+            ;;
+    esac
+    
+    # SSH to the target host and run the health check
+    case "$service" in
+        "postgresql")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet postgresql" 2>/dev/null
+            ;;
+        "dns")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet unbound" 2>/dev/null
+            ;;
+        "caddy")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet caddy" 2>/dev/null
+            ;;
+        "authentik")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet authentik" 2>/dev/null
+            ;;
+        "vaultwarden")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "curl -f -s http://localhost:8080/alive > /dev/null" 2>/dev/null
+            ;;
+        "guacamole")
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet tomcat && systemctl is-active --quiet guacamole-server" 2>/dev/null
             ;;
         *)
             log_warning "Unknown service: $service"
