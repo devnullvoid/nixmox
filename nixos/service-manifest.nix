@@ -1,10 +1,16 @@
 # NixMox Service Manifest
 # This manifest defines our existing infrastructure and can be used by the orchestrator
 # to deploy and manage all services in the correct order.
+#
+# DNS Architecture:
+# - Each host has its own A record: hostname.nixmox.lan -> IP (e.g., guacamole.nixmox.lan -> 192.168.99.16)
+# - Service domains use CNAME records pointing to caddy.nixmox.lan (e.g., guac.nixmox.lan -> caddy.nixmox.lan)
+# - Base domain: nixmox.lan (global domain for all services)
 
 {
   # Network infrastructure configuration
   network = {
+    domain = "nixmox.lan";  # Global base domain for all services
     dns_server = "192.168.99.13";
     gateway = "192.168.99.1";
     network_cidr = "192.168.99.0/24";
@@ -158,7 +164,7 @@
           modules = [ "./terraform/vaultwarden" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "vaultwarden.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "vaultwarden-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
@@ -174,7 +180,7 @@
           };
         };
         proxy = {
-          domain = "vaultwarden.nixmox.lan";
+          domain = "vault.nixmox.lan";
           path = "/";
           upstream = "192.168.99.14:8080";
           tls = true;
@@ -201,7 +207,7 @@
           modules = [ "./terraform/guacamole" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "guac.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "guacamole-client";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
@@ -244,7 +250,7 @@
           modules = [ "./terraform/monitoring" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "monitoring.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "monitoring-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
@@ -287,7 +293,7 @@
           modules = [ "./terraform/nextcloud" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "nextcloud.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "nextcloud-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
@@ -330,7 +336,7 @@
           modules = [ "./terraform/media" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "media.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "media-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
@@ -373,7 +379,7 @@
           modules = [ "./terraform/mail" ];
           targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
           variables = {
-            domain = "mail.nixmox.lan";
+            domain = "nixmox.lan";
             oidc_client_id = "mail-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };

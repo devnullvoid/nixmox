@@ -1,9 +1,56 @@
-{ inputs ? {}, lib, config, pkgs, ... }:
+{ inputs ? {}, lib, config, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.guacamole;
+  
+  # Get guacamole service configuration from manifest
+  guacamoleConfig = (manifest.services or {}).guacamole or {};
+  
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+  
+  # Get core services for dependencies
+  coreServices = manifest.core_services or {};
+  
+  # Derive configuration from manifest
+  manifestConfig = {
+    # Extract subdomain from proxy.domain (e.g., "guac.nixmox.lan" -> "guac")
+    subdomain = if guacamoleConfig.interface.proxy.domain or "" != "" then
+      (builtins.head (builtins.split "\\." (guacamoleConfig.interface.proxy.domain or "")))
+    else
+      "guac";
+    
+    # Use proxy.domain from manifest
+    hostName = guacamoleConfig.interface.proxy.domain or "guac.${baseDomain}";
+    
+    # Use authentik domain from manifest
+    authentikDomain = (coreServices.authentik.interface.proxy.domain or "auth.${baseDomain}");
+    
+    # Use OIDC provider path from manifest (default to service name)
+    oidcProviderPath = "guacamole";
+    
+    # Use client ID from manifest
+    clientId = guacamoleConfig.interface.auth.oidc.client_id or "guacamole-client";
+    
+    # Use database configuration from manifest
+    database = {
+      host = guacamoleConfig.interface.db.host or coreServices.postgresql.ip or "postgresql.${baseDomain}";
+      port = guacamoleConfig.interface.db.port or 5432;
+      name = guacamoleConfig.interface.db.name or "guacamole";
+      user = guacamoleConfig.interface.db.user or "guacamole";
+      password = guacamoleConfig.interface.db.password or "changeme"; # TODO: Use SOPS
+    };
+    
+    # Bootstrap admin user configuration
+    bootstrapAdmin = {
+      enable = true;
+      username = "akadmin";  # This will be the OIDC admin username
+      password = null;       # Generate a random password (for local auth fallback)
+    };
+  };
 
   guacVer = config.services.guacamole-client.package.version;
   pgVer = "42.7.4";
@@ -54,33 +101,33 @@ in {
 
     subdomain = mkOption {
       type = types.str;
-      default = "guac";
+      default = manifestConfig.subdomain;
       description = "Subdomain for Guacamole; full host becomes <subdomain>.<services.nixmox.domain> unless overridden by hostName";
     };
 
     hostName = mkOption {
       type = types.str;
-      default = "";
+      default = manifestConfig.hostName;
       description = "Public host name for Guacamole; defaults to <subdomain>.<services.nixmox.domain>";
     };
 
     # Authentik domain for OIDC
     authentikDomain = mkOption {
       type = types.str;
-      default = "authentik.nixmox.lan";
+      default = manifestConfig.authentikDomain;
       description = "Authentik domain used for OIDC endpoints";
     };
 
     # OIDC provider path (e.g., "guacamole" for /application/o/guacamole/)
     oidcProviderPath = mkOption {
       type = types.str;
-      default = "guacamole";
+      default = manifestConfig.oidcProviderPath;
       description = "OIDC provider path in Authentik (used for jwks and issuer endpoints)";
     };
 
     clientId = mkOption {
       type = types.str;
-      default = "guacamole-client";
+      default = manifestConfig.clientId;
       description = "OIDC client ID to use for Guacamole (public value)";
     };
 
@@ -100,31 +147,31 @@ in {
     database = {
       host = mkOption {
         type = types.str;
-        default = "postgresql.nixmox.lan";
+        default = manifestConfig.database.host;
         description = "PostgreSQL host";
       };
       
       port = mkOption {
         type = types.int;
-        default = 5432;
+        default = manifestConfig.database.port;
         description = "PostgreSQL port";
       };
       
       name = mkOption {
         type = types.str;
-        default = "guacamole";
+        default = manifestConfig.database.name;
         description = "PostgreSQL database name";
       };
       
       user = mkOption {
         type = types.str;
-        default = "guacamole";
+        default = manifestConfig.database.user;
         description = "PostgreSQL username";
       };
       
       password = mkOption {
         type = types.str;
-        default = "changeme";
+        default = manifestConfig.database.password;
         description = "PostgreSQL password (should be overridden via SOPS)";
       };
     };
@@ -132,17 +179,17 @@ in {
     bootstrapAdmin = {
       enable = mkOption {
         type = types.bool;
-        default = false;
+        default = manifestConfig.bootstrapAdmin.enable;
         description = "Create or update a local Guacamole DB admin matching the given username";
       };
       username = mkOption {
         type = types.str;
-        default = "";
+        default = manifestConfig.bootstrapAdmin.username;
         description = "Username to bootstrap as Guacamole admin (should match Authentik preferred_username)";
       };
       password = mkOption {
         type = types.nullOr types.str;
-        default = null;
+        default = manifestConfig.bootstrapAdmin.password;
         description = "Optional password for the local admin; random if null. Not used for OIDC but stored for completeness.";
       };
     };
@@ -152,6 +199,11 @@ in {
     let
       hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
     in {
+
+    # Add PostgreSQL client tools for database schema import
+    environment.systemPackages = with pkgs; [
+      postgresql
+    ];
 
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ hostNameEffective ];

@@ -16,6 +16,8 @@ let
 in {
   imports = [
     ./services.nix
+    ../localtls
+    ../shared/internal-ca.nix
   ];
 
   options.services.nixmox.caddy = {
@@ -44,7 +46,7 @@ in {
     
     caCertPath = mkOption {
       type = types.nullOr types.path;
-      default = null;
+      default = ../ca/nixmox-internal-ca.crt;
       description = "Path to internal CA certificate (if null, uses Caddy's internal CA)";
     };
     
@@ -58,6 +60,42 @@ in {
       type = types.str;
       default = "NixMox Internal CA";
       description = "Name for the internal CA";
+    };
+
+    # Enable internal CA with wildcard private key (needed for HTTPS serving)
+    internalCa = {
+      enable = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Enable internal CA with wildcard certificate";
+      };
+      
+      caCertPath = mkOption {
+        type = types.path;
+        default = ../ca/nixmox-internal-ca.crt;
+        description = "Path to internal CA certificate";
+      };
+      
+      wildcardCertPath = mkOption {
+        type = types.path;
+        default = ../ca/wildcard-nixmox-lan.crt;
+        description = "Path to wildcard certificate";
+      };
+      
+      enableWildcardKey = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Enable wildcard private key for HTTPS serving";
+      };
+    };
+
+    # Enable localtls for development/testing
+    localtls = {
+      enable = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Enable localtls for development/testing";
+      };
     };
 
     # Authentik configuration
@@ -176,6 +214,19 @@ in {
         Restart = mkForce "always";
         RestartSec = mkForce "10s";
       };
+    };
+
+    # Enable internal CA with wildcard private key (needed for HTTPS serving)
+    services.nixmox.internalCa = mkIf cfg.internalCa.enable {
+      enable = true;
+      caCertPath = cfg.internalCa.caCertPath;
+      wildcardCertPath = cfg.internalCa.wildcardCertPath;
+      enableWildcardKey = cfg.internalCa.enableWildcardKey;
+    };
+
+    # Enable localtls for development/testing
+    services.nixmox.localtls = mkIf cfg.localtls.enable {
+      enable = true;
     };
   };
 }

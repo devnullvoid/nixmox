@@ -39,8 +39,13 @@ let
         allowedTCPPorts = [ (interface.health.port or 8080) ];
       } else {};
       
+      # Add ports from manifest ports array
+      portsRules = if serviceConfig.ports or [] != [] then {
+        allowedTCPPorts = serviceConfig.ports;
+      } else {};
+      
       # Merge all rules
-      mergedRules = defaultRules // dbRules // proxyRules // healthRules;
+      mergedRules = defaultRules // dbRules // proxyRules // healthRules // portsRules;
     in
     mergedRules;
   

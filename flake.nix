@@ -90,7 +90,7 @@
         nixosConfigurations = {
           caddy = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ ./nixos/hosts/caddy.nix ];
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "caddy"; }) ];
             specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 
