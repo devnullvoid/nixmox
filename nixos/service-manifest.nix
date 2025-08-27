@@ -171,7 +171,6 @@
           name = "authentik";
           owner = "authentik";
           port = 5432;
-          password = "authentik123";
         };
         auth = {
           type = "oidc";

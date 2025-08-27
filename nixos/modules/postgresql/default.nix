@@ -28,7 +28,7 @@ let
   manifestUsers = builtins.mapAttrs (serviceName: dbConfig:
     {
       name = dbConfig.owner or serviceName;
-      password = dbConfig.password or "changeme"; # TODO: Use SOPS
+      # Password will come from SOPS secrets, not hardcoded
       databases = [ (dbConfig.name or serviceName) ];
       superuser = dbConfig.superuser or false;
     }
@@ -200,8 +200,8 @@ in {
       initialScript = pkgs.writeText "init.sql" ''
         -- Create users and databases dynamically
         ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: user: ''
-          -- Create ${user.name} user
-          CREATE USER ${user.name} WITH PASSWORD '${user.password}';
+          -- Create ${user.name} user (password will be set by SOPS secrets)
+          CREATE USER ${user.name};
           ${lib.optionalString (user.databases != []) ''
             -- Create ${user.name} databases
             ${lib.concatStringsSep "\n" (map (db: ''
@@ -265,6 +265,38 @@ in {
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c 'SELECT 1;'";
+        Restart = "on-failure";
+        RestartSec = "30s";
+        User = "postgres";
+        Group = "postgres";
+      };
+    };
+    
+    # Service to set user passwords from SOPS secrets
+    systemd.services.postgresql-set-passwords = {
+      description = "Set PostgreSQL user passwords from SOPS secrets";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "postgresql.service" ];
+      requires = [ "postgresql.service" ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = pkgs.writeShellScript "set-passwords.sh" ''
+          #!/bin/sh
+          set -e
+          
+          # Set Authentik user password from SOPS secrets
+          if [ -f "/run/secrets/authentik/postgresql_password" ]; then
+            echo "Setting password for authentik user..."
+            PASSWORD=$(cat /run/secrets/authentik/postgresql_password)
+            ${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c "ALTER USER authentik WITH PASSWORD '\$PASSWORD';"
+            echo "Password set successfully for authentik user"
+          else
+            echo "Warning: SOPS secret for authentik/postgresql_password not found"
+          fi
+          
+          # Add more users here as needed
+        '';
         Restart = "on-failure";
         RestartSec = "30s";
         User = "postgres";
