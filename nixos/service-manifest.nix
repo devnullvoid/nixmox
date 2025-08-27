@@ -50,13 +50,7 @@
             network_cidr = "192.168.99.0/24";
           };
         };
-        proxy = {
-          domain = "dns.nixmox.lan";
-          path = "/";
-          upstream = "192.168.99.13:53";
-          tls = true;
-          authz = false;
-        };
+
         health = {
           startup = "systemctl is-active --quiet unbound";
           liveness = "systemctl is-active --quiet unbound";
@@ -87,11 +81,7 @@
             network_cidr = "192.168.99.0/24";
           };
         };
-        db = {
-          name = "postgresql";
-          port = 5432;
-          mode = "standalone";
-        };
+
         proxy = {
           domain = "postgresql.nixmox.lan";
           path = "/";
@@ -129,13 +119,7 @@
             network_cidr = "192.168.99.0/24";
           };
         };
-        proxy = {
-          domain = "caddy.nixmox.lan";
-          path = "/";
-          upstream = "192.168.99.10:80";
-          tls = true;
-          authz = false;
-        };
+
         health = {
           startup = "systemctl is-active --quiet caddy";
           liveness = "systemctl is-active --quiet caddy";
@@ -172,16 +156,7 @@
           owner = "authentik";
           port = 5432;
         };
-        auth = {
-          type = "oidc";
-          provider = "authentik";
-          oidc = {
-            redirect_uris = [ "https://auth.nixmox.lan/*" ];
-            scopes = [ "openid" "email" "profile" "offline_access" ];
-            username_claim = "preferred_username";
-            groups_claim = "groups";
-          };
-        };
+
         proxy = {
           domain = "auth.nixmox.lan";
           path = "/";
@@ -225,6 +200,12 @@
             oidc_client_id = "vaultwarden-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
+        };
+        db = {
+          host = "192.168.99.11";
+          name = "vaultwarden";
+          owner = "vaultwarden";
+          port = 5432;
         };
         auth = {
           type = "oidc";
@@ -278,6 +259,12 @@
             oidc_scopes = [ "openid" "email" "profile" ];
           };
         };
+        db = {
+          host = "192.168.99.11";
+          name = "guacamole";
+          owner = "guacamole";
+          port = 5432;
+        };
         auth = {
           type = "oidc";
           provider = "authentik";
@@ -329,6 +316,12 @@
             oidc_client_id = "monitoring-oidc";
             oidc_scopes = [ "openid" "email" "profile" ];
           };
+        };
+        db = {
+          host = "192.168.99.11";
+          name = "monitoring";
+          owner = "monitoring";
+          port = 5432;
         };
         auth = {
           type = "oidc";
@@ -382,12 +375,18 @@
             oidc_scopes = [ "openid" "email" "profile" ];
           };
         };
+        db = {
+          host = "192.168.99.11";
+          name = "nextcloud";
+          owner = "nextcloud";
+          port = 5432;
+        };
         auth = {
           type = "oidc";
           provider = "authentik";
           oidc = {
             client_type = "confidential";
-            redirect_uris = [ "https://nextcloud.nixmox.lan/oidc/callback" ];
+            redirect_uris = [ "https://nextcloud.nixmox.lan/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";
