@@ -1,0 +1,73 @@
+---
+description: Project architecture, workflows, and conventions for collaborating with LLMs
+globs:
+  - "**/*.nix"
+  - "**/*.tf"
+  - "**/*.tfvars"
+  - "**/*.sh"
+  - "**/*.md"
+  - "**/*.yaml"
+  - "**/*.yml"
+alwaysApply: true
+---
+
+## NixMox Architecture & Working Agreement
+
+- Core stack: NixOS + Flakes, Terraform (Proxmox LXC), SOPS for secrets, Caddy (reverse proxy), PostgreSQL, Unbound (DNS), Authentik (IdP).
+- Single-source-of-truth: `nixmox/nixos/service-manifest.nix` drives service topology (IPs, hostnames, interfaces like db/proxy/auth/health) and is consumed by NixOS modules.
+- Orchestration: `scripts/deploy-orchestrator.sh` builds a deployment plan from the manifest and coordinates Terraform (infra) plus NixOS remote deploys via `nixos-rebuild --target-host`.
+- Modules: Each service has a NixOS module under `nixmox/nixos/modules/<service>/` that renders systemd units and config from the manifest + SOPS.
+- Constraints: Exactly one application and one provider per service; prefer variables over hard-coded domains; keep `flake.nix` clean/minimal.
+
+## Secrets & Certificates
+- Secrets live in SOPS-managed files (e.g., `nixmox/secrets/default.yaml`). Never hard-code passwords or tokens in modules or manifest.
+- Systemd services should read sensitive values via `EnvironmentFile = config.sops.secrets."<path>".path` or via secret-mounted files under `/run/secrets/...`.
+- For DB users, prefer creating accounts without passwords in init SQL and set passwords via a post-start systemd oneshot that reads SOPS.
+- Avoid committing any decrypted secrets or build artifacts. Ensure `*.tfvars`, `*.tfplan`, and other sensitive/ephemeral outputs are `.gitignore`d.
+
+## Deployment Flow
+- Infra: Terraform provisions Proxmox LXC VMs/containers (phase tf:infra). State is authoritative for infra existence checks.
+- NixOS: Remote deployment uses `nix run nixpkgs#nixos-rebuild -- switch --flake .#<svc> --target-host root@<ip>`.
+- Authentik: DB creds from SOPS; avoid hard-coding. Redis local. Outposts configured post-boot via UI/Terraform resources (phase tf:auth-core).
+- Caddy: Reverse proxy is manifest-driven. Upstreams parsed from `proxy.upstream` as `host:port`; avoid defaulting ports incorrectly.
+- Certificates: Internal CA and wildcard certificates are installed to expected paths; do not embed binaries in SOPS. Use files + activation/installer steps.
+
+## Coding Guidelines (Nix modules)
+- Derive values from the manifest; allow module overrides to merge (manual overrides take precedence over manifest-generated defaults).
+- Keep service `Environment` minimal; place sensitive values in `EnvironmentFile`/`/run/secrets`.
+- Prefer `mkIf`, `mkOption`, and types with sensible defaults. Avoid deep nesting and avoid reformatting unrelated code.
+- For large init SQL, create users without passwords; toggle passwords via a separate service that executes after secrets mount.
+
+## Operational Conventions
+- Use `deploy-orchestrator.sh` for all deploys. Do not use manual `nixos-rebuild` unless debugging.
+- When editing encrypted secrets, decrypt to a temp file, edit, then re-encrypt with SOPS (no automation scripts that inline-edit).
+- For Authentik providers/flows and infra changes, update Terraform resources rather than running ad-hoc commands on servers.
+- DNS and reverse proxy entries should be manifest-driven; avoid embedding domain strings in modules.
+
+## File/Dir Pointers
+- Manifest: `nixmox/nixos/service-manifest.nix`
+- Modules: `nixmox/nixos/modules/**/default.nix`
+- Orchestrator: `nixmox/scripts/deploy-orchestrator.sh`
+- Core hosts: `nixmox/nixos/hosts/*.nix`
+- Secrets policy: `.sops.yaml` and `nixmox/secrets/*.yaml`
+- Reverse proxy: `nixmox/nixos/modules/caddy/`
+- Authentik: `nixmox/nixos/modules/authentik/`
+- PostgreSQL: `nixmox/nixos/modules/postgresql/`
+
+## What LLMs Should Do
+- Read the manifest to understand intended topology; reflect changes in modules not in ad-hoc files.
+- Prefer SOPS + EnvironmentFile for secrets. Never print secrets in logs or commits.
+- Keep `flake.nix` minimal. Avoid adding transient tooling to the flake.
+- Ensure edits compile and deploy cleanly; favor incremental, reversible edits.
+- When adjusting service ports, upstreams, or hosts, update the manifest and any logic that parses it (e.g., Caddy upstream parser).
+
+## What LLMs Should Avoid
+- Adding Colmena flows (not used).
+- Committing decrypted secrets, Terraform state, plans, or build artifacts.
+- Hard-coding passwords, domains, or container IPs in modules.
+- Bypassing Terraform for infra changes or Authentik provider flow setup.
+
+## Quick Commands
+- Validate + deploy a single service: `./scripts/deploy-orchestrator.sh --service <name>`
+- Full core phases run automatically as needed (infra, core NixOS, auth-core).
+- Check service logs via `ssh root@<ip> journalctl -u <svc> -n 100 --no-pager`.

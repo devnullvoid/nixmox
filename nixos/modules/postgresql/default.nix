@@ -116,7 +116,8 @@ in {
         owner = "postgres";
         group = "postgres";
         mode = "0400";
-        restartUnits = [ "postgresql.service" ];
+        # When the secret changes, also re-run the password setter
+        restartUnits = [ "postgresql.service" "postgresql-set-passwords.service" ];
       };
     };
     
@@ -176,16 +177,16 @@ in {
       enableJIT = true;
       package = pkgs.postgresql_16;
       
-      # Configure authentication for internal network
-      authentication = ''
+      # Configure authentication for internal network (override defaults)
+      authentication = lib.mkForce ''
         # TYPE  DATABASE        USER            ADDRESS                 METHOD
         local   all             all                                     trust
-        host    all             all             127.0.0.1/32            md5
-        host    all             all             ::1/128                 md5
+        host    all             all             127.0.0.1/32            scram-sha-256
+        host    all             all             ::1/128                 scram-sha-256
         # Allow connections from internal network (192.168.99.0/24)
-        host    all             all             192.168.99.0/24         md5
+        host    all             all             192.168.99.0/24         scram-sha-256
         # Allow connections from all hosts (for development - restrict in production)
-        host    all             all             0.0.0.0/0               md5
+        host    all             all             0.0.0.0/0               scram-sha-256
       '';
       
       # Create databases from manifest + manual overrides
@@ -276,7 +277,7 @@ in {
     systemd.services.postgresql-set-passwords = {
       description = "Set PostgreSQL user passwords from SOPS secrets";
       wantedBy = [ "multi-user.target" ];
-      after = [ "postgresql.service" ];
+      after = [ "postgresql.service" "run-secrets.d.mount" ];
       requires = [ "postgresql.service" ];
 
       serviceConfig = {
@@ -285,12 +286,42 @@ in {
           #!/bin/sh
           set -e
           
-          # Set Authentik user password from SOPS secrets
+          # Wait for SOPS secret to be present (up to ~30s)
+          for i in $(seq 1 30); do
+            if [ -f "/run/secrets/authentik/postgresql_password" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Set Authentik user password from SOPS secrets (strip trailing newline)
           if [ -f "/run/secrets/authentik/postgresql_password" ]; then
             echo "Setting password for authentik user..."
-            PASSWORD=$(cat /run/secrets/authentik/postgresql_password)
-            ${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c "ALTER USER authentik WITH PASSWORD '\$PASSWORD';"
-            echo "Password set successfully for authentik user"
+            
+            PASSWORD=$(tr -d '\n' < /run/secrets/authentik/postgresql_password)
+            echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
+            
+            echo "Executing: ALTER USER authentik WITH PASSWORD '***';"
+            
+            # Use proper shell variable handling to avoid escaping issues
+            SQL_CMD="ALTER USER authentik WITH PASSWORD '$PASSWORD';"
+            ${pkgs.postgresql_16}/bin/psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U postgres -d postgres -c "$SQL_CMD"
+            
+            # Check what was actually set in the database
+            echo "Database password hash after setting:"
+            ${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c "SELECT rolname, substring(rolpassword,1,50) FROM pg_authid WHERE rolname='authentik';"
+            
+            LEN=$(printf %s "$PASSWORD" | wc -c)
+            FP=$(printf %s "$PASSWORD" | ${pkgs.coreutils}/bin/sha256sum | cut -c1-12)
+            echo "Password set successfully for authentik user (len=$LEN, sha256_12=$FP)"
+            
+            # Test connection
+            echo "Testing connection..."
+            if PGPASSWORD="$PASSWORD" ${pkgs.postgresql_16}/bin/psql -h 127.0.0.1 -U authentik -d authentik -c 'SELECT 1;' >/dev/null 2>&1; then
+              echo "Verified authentik login OK"
+            else
+              echo "Warning: authentik login verification failed"
+            fi
           else
             echo "Warning: SOPS secret for authentik/postgresql_password not found"
           fi
