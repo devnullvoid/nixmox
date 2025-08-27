@@ -15,6 +15,17 @@
     gateway = "192.168.99.1";
     network_cidr = "192.168.99.0/24";
     vlan_tag = 99;
+    
+    # Authentik outpost configuration
+    outposts = {
+      ldap = {
+        base_dn = "dc=nixmox,dc=lan";
+      };
+      radius = {
+        shared_secret = "radius_secret_change_me";
+        client_networks = ["0.0.0.0/0"];
+      };
+    };
   };
 
   # Core services (always required, deployed first)
@@ -23,6 +34,14 @@
       enable = true;
       ip = "192.168.99.13";
       hostname = "dns.nixmox.lan";
+      vmid = 904;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       interface = {
         terraform = {
           modules = [ "./terraform/dns" ];
@@ -52,6 +71,14 @@
       enable = true;
       ip = "192.168.99.11";
       hostname = "postgresql.nixmox.lan";
+      vmid = 902;
+      resources = {
+        cores = 4;
+        memory = 4096;
+        disk_gb = 64;
+      };
+      onboot = true;
+      start = true;
       interface = {
         terraform = {
           modules = [ "./terraform/postgresql" ];
@@ -86,6 +113,14 @@
       enable = true;
       ip = "192.168.99.10";
       hostname = "caddy.nixmox.lan";
+      vmid = 901;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       interface = {
         terraform = {
           modules = [ "./terraform/caddy" ];
@@ -115,6 +150,14 @@
       enable = true;
       ip = "192.168.99.12";
       hostname = "authentik.nixmox.lan";
+      vmid = 903;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       interface = {
         terraform = {
           modules = [ "./terraform/authentik" ];
@@ -157,6 +200,14 @@
       enable = true;
       ip = "192.168.99.14";
       hostname = "vaultwarden.nixmox.lan";
+      vmid = 905;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8080 ];
       interface = {
@@ -173,6 +224,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "confidential";
             redirect_uris = [ "https://vaultwarden.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
@@ -200,6 +252,14 @@
       enable = true;
       ip = "192.168.99.16";
       hostname = "guacamole.nixmox.lan";
+      vmid = 907;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8280 4822 ];
       interface = {
@@ -216,6 +276,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "public";
             redirect_uris = [ "https://guac.nixmox.lan/guacamole/*" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
@@ -243,6 +304,14 @@
       enable = true;
       ip = "192.168.99.18";
       hostname = "monitoring.nixmox.lan";
+      vmid = 909;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 9090 3000 9093 ];
       interface = {
@@ -259,6 +328,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "confidential";
             redirect_uris = [ "https://monitoring.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
@@ -286,6 +356,14 @@
       enable = true;
       ip = "192.168.99.15";
       hostname = "nextcloud.nixmox.lan";
+      vmid = 906;
+      resources = {
+        cores = 4;
+        memory = 4096;
+        disk_gb = 32;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8080 ];
       interface = {
@@ -302,6 +380,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "confidential";
             redirect_uris = [ "https://nextcloud.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
@@ -329,6 +408,14 @@
       enable = true;
       ip = "192.168.99.17";
       hostname = "media.nixmox.lan";
+      vmid = 908;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 32;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8096 8097 8098 ];
       interface = {
@@ -345,6 +432,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "confidential";
             redirect_uris = [ "https://media.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
@@ -372,6 +460,14 @@
       enable = true;
       ip = "192.168.99.19";
       hostname = "mail.nixmox.lan";
+      vmid = 910;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 16;
+      };
+      onboot = true;
+      start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 25 587 465 993 995 ];
       interface = {
@@ -388,6 +484,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_type = "confidential";
             redirect_uris = [ "https://mail.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
