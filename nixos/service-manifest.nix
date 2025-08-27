@@ -166,6 +166,13 @@
             network_cidr = "192.168.99.0/24";
           };
         };
+        db = {
+          host = "192.168.99.11";
+          name = "authentik";
+          owner = "authentik";
+          port = 5432;
+          password = "authentik123";
+        };
         auth = {
           type = "oidc";
           provider = "authentik";

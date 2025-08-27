@@ -11,7 +11,7 @@ let
   # Extract database requirements from services that have interface.db
   databaseRequirements = builtins.mapAttrs (serviceName: serviceConfig:
     serviceConfig.interface.db or {}
-  ) (builtins.filterAttrs (name: config: 
+  ) (lib.filterAttrs (name: config: 
     builtins.hasAttr "db" (config.interface or {})
   ) allServices);
   

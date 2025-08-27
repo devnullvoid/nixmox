@@ -28,14 +28,28 @@ let
       useForwardAuth = (auth.type or "") == "forward_auth";
       useOidc = (auth.type or "") == "oidc" && (auth.provider or "") == "authentik";
       
+      # Parse upstream field to extract host and port
+      parseUpstream = upstream:
+        if upstream == "" then
+          { host = serviceConfig.hostname; port = 80; }
+        else
+          let
+            parts = lib.splitString ":" upstream;
+            host = lib.head parts;
+            port = if lib.length parts > 1 then lib.toInt (lib.elemAt parts 1) else 80;
+          in
+          { host = host; port = port; };
+      
+      upstreamInfo = parseUpstream (proxy.upstream or "");
+      
       # Get backend from manifest (prefer proxy.upstream, fallback to hostname:port)
-      backend = proxy.upstream or "${serviceConfig.hostname}:${toString (proxy.port or 80)}";
+      backend = upstreamInfo.host;
       
       # Get domain from manifest
       domain = proxy.domain or "${serviceName}.${baseDomain}";
       
-      # Get port from manifest
-      port = proxy.port or 80;
+      # Get port from manifest (prefer parsed upstream port, fallback to proxy.port, then default to 80)
+      port = upstreamInfo.port;
       
       # Determine if we should skip default proxy based on manifest path configuration
       skipDefaultProxy = (proxy.path or "/") != "/";

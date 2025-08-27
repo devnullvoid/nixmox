@@ -200,7 +200,7 @@ deploy_host() {
 
 # Deploy to all Phase 1 containers
 deploy_phase1() {
-    local hosts=("caddy" "postgresql" "dns")
+    local hosts=("caddy" "postgresql" "dns" "authentik")
     local failed_hosts=()
     
     log_info "Deploying to Phase 1 containers: ${hosts[*]}"

@@ -8,23 +8,6 @@ in {
   options.services.nixmox.internalCa = {
     enable = mkEnableOption "Internal CA certificate distribution";
     
-    caCertPath = mkOption {
-      type = types.path;
-      description = "Path to the internal CA certificate file";
-    };
-    
-    wildcardCertPath = mkOption {
-      type = types.nullOr types.path;
-      default = null;
-      description = "Path to the wildcard certificate file";
-    };
-    
-    wildcardKeyPath = mkOption {
-      type = types.nullOr types.path;
-      default = null;
-      description = "Path to the wildcard private key file";
-    };
-    
     enableWildcardKey = mkOption {
       type = types.bool;
       default = false;
@@ -39,15 +22,14 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Add CA to system trust store
-    security.pki.certificates = [ (builtins.readFile cfg.caCertPath) ];
-    
-    # Create shared certificate directory
-    systemd.tmpfiles.rules = [
-      "d /var/lib/shared-certs 0755 root root"
-      "f /var/lib/shared-certs/internal-ca.crt 0644 root root"
-      "f /var/lib/shared-certs/wildcard-nixmox-lan.crt 0644 root root"
-    ];
+    # SOPS secrets for CA certificate
+    sops.secrets."internal_ca/certificate" = {
+      sopsFile = ../../../secrets/default.yaml;
+      path = "/var/lib/shared-certs/internal-ca.crt";
+      mode = "0644";
+      owner = "root";
+      group = "root";
+    };
     
     # SOPS secrets for wildcard private key (only when explicitly enabled)
     sops.secrets."internal_ca/wildcard_private_key" = mkIf cfg.enableWildcardKey {
@@ -58,6 +40,25 @@ in {
       group = "root";
     };
     
+    # Create shared certificate directory
+    systemd.tmpfiles.rules = [
+      "d /var/lib/shared-certs 0755 root root -"
+    ];
+    
+    # Create symlinks for certificates
+    system.activationScripts.setupSharedCerts = ''
+      # Create symlink for wildcard certificate (copy from existing file)
+      if [ -f ../../../certs/wildcard-nixmox-lan.crt ]; then
+        cp ../../../certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.crt
+        chmod 644 /var/lib/shared-certs/wildcard-nixmox-lan.crt
+      fi
+      
+      # Create CA bundle for containers
+      if [ -f /var/lib/shared-certs/internal-ca.crt ]; then
+        cat /var/lib/shared-certs/internal-ca.crt > /var/lib/shared-certs/ca-bundle.crt
+      fi
+    '';
+    
     # Copy CA certificate on activation
     system.activationScripts.copyInternalCa = ''
       echo "Installing internal CA certificate..."
@@ -65,26 +66,11 @@ in {
       mkdir -p /var/lib/shared-certs
       chmod 755 /var/lib/shared-certs
       
-      cp ${cfg.caCertPath} /var/lib/shared-certs/internal-ca.crt
-      
-      # Copy wildcard certificate if provided
-      ${lib.optionalString (cfg.wildcardCertPath != null) ''
-        echo "Installing wildcard certificate..."
-        cp ${cfg.wildcardCertPath} /var/lib/shared-certs/wildcard-nixmox-lan.crt
-      ''}
-      
-      # Copy wildcard private key if enabled
-      ${lib.optionalString (cfg.enableWildcardKey && cfg.wildcardKeyPath != null) ''
-        echo "Installing wildcard private key..."
-        cp ${cfg.wildcardKeyPath} /var/lib/shared-certs/wildcard-nixmox-lan.key
-        chmod 644 /var/lib/shared-certs/wildcard-nixmox-lan.key
-      ''}
-      
       # Create a CA bundle that includes our internal CA for containers
       echo "Creating CA bundle for containers..."
       cat /etc/ssl/certs/ca-certificates.crt /var/lib/shared-certs/internal-ca.crt > /var/lib/shared-certs/ca-bundle.crt
       
-      echo "Internal CA and wildcard certificates installed successfully"
+      echo "Internal CA certificate installed successfully"
     '';
     
     # Ensure the shared-certs directory exists

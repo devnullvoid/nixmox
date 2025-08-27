@@ -44,18 +44,6 @@ in {
       description = "Whether to use the NixMox internal CA";
     };
     
-    caCertPath = mkOption {
-      type = types.nullOr types.path;
-      default = ../ca/nixmox-internal-ca.crt;
-      description = "Path to internal CA certificate (if null, uses Caddy's internal CA)";
-    };
-    
-    caKeyPath = mkOption {
-      type = types.nullOr types.path;
-      default = null;
-      description = "Path to internal CA private key (if null, uses Caddy's internal CA)";
-    };
-    
     caName = mkOption {
       type = types.str;
       default = "NixMox Internal CA";
@@ -68,18 +56,6 @@ in {
         type = types.bool;
         default = true;
         description = "Enable internal CA with wildcard certificate";
-      };
-      
-      caCertPath = mkOption {
-        type = types.path;
-        default = ../ca/nixmox-internal-ca.crt;
-        description = "Path to internal CA certificate";
-      };
-      
-      wildcardCertPath = mkOption {
-        type = types.path;
-        default = ../ca/wildcard-nixmox-lan.crt;
-        description = "Path to wildcard certificate";
       };
       
       enableWildcardKey = mkOption {
@@ -170,9 +146,9 @@ in {
         {
           admin off
           metrics 127.0.0.1:9090
-          # Use our pre-generated wildcard certificate
-          ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null) ''
-            # Note: Using static certificates instead of PKI module
+          # Use our pre-generated wildcard certificate from SOPS secrets
+          ${lib.optionalString cfg.useInternalCa ''
+            # Note: Using SOPS-managed certificates
           ''}
         }
         
@@ -180,7 +156,7 @@ in {
           builtins.attrValues (builtins.mapAttrs (name: service: ''
             ${service.domain} {
               # Use our wildcard certificate for all services
-              ${lib.optionalString (cfg.useInternalCa && cfg.caCertPath != null) 
+              ${lib.optionalString cfg.useInternalCa 
                 "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
               
               ${lib.optionalString (service.extraConfig != "") 
@@ -219,8 +195,6 @@ in {
     # Enable internal CA with wildcard private key (needed for HTTPS serving)
     services.nixmox.internalCa = mkIf cfg.internalCa.enable {
       enable = true;
-      caCertPath = cfg.internalCa.caCertPath;
-      wildcardCertPath = cfg.internalCa.wildcardCertPath;
       enableWildcardKey = cfg.internalCa.enableWildcardKey;
     };
 

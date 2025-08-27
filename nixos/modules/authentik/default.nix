@@ -14,7 +14,7 @@ let
   
   # Get database configuration from manifest or use defaults
   dbConfig = authentikConfig.interface.db or {};
-  databaseHost = dbConfig.host or "postgresql.nixmox.lan";
+  databaseHost = dbConfig.host or "192.168.99.11";
   databasePort = dbConfig.port or 5432;
   databaseName = dbConfig.name or "authentik";
   databaseUser = dbConfig.owner or "authentik";
@@ -52,25 +52,25 @@ in {
     database = {
       host = mkOption {
         type = types.str;
-        default = "";
+        default = databaseHost;
         description = "PostgreSQL host; if empty, uses manifest value or default";
       };
       
       port = mkOption {
         type = types.int;
-        default = 0;
+        default = databasePort;
         description = "PostgreSQL port; if 0, uses manifest value or default";
       };
       
       name = mkOption {
         type = types.str;
-        default = "";
+        default = databaseName;
         description = "PostgreSQL database name; if empty, uses manifest value or default";
       };
       
       user = mkOption {
         type = types.str;
-        default = "";
+        default = databaseUser;
         description = "PostgreSQL username; if empty, uses manifest value or default";
       };
       
@@ -98,18 +98,6 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Use manifest values with fallbacks to manual configuration
-    services.nixmox.authentik.domain = mkDefault serviceDomain;
-    services.nixmox.authentik.adminEmail = mkDefault adminEmail;
-    
-    # Database configuration with manifest fallbacks
-    services.nixmox.authentik.database = {
-      host = mkDefault databaseHost;
-      port = mkDefault databasePort;
-      name = mkDefault databaseName;
-      user = mkDefault databaseUser;
-    };
-    
     # Create authentik user and group early in the activation process
     users.users.authentik = {
       isSystemUser = true;
@@ -184,10 +172,10 @@ in {
         Environment = [
           "AUTHENTIK_LISTEN__HTTP=0.0.0.0:9000"
           "AUTHENTIK_LISTEN__HTTPS=0.0.0.0:9443"
-          "AUTHENTIK_POSTGRESQL__HOST=${cfg.database.host}"
-          "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
-          "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
-          "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
+          "AUTHENTIK_POSTGRESQL__HOST=${databaseHost}"
+          "AUTHENTIK_POSTGRESQL__PORT=${toString databasePort}"
+          "AUTHENTIK_POSTGRESQL__USER=${databaseUser}"
+          "AUTHENTIK_POSTGRESQL__NAME=${databaseName}"
           "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
           "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
           "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"
@@ -222,10 +210,10 @@ in {
         
         # Environment variables for configuration (same as main service)
         Environment = [
-          "AUTHENTIK_POSTGRESQL__HOST=${cfg.database.host}"
-          "AUTHENTIK_POSTGRESQL__PORT=${toString cfg.database.port}"
-          "AUTHENTIK_POSTGRESQL__USER=${cfg.database.user}"
-          "AUTHENTIK_POSTGRESQL__NAME=${cfg.database.name}"
+          "AUTHENTIK_POSTGRESQL__HOST=${databaseHost}"
+          "AUTHENTIK_POSTGRESQL__PORT=${toString databasePort}"
+          "AUTHENTIK_POSTGRESQL__USER=${databaseUser}"
+          "AUTHENTIK_POSTGRESQL__NAME=${databaseName}"
           "AUTHENTIK_REDIS__HOST=${cfg.redis.host}"
           "AUTHENTIK_REDIS__PORT=${toString cfg.redis.port}"
           "AUTHENTIK_AUTHENTIK__HOST=${cfg.domain}"

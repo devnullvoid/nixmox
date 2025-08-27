@@ -203,6 +203,12 @@ deploy_application_services() {
 is_service_healthy() {
     local service="$1"
     
+    # Skip health checks during dry runs
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Skipping health check for $service"
+        return 0  # Assume healthy during dry run
+    fi
+    
     # Get the IP address for the service from manifest
     local service_ip
     if ! service_ip=$(get_service_ip "$service"); then
@@ -255,6 +261,12 @@ wait_for_service_health() {
     local max_attempts=30
     local attempt=1
     
+    # Skip waiting during dry runs
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Skipping health wait for $service"
+        return 0
+    fi
+    
     log_info "Waiting for $service to be healthy..."
     
     while [ $attempt -le $max_attempts ]; do
@@ -304,29 +316,14 @@ deploy_service() {
         return 1
     fi
     
-    # Use colmena to deploy the service if available
-    if command -v colmena &> /dev/null; then
-        if [[ "$DRY_RUN" == "true" ]]; then
-            log_info "[DRY-RUN] Would use Colmena to deploy $service to $service.nixmox.lan"
-            return 0
-        fi
-        
-        log_info "Using Colmena to deploy $service to $service.nixmox.lan"
-        if colmena apply --on "$service.nixmox.lan"; then
-            log_success "Colmena deployment successful for $service"
-        else
-            log_warning "Colmena deployment failed, falling back to direct SSH"
-            deploy_via_ssh "$service" "$service_ip"
-        fi
-    else
-        if [[ "$DRY_RUN" == "true" ]]; then
-            log_info "[DRY-RUN] Would deploy $service via SSH to $service_ip"
-            return 0
-        fi
-        
-        log_warning "Colmena not available, using direct SSH deployment"
-        deploy_via_ssh "$service" "$service_ip"
+    # Use SSH deployment (Colmena requires a colmena.nix configuration file)
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would deploy $service via SSH to $service_ip"
+        return 0
     fi
+    
+    log_info "Using SSH deployment for $service to $service_ip"
+    deploy_via_ssh "$service" "$service_ip"
 }
 
 # Deploy via SSH using nixos-rebuild
@@ -335,32 +332,64 @@ deploy_via_ssh() {
     local service_ip="$2"
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would deploy $service to $service_ip via SSH"
-        log_info "[DRY-RUN] Would copy flake to $service_ip:/tmp/nixmox-deploy"
-        log_info "[DRY-RUN] Would execute: cd /tmp/nixmox-deploy && nixos-rebuild switch --flake .#$service"
+        log_info "[DRY-RUN] Would deploy $service to $service_ip via remote nixos-rebuild"
+        log_info "[DRY-RUN] Would execute: nix run nixpkgs#nixos-rebuild -- switch --flake .#$service --target-host root@$service_ip"
         return 0
     fi
     
-    log_info "Deploying $service to $service_ip via SSH..."
+    log_info "Deploying $service to $service_ip via remote nixos-rebuild..."
     
-    # Copy the flake to the target host
-    log_info "Copying flake to $service_ip..."
-    if ! scp -o ConnectTimeout=10 -o StrictHostKeyChecking=no -r "$PROJECT_ROOT" "root@$service_ip:/tmp/nixmox-deploy"; then
-        log_error "Failed to copy flake to $service_ip"
-        return 1
-    fi
+    # Use nix run nixpkgs#nixos-rebuild with remote target host
+    # This builds locally and deploys remotely without copying the entire flake
+    log_info "Building and deploying $service configuration..."
     
-    # Execute nixos-rebuild on the target host
-    log_info "Executing nixos-rebuild on $service_ip..."
-    if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$service_ip" "cd /tmp/nixmox-deploy && nixos-rebuild switch --flake .#$service"; then
+    # Configure SSH options to prevent host key confirmation
+    local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
+    
+    if NIX_SSHOPTS="$ssh_opts" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$service" --target-host "root@$service_ip"; then
         log_success "NixOS deployment successful for $service"
     else
         log_error "NixOS deployment failed for $service"
         return 1
     fi
+}
+
+# Check if Terraform infrastructure is already deployed
+check_terraform_state() {
+    local phase="$1"
     
-    # Clean up
-    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no "root@$service_ip" "rm -rf /tmp/nixmox-deploy"
+    if ! command -v terraform &> /dev/null; then
+        log_warning "Terraform not available, assuming infrastructure not deployed"
+        return 1
+    fi
+    
+    # Check if we're in the right directory
+    if [[ ! -d "$PROJECT_ROOT/terraform" ]]; then
+        log_warning "Terraform directory not found, assuming infrastructure not deployed"
+        return 1
+    fi
+    
+    # Change to Terraform directory
+    cd "$PROJECT_ROOT/terraform" || {
+        log_warning "Failed to change to Terraform directory, assuming infrastructure not deployed"
+        return 1
+    }
+    
+    # Check if state file exists
+    if [[ ! -f "terraform.tfstate" ]]; then
+        log_info "No Terraform state file found, infrastructure not deployed"
+        return 1
+    fi
+    
+    # Check if the required resources exist in state
+    log_info "Checking Terraform state for existing infrastructure..."
+    if terraform state list | grep -q "proxmox_lxc"; then
+        log_info "Proxmox LXC containers found in state, infrastructure appears deployed"
+        return 0
+    else
+        log_info "No Proxmox LXC containers found in state, infrastructure not deployed"
+        return 1
+    fi
 }
 
 # Deploy Terraform infrastructure
@@ -423,8 +452,13 @@ deploy_single_service() {
     # Check if this service requires Terraform infrastructure
     case "$service" in
         "postgresql"|"dns"|"caddy"|"authentik")
-            log_info "$service requires infrastructure deployment, running Terraform first..."
-            deploy_terraform "infra"
+            log_info "$service requires infrastructure deployment, checking if already deployed..."
+            if ! check_terraform_state "infra"; then
+                log_info "Infrastructure not deployed, running Terraform first..."
+                deploy_terraform "infra"
+            else
+                log_info "Infrastructure already deployed, skipping Terraform phase"
+            fi
             ;;
     esac
     
@@ -476,6 +510,14 @@ main() {
         deploy_single_service "$TARGET_SERVICE"
     else
         log_info "Deploying all services"
+        # Check if infrastructure is already deployed
+        if ! check_terraform_state "infra"; then
+            log_info "Infrastructure not deployed, running Terraform first..."
+            deploy_terraform "infra"
+        else
+            log_info "Infrastructure already deployed, skipping Terraform phase"
+        fi
+        
         # Deploy core infrastructure
         deploy_core_infrastructure
         

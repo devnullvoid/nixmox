@@ -182,8 +182,7 @@ with lib;
     # Enable internal CA certificate distribution for all hosts
     services.nixmox.internalCa = {
       enable = true;
-      caCertPath = ../ca/nixmox-internal-ca.crt;
-      wildcardCertPath = ../ca/wildcard-nixmox-lan.crt;
+      enableWildcardKey = true;  # Enable for HTTPS serving
     };
 
     # Common tmpfiles rules
