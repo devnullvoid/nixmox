@@ -69,9 +69,14 @@ let
   
 in {
   # Container specifications as JSON strings
-  phase1_containers = containersToJson (builtins.removeAttrs allServices ["vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail"]);
-  phase2_containers = containersToJson (builtins.removeAttrs allServices ["postgresql" "dns" "caddy" "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail"]);
-  phase3_containers = containersToJson (builtins.removeAttrs allServices ["postgresql" "dns" "caddy" "authentik"]);
+  # Phase 1: ALL containers (infrastructure + applications) - Terraform handles infrastructure
+  phase1_containers = containersToJson allServices;
+  
+  # Phase 2: No containers, just Authentik configuration resources
+  phase2_containers = "{}";
+  
+  # Phase 3: No containers, just application-specific Terraform resources (if any)
+  phase3_containers = "{}";
   
   # Network configuration as JSON string
   network_config = networkToJson;
@@ -81,9 +86,9 @@ in {
   
   # Service count
   total_services = toString (builtins.length (builtins.attrNames allServices));
-  phase1_count = toString (builtins.length (builtins.attrNames (builtins.removeAttrs allServices ["vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail"])));
-  phase2_count = toString (builtins.length (builtins.attrNames (builtins.removeAttrs allServices ["postgresql" "dns" "caddy" "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail"])));
-  phase3_count = toString (builtins.length (builtins.attrNames (builtins.removeAttrs allServices ["postgresql" "dns" "caddy" "authentik"])));
+  phase1_count = toString (builtins.length (builtins.attrNames allServices));
+  phase2_count = "0";
+  phase3_count = "0";
   
   # Network info
   network_domain = network.domain or "nixmox.lan";

@@ -26,12 +26,22 @@ let
       serviceManifest.getServiceDependencies allServices name
     ) allServices;
     
-    # Build complete deployment plan
+    # Build complete deployment plan with proper phase separation
     deploymentPlan = {
-      phases = ["tf_infra" "nix_core" "tf_auth_core"];
+      phases = [
+        "tf_infra"      # Phase 1a: Terraform creates ALL containers
+        "nix_core"      # Phase 1b: NixOS configures core services
+        "tf_auth_core"  # Phase 2: Terraform creates Authentik resources
+        "nix_apps"      # Phase 3: NixOS deploys applications
+      ];
       service_phases = lib.attrNames validated.services;
       dependencies = serviceDependencies;
-      execution_order = ["tf_infra" "nix_core" "tf_auth_core"] ++ (lib.attrNames validated.services);
+      execution_order = [
+        "tf_infra"      # Phase 1a: All containers created
+        "nix_core"      # Phase 1b: Core services running
+        "tf_auth_core"  # Phase 2: Authentik resources created
+        "nix_apps"      # Phase 3: Applications deployed
+      ] ++ (lib.map (service: "nix_${service}") (lib.attrNames validated.services));
     };
   in
     deploymentPlan;
@@ -58,35 +68,50 @@ let
       set -e
       trap 'echo "Deployment failed at phase: $CURRENT_PHASE"; exit 1' ERR
       
-      # Phase 1: Terraform Infrastructure
+      # Phase 1a: Terraform Infrastructure (ALL containers)
       echo ""
-      echo "Phase 1: Terraform Infrastructure"
-      echo "---------------------------------"
+      echo "Phase 1a: Terraform Infrastructure"
+      echo "----------------------------------"
       CURRENT_PHASE="tf_infra"
-      echo "Running Terraform infrastructure setup..."
+      echo "Creating ALL containers (infrastructure + applications)..."
+      echo "Running: terraform apply -var='deployment_phase=1'"
+      # TODO: Execute actual terraform apply
       
-      # Phase 2: NixOS Core Services
+      # Phase 1b: NixOS Core Services
       echo ""
-      echo "Phase 2: NixOS Core Services"
+      echo "Phase 1b: NixOS Core Services"
       echo "----------------------------"
       CURRENT_PHASE="nix_core"
-      echo "Deploying NixOS core services..."
+      echo "Deploying NixOS to core infrastructure containers..."
+      echo "Waiting for core services to be healthy..."
+      # TODO: Execute nixos-rebuild for core services
+      # TODO: Wait for health checks (DNS, PostgreSQL, Caddy, Authentik)
       
-      # Phase 3: Terraform Authentication Core
+      # Phase 2: Terraform Authentication Core
       echo ""
-      echo "Phase 3: Terraform Authentication Core"
+      echo "Phase 2: Terraform Authentication Core"
       echo "--------------------------------------"
       CURRENT_PHASE="tf_auth_core"
-      echo "Setting up authentication resources..."
+      echo "Creating Authentik outposts and OIDC applications..."
+      echo "Running: terraform apply -var='deployment_phase=2'"
+      # TODO: Execute actual terraform apply
       
-      # Phase 4+: Service Deployments
+      # Phase 3: NixOS Application Services
       echo ""
-      echo "Phase 4+: Service Deployments"
-      echo "-----------------------------"
+      echo "Phase 3: NixOS Application Services"
+      echo "-----------------------------------"
+      CURRENT_PHASE="nix_apps"
+      echo "Deploying NixOS to application containers..."
+      # TODO: Execute nixos-rebuild for application services
+      
+      # Per-service deployments (if needed)
+      echo ""
+      echo "Per-Service Deployments"
+      echo "----------------------"
       
       ${lib.concatStringsSep "\n" (lib.map (serviceName: ''
         echo "Deploying service: ${serviceName}"
-        CURRENT_PHASE="${serviceName}"
+        CURRENT_PHASE="nix_${serviceName}"
         echo "Service ${serviceName} deployment completed"
       '') plan.service_phases)}
       

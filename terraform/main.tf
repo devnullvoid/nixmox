@@ -29,18 +29,6 @@ terraform {
 }
 
 provider "sops" {}
-provider "proxmox" {
-  pm_api_url          = var.pm_api_url
-  pm_api_token_id     = var.pm_api_token_id
-  pm_api_token_secret = var.pm_api_token_secret
-  pm_tls_insecure     = var.pm_tls_insecure
-}
-
-provider "authentik" {
-  url      = "http://192.168.99.12:9000"  # Authentik IP from manifest
-  token    = try(local.secrets_data.authentik_bootstrap_token, "")
-  insecure = true
-}
 
 # Variables
 variable "pm_api_url" {
@@ -153,7 +141,27 @@ locals {
   )
 }
 
-# Proxmox LXC module
+# Ensure the nixmox pool exists
+resource "proxmox_pool" "nixmox" {
+  poolid = "nixmox"
+  comment = "NixMox deployment pool"
+}
+
+# Proxmox provider configuration (after locals to avoid circular dependency)
+provider "proxmox" {
+  pm_api_url          = try(local.secrets_data.pm_api_url, var.pm_api_url)
+  pm_api_token_id     = try(local.secrets_data.pm_api_token_id, var.pm_api_token_id)
+  pm_api_token_secret = try(local.secrets_data.pm_api_token_secret, var.pm_api_token_secret)
+  pm_tls_insecure     = try(local.secrets_data.pm_tls_insecure, var.pm_tls_insecure)
+}
+
+provider "authentik" {
+  url      = "http://192.168.99.12:9000"  # Authentik IP from manifest
+  token    = try(local.secrets_data.authentik_bootstrap_token, "")
+  insecure = true
+}
+
+# Proxmox LXC module - Phase 1: Create ALL containers (infrastructure + applications)
 module "lxc" {
   source = "./modules/proxmox-lxc"
 
@@ -163,7 +171,7 @@ module "lxc" {
   pm_tls_insecure     = try(local.secrets_data.pm_tls_insecure, var.pm_tls_insecure)
 
   node    = try(local.secrets_data.node, "kuiper-belt")
-  pool    = try(local.secrets_data.pool, "local-lvm")
+  pool    = try(local.secrets_data.pool, "nixmox")
   bridge  = try(local.secrets_data.bridge, "vmbr0")
   cidr    = try(local.secrets_data.cidr, "192.168.99.0/24")
   storage = try(local.secrets_data.storage, "callisto-ssd")
@@ -179,10 +187,13 @@ module "lxc" {
   pve_ssh_private_key = try(local.secrets_data.pve_ssh_private_key, "")
   pve_ssh_port        = try(local.secrets_data.pve_ssh_port, 22)
 
+  # Phase 1: Create ALL containers (infrastructure + applications)
   containers = local.containers_to_deploy
 }
 
-# Authentik Manifest Module (Phase 2: Core Authentication)
+# Authentik Manifest Module - Phase 2: Core Authentication Resources
+# This phase creates Authentik outposts and OIDC applications
+# Depends on Phase 1b (NixOS core services) being deployed
 module "authentik_manifest" {
   count = var.deployment_phase >= 2 ? 1 : 0
   source = "./modules/authentik-manifest"
@@ -194,6 +205,14 @@ module "authentik_manifest" {
   oidc_apps      = local.manifest.oidc_apps
   outpost_config = local.manifest.outpost_config
 }
+
+# Phase 3: Application-specific Terraform resources (if any)
+# This could include things like:
+# - DNS records for applications
+# - Additional storage volumes
+# - Network policies
+# - Monitoring resources
+# For now, this phase is empty as we handle most app config via NixOS
 
 # Outputs
 output "deployment_phase" {

@@ -4,42 +4,36 @@ This document defines the canonical deployment order and responsibilities of the
 
 ## Phase Order (authoritative)
 
-1) tf:infra
-- Purpose: Provision core infrastructure primitives required for hosts and networks.
-- Typical resources: Proxmox LXCs/VMs, networks/VLANs, base DNS zones/records, storage volumes, base secrets/state buckets.
-- Tooling: Terraform (optionally generated via Terranix).
+1a) tf:infra
+- Purpose: Provision ALL infrastructure primitives (core + applications) in a single phase.
+- Typical resources: Proxmox LXCs/VMs for ALL services, networks/VLANs, base DNS zones/records, storage volumes, base secrets/state buckets.
+- Tooling: Terraform (manifest-driven).
+- **Key benefit**: All containers created upfront, enabling better resource optimization and dependency management.
 
-2) nix:core
-- Purpose: Configure core NixOS services on provisioned hosts.
+1b) nix:core
+- Purpose: Configure core NixOS services on provisioned infrastructure containers.
 - Core services (always required): dns, postgresql, caddy, authentik (runtime).
 - Outcomes: Services installed/enabled, CA/trust configured, reverse proxy baseline online.
+- **Dependency**: Requires Phase 1a (tf:infra) to complete successfully.
 
-3) tf:auth-core
-- Purpose: Provision Authentik resources that depend on a running Authentik (apps, providers, outposts), and any other identity resources.
+2) tf:auth-core
+- Purpose: Provision Authentik resources that depend on a running Authentik instance.
 - Typical resources: authentik_application, authentik_provider (OIDC), outpost tokens/bindings.
 - Outputs: Client IDs/secrets, redirect URIs, outpost tokens (fed to Nix via SOPS or TF outputs).
+- **Dependency**: Requires Phase 1b (nix:core) to complete and Authentik to be healthy.
 
-4) Per-service loop (for each service S in dependency order)
-   4a) tf:service-infra
-   - Purpose: Provision service-scoped primitives independent of Nix config.
-   - Examples: DB instances/roles/schemas (if TF-managed), buckets, queues, DNS records, Authentik app/provider for S.
-   
-   4b) nix:service-config
-   - Purpose: Configure service host(s) and runtime with data from TF outputs.
-   - Examples: System units/containers, reverse proxy rules, truststores, DB connectivity, OIDC client wiring.
-   
-   4c) tf:service-config
-   - Purpose: Apply TF that requires the service to be running/configured.
-   - Examples: Authentik outpost bindings that require reachable upstreams, runtime-generated callbacks, dynamic DNS updates.
-   
-   4d) verify
-   - Health checks: startup/liveness/readiness.
-   - End-to-end checks: OIDC redirect URLs, DB connectivity, reverse proxy headers, TLS.
+3) nix:applications
+- Purpose: Configure application services on provisioned application containers.
+- Examples: Vaultwarden, Guacamole, Nextcloud, Media, Monitoring, Mail.
+- **Dependency**: Requires Phase 2 (tf:auth-core) to complete for OIDC configuration.
+- **Data flow**: Uses OIDC client IDs, secrets, and configuration from Phase 2.
 
 Notes:
-- Terranix may be used to generate Terraform HCL from Nix if we want fully declarative TF plans.
-- Each TF phase should plan first; if no changes, skip apply. Use separate workspaces/state when helpful.
-- Secrets from TF should be surfaced via outputs → SOPS or environment-injection only; never committed.
+- Phase 1a creates ALL containers upfront, enabling better resource planning and placement.
+- Phase 1b deploys NixOS to core services, establishing the foundation.
+- Phase 2 creates Authentik resources using the running Authentik instance.
+- Phase 3 deploys applications with full OIDC configuration available.
+- Each phase includes health checks and verification before proceeding.
 
 ## Manifest Additions (interfaces)
 
