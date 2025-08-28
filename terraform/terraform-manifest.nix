@@ -49,7 +49,7 @@ let
   }) allServices);
   
   # Generate OIDC application configurations from manifest
-  generateOIDCApps = 
+  generateOIDCApps =
     builtins.toJSON (builtins.mapAttrs (name: config: {
       name = name;
       domain = config.interface.proxy.domain;
@@ -60,11 +60,37 @@ let
       launch_url = "https://${config.interface.proxy.domain}";
       open_in_new_tab = true;
     }) (builtins.removeAttrs appServices ["monitoring" "mail"]));
+
+  # Generate LDAP application configuration
+generateLDAPApp = builtins.toJSON {
+    name = "LDAP";
+    slug = "ldap";
+    protocol_provider = "ldap";
+    meta_description = "LDAP authentication service";
+    meta_launch_url = "";
+    open_in_new_tab = false;
+  };
+
+  # Generate RADIUS application configuration
+  generateRADIUSApp = builtins.toJSON {
+    name = "RADIUS";
+    slug = "radius";
+    protocol_provider = "radius";
+    meta_description = "RADIUS authentication service";
+    meta_launch_url = "";
+    open_in_new_tab = false;
+  };
   
   # Generate outpost configuration from manifest
   generateOutpostConfig = builtins.toJSON {
     ldap = network.outposts.ldap or {};
-    radius = network.outposts.radius or {};
+    radius = network.outposts.radius or {} // {
+      # Convert array to string for Terraform compatibility
+      client_networks = if (network.outposts.radius.client_networks or []) != [] then
+        builtins.head (network.outposts.radius.client_networks)
+      else
+        "0.0.0.0/0";
+    };
   };
   
 in {
@@ -98,6 +124,8 @@ in {
   
   # Authentik configurations
   oidc_apps = generateOIDCApps;
+  ldap_app = generateLDAPApp;
+  radius_app = generateRADIUSApp;
   outpost_config = generateOutpostConfig;
   
   # Authentik service info

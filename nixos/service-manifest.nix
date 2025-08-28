@@ -212,7 +212,7 @@
           provider = "authentik";
           oidc = {
             client_type = "confidential";
-            redirect_uris = [ "https://vaultwarden.nixmox.lan/oidc/callback" ];
+            redirect_uris = [ "https://vault.nixmox.lan/identity/connect/oidc-signin" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";

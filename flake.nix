@@ -120,7 +120,14 @@
 
           vaultwarden = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "vaultwarden"; }) ];
+            modules = [
+              (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "vaultwarden"; })
+              ./nixos/modules/vaultwarden/oci.nix
+              {
+                # Enable OCI version instead of native service
+                services.nixmox.vaultwarden.oci.enable = true;
+              }
+            ];
             specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
 

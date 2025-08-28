@@ -2,6 +2,25 @@
 
 with lib;
 
+# Vaultwarden PostgreSQL Configuration
+# 
+# This module configures Vaultwarden to use PostgreSQL instead of SQLite.
+# 
+# To configure the database connection:
+# 1. Add the database password to secrets/default.yaml:
+#    vaultwarden:
+#      database_password: your_secure_password
+# 
+# 2. The DATABASE_URL will be automatically constructed from:
+#    - Host: 192.168.99.11 (PostgreSQL server)
+#    - Port: 5432
+#    - Database: vaultwarden
+#    - User: vaultwarden
+#    - Password: from SOPS secrets
+# 
+# 3. The actual DATABASE_URL with password should be set in the SOPS
+#    environment file (vaultwarden/env) to override the default.
+
 let
   cfg = config.services.nixmox.vaultwarden;
 in {
@@ -38,8 +57,32 @@ in {
       database = {
         url = mkOption {
           type = types.str;
-          default = "sqlite:///data/db.sqlite3";
-          description = "Database URL for Vaultwarden";
+          default = "postgresql://vaultwarden:vaultwarden123@192.168.99.11:5432/vaultwarden";
+          description = "Database URL for Vaultwarden (PostgreSQL)";
+        };
+        
+        host = mkOption {
+          type = types.str;
+          default = "192.168.99.11";
+          description = "PostgreSQL host address";
+        };
+        
+        port = mkOption {
+          type = types.int;
+          default = 5432;
+          description = "PostgreSQL port";
+        };
+        
+        name = mkOption {
+          type = types.str;
+          default = "vaultwarden";
+          description = "PostgreSQL database name";
+        };
+        
+        user = mkOption {
+          type = types.str;
+          default = "vaultwarden";
+          description = "PostgreSQL username";
         };
       };
       
@@ -139,13 +182,22 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # SOPS secret for Vaultwarden sensitive env (admin token, jwt secret)
-    sops.secrets."vaultwarden/env" = {
-      owner = "vaultwarden";
-      group = "vaultwarden";
-      mode = "0400";
-      path = "/run/secrets/vaultwarden/env";
-      restartUnits = [ "vaultwarden.service" ];
+    # SOPS secrets for Vaultwarden
+    sops.secrets = {
+      "vaultwarden/env" = {
+        owner = "vaultwarden";
+        group = "vaultwarden";
+        mode = "0400";
+        path = "/run/secrets/vaultwarden/env";
+        restartUnits = [ "vaultwarden.service" ];
+      };
+      
+      "vaultwarden/database_password" = {
+        owner = "vaultwarden";
+        group = "vaultwarden";
+        mode = "0400";
+        restartUnits = [ "vaultwarden.service" ];
+      };
     };
 
     # Optionally, include OIDC values directly in vaultwarden/env for POC
@@ -159,8 +211,8 @@ in {
         # Domain
         DOMAIN = cfg.vaultwarden.domain;
         
-        # Database (use relative path under WorkingDirectory)
-        DATABASE_URL = "data/db.sqlite3";
+        # Database (PostgreSQL connection - password set via SOPS EnvironmentFile)
+        DATABASE_URL = "postgresql://${cfg.vaultwarden.database.user}:***@${cfg.vaultwarden.database.host}:${toString cfg.vaultwarden.database.port}/${cfg.vaultwarden.database.name}";
         
         # Admin token and JWT secret are expected via SOPS EnvironmentFile
         SIGNUPS_ALLOWED = cfg.vaultwarden.security.signupsAllowed;
@@ -313,8 +365,14 @@ in {
       ICON_CACHE_TTL = "2592000";
       ICON_CACHE_NEGTTL = "259200";
       
-      # Database settings
+      # Database settings (PostgreSQL)
       DATABASE_MAX_CONNS = "10";
+      DATABASE_URL = "postgresql://vaultwarden:***@192.168.99.11:5432/vaultwarden";
+      
+      # PostgreSQL-specific settings
+      DATABASE_TIMEOUT = "30";
+      DATABASE_CONNECTION_RETRIES = "3";
+      DATABASE_POOL_SIZE = "10";
       
       # Email settings
       SMTP_TIMEOUT = "15";

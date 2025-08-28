@@ -2,6 +2,30 @@
 
 with lib;
 
+# Vaultwarden OCI Container with PostgreSQL and Authentik SSO Support
+#
+# This module configures Vaultwarden as an OCI container with full PostgreSQL
+# and Authentik SSO integration.
+#
+# All sensitive configuration comes from SOPS secrets:
+# - DATABASE_URL: PostgreSQL connection string
+# - OIDC_ISSUER: Authentik OIDC provider URL
+# - OIDC_REDIRECT_URI: Vaultwarden OIDC callback URL
+# - SSO_AUTHORITY: Authentik SSO authority URL
+# - SSO_CLIENT_ID/SECRET: OIDC client credentials
+# - ADMIN_TOKEN: Vaultwarden admin token
+# - JWT_SECRET: JWT signing secret
+#
+# SOPS env file (vaultwarden/env) should contain:
+# DATABASE_URL=postgresql://vaultwarden:password@192.168.99.11:5432/vaultwarden
+# OIDC_ISSUER=https://auth.nixmox.lan/application/o/vaultwarden-oidc/
+# OIDC_REDIRECT_URI=https://vault.nixmox.lan/oidc/callback
+# SSO_AUTHORITY=https://auth.nixmox.lan/application/o/vaultwarden-oidc/
+# SSO_CLIENT_ID=vaultwarden-oidc
+# SSO_CLIENT_SECRET=your_client_secret
+# ADMIN_TOKEN=your_admin_token
+# JWT_SECRET=your_jwt_secret
+
 let
   cfg = config.services.nixmox.vaultwarden.oci;
 in {
@@ -44,6 +68,8 @@ in {
       default = "/var/lib/vaultwarden";
       description = "Data directory on host mounted to /data";
     };
+    
+
 
     # lanIp = mkOption {
     #   type = types.str;
@@ -62,7 +88,6 @@ in {
     # Enable internal CA certificate distribution
     services.nixmox.internalCa = {
       enable = true;
-      caCertPath = ../../ca/nixmox-internal-ca.crt;
     };
     
     # Ensure local firewall permits backend traffic on the Vaultwarden port
@@ -80,13 +105,15 @@ in {
     # Podman bridged networking needs nftables (netavark) for port publishing
     networking.nftables.enable = true;
 
-    # Provide Vaultwarden env via SOPS for the container
-    sops.secrets."vaultwarden/env" = {
-      path = "/run/secrets/vaultwarden/env";
-      mode = "0400";
-      owner = "root";
-      group = "root";
-      restartUnits = [ "podman-vaultwarden.service" ];
+    # SOPS secrets for Vaultwarden container
+    sops.secrets = {
+      "vaultwarden/env" = {
+        path = "/run/secrets/vaultwarden/env";
+        mode = "0400";
+        owner = "root";
+        group = "root";
+        restartUnits = [ "podman-vaultwarden.service" ];
+      };
     };
 
     # CA certificate is now handled by the shared internal-ca module
@@ -100,30 +127,33 @@ in {
         "${cfg.dataDir}:/data"
         # Mount the shared internal CA certificate
         "/var/lib/shared-certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro"
-        # Mount the updated CA bundle that includes our internal CA
+        # Mount the CA bundle that includes both system CAs and internal CA
         "/var/lib/shared-certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
         "--network=host"
-        # Ensure name resolution for Authentik and Vaultwarden domains inside the container
-        # "--add-host=${cfg.authDomain}:${cfg.lanIp}"
-        # "--add-host=${cfg.subdomain}.${config.services.nixmox.domain}:${cfg.lanIp}"
       ];
-      environmentFiles = [ "/run/secrets/vaultwarden/env" ];
+      environmentFiles = [ config.sops.secrets."vaultwarden/env".path ];
       environment = {
         DOMAIN = cfg.domain;
         ROCKET_ADDRESS = "0.0.0.0";
         ROCKET_PORT = toString cfg.listenPort;
         WEB_VAULT_ENABLED = "true";
-        # Point to the directory containing our internal CA
-        SSL_CERT_DIR = "/etc/ssl/certs";
-        # SSO static config; client/secret via env file
+
+        # PostgreSQL Database Configuration comes from SOPS env file
+        DATABASE_MAX_CONNS = "10";
+        DATABASE_TIMEOUT = "30";
+        DATABASE_CONNECTION_RETRIES = "3";
+        DATABASE_POOL_SIZE = "10";
+
+        # SSL Configuration - point to the CA bundle that includes both system CAs and internal CA
+        SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
+
+        # SSO Configuration - using correct values from Authentik
         SSO_ENABLED = "true";
         SSO_ONLY = "false";
         SSO_DISPLAY_NAME = "Authentik";
         SSO_SCOPES = "openid email profile offline_access";
-        # Ensure correct provider slug and trailing slash
-        # SSO_AUTHORITY = "https://${cfg.authDomain}/application/o/vaultwarden/";
       };
     };
   };

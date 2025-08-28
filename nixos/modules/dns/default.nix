@@ -13,25 +13,31 @@ let
   allServices = (manifest.core_services or {}) // (manifest.services or {});
   
   # Generate DNS records from manifest services
-  # Use proxy.domain for hostname and ip for the A record
+  # Create both hostname A records and service CNAME records
   manifestServices = builtins.mapAttrs (serviceName: serviceConfig:
     let
-      # Extract hostname from proxy.domain (e.g., "postgresql.nixmox.lan" -> "postgresql")
-      hostname = if serviceConfig.interface.proxy.domain or "" != "" then
-        (builtins.head (builtins.split "\\." (serviceConfig.interface.proxy.domain or "")))
-      else
-        serviceName;
-      
-      # Use the service's IP address
+      # Use the service's hostname for A record (e.g., "vaultwarden.nixmox.lan")
+      # The hostname should already include the full domain, so don't add domain suffix
+      hostname = serviceConfig.hostname or serviceName;
       ip = serviceConfig.ip or "127.0.0.1";
-      
-      # For now, no aliases - we can add this later if needed
-      aliases = [];
+
+      # Extract service domain from proxy.domain for CNAME record (e.g., "vault.nixmox.lan")
+      serviceDomain = serviceConfig.interface.proxy.domain or null;
+
+      # Create aliases list - if service domain exists and differs from hostname, add CNAME
+      # Store just the subdomain part (e.g., "vault" from "vault.nixmox.lan")
+      aliases = if serviceDomain != null && serviceDomain != hostname then
+        let
+          # Extract subdomain (remove domain suffix)
+          subdomain = builtins.head (builtins.split "\\." serviceDomain);
+        in
+        [ subdomain ]
+      else
+        [];
     in
     {
-      inherit ip aliases;
-      # Store the full domain for reference
-      domain = serviceConfig.interface.proxy.domain or "${serviceName}.${baseDomain}";
+      inherit ip aliases hostname;
+      domain = hostname;  # The primary domain for this service
     }
   ) allServices;
   
@@ -129,10 +135,22 @@ in {
           # Local data entries - generate from manifest services
           local-data = [
             "\"${cfg.primaryDomain}. NS ${cfg.domain}.\""
-          ] ++ (mapAttrsToList (name: service: 
-            "\"${name}.${cfg.primaryDomain}. A ${service.ip}\""
+          ] ++ (mapAttrsToList (name: service:
+            # Only add domain suffix if hostname doesn't already contain a dot (full domain)
+            let
+              fullHostname = if builtins.match ".*\\..*" service.hostname != null
+                then service.hostname
+                else "${service.hostname}.${cfg.primaryDomain}";
+            in
+            "\"${fullHostname}. A ${service.ip}\""
           ) finalServices) ++ (concatLists (mapAttrsToList (name: service:
-            map (alias: "\"${alias}.${cfg.primaryDomain}. CNAME ${name}.${cfg.primaryDomain}.\"") service.aliases
+            # For auth service, return A record directly to avoid CNAME resolution issues
+            map (alias:
+              if alias == "auth" then
+                "\"${alias}.${cfg.primaryDomain}. A 192.168.99.10\""
+              else
+                "\"${alias}.${cfg.primaryDomain}. CNAME caddy.${cfg.primaryDomain}.\""
+            ) service.aliases
           ) finalServices));
         };
         

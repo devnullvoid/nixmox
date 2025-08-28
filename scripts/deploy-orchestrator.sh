@@ -21,6 +21,7 @@ LIB_PATH="$PROJECT_ROOT"
 # Global variables
 DRY_RUN=false
 TARGET_SERVICE=""
+TARGET_PHASE=""
 
 # Manifest reading functions
 get_service_ip() {
@@ -114,15 +115,22 @@ validate_manifest() {
 # Generate deployment plan
 generate_plan() {
     log_info "Generating deployment plan..."
-    
-    # This would use our orchestrator library to generate the plan
-    # For now, we'll show the basic structure
+
+    # Show the phase structure
     log_info "Deployment phases:"
-    log_info "  1. tf:infra - Core infrastructure (postgresql, dns, caddy, authentik)"
-    log_info "  2. nix:core - Core NixOS services"
-    log_info "  3. tf:auth-core - Authentik resources"
-    log_info "  4. Per-service deployment (vaultwarden, guacamole, etc.)"
-    
+    log_info "  1. tf:infra + nix:core - Core infrastructure (postgresql, dns, caddy, authentik)"
+    log_info "  2. tf:authentik - Authentik resources (outposts, OIDC apps, LDAP/RADIUS apps)"
+    log_info "  3. services - Application services (vaultwarden, guacamole, etc.)"
+
+    # Show available deployment modes
+    if [[ -n "${TARGET_PHASE:-}" ]]; then
+        log_info "Deploying only Phase $TARGET_PHASE"
+    elif [[ -n "${TARGET_SERVICE:-}" ]]; then
+        log_info "Deploying only service: $TARGET_SERVICE"
+    else
+        log_info "Full deployment: All phases (1-3)"
+    fi
+
     log_success "Deployment plan generated"
 }
 
@@ -326,26 +334,103 @@ deploy_service() {
     deploy_via_ssh "$service" "$service_ip"
 }
 
+# Check if target host has age key and bootstrap if needed
+bootstrap_age_key() {
+    local service="$1"
+    local service_ip="$2"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would check and bootstrap age key for $service at $service_ip"
+        return 0
+    fi
+
+    log_info "Checking age key on $service ($service_ip)..."
+
+    # Configure SSH options
+    local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
+
+    # Check if age key exists on target host
+    if ssh $ssh_opts "root@$service_ip" "test -f /root/.config/sops/age/keys.txt && test -s /root/.config/sops/age/keys.txt"; then
+        log_info "Age key already exists on $service"
+        return 0
+    fi
+
+    log_info "Age key not found on $service, bootstrapping..."
+
+    # Clean up any existing incorrect age key files
+    ssh $ssh_opts "root@$service_ip" "rm -f /etc/age/keys.txt /root/.config/sops/age/keys.txt"
+
+    # Create temporary file for decrypted age key
+    local temp_age_file=$(mktemp)
+
+    # Decrypt the full secrets file and extract just the age_key section
+    if ! sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 10 "age_key:" | grep "AGE-SECRET-KEY" > "$temp_age_file"; then
+        log_error "Failed to extract age key from secrets"
+        rm -f "$temp_age_file"
+        return 1
+    fi
+
+    # Check if we got the age key content
+    if [[ ! -s "$temp_age_file" ]]; then
+        log_error "No age key content extracted"
+        rm -f "$temp_age_file"
+        return 1
+    fi
+
+    # Copy the decrypted age key file to the target host
+    if scp $ssh_opts "$temp_age_file" "root@$service_ip:/tmp/age-key-temp" && scp $ssh_opts "$PROJECT_ROOT/.sops.yaml" "root@$service_ip:/etc/.sops.yaml"; then
+        # Move files to correct locations and create clean age key file
+        if ssh $ssh_opts "root@$service_ip" "mkdir -p /etc/age /root/.config/sops/age && sed 's/^[[:space:]]*//' /tmp/age-key-temp > /etc/age/keys.txt && cp /etc/age/keys.txt /root/.config/sops/age/keys.txt && chmod 400 /etc/age/keys.txt /root/.config/sops/age/keys.txt && chmod 644 /etc/.sops.yaml"; then
+            log_success "Age key and SOPS config successfully bootstrapped to $service"
+            rm -f "$temp_age_file"
+            return 0
+        else
+            log_error "Failed to move bootstrap files on remote host"
+        fi
+    else
+        log_error "Failed to copy bootstrap files to $service"
+    fi
+
+    # Clean up temporary file
+    rm -f "$temp_age_file"
+    return 1
+}
+
 # Deploy via SSH using nixos-rebuild
 deploy_via_ssh() {
     local service="$1"
     local service_ip="$2"
-    
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY-RUN] Would deploy $service to $service_ip via remote nixos-rebuild"
         log_info "[DRY-RUN] Would execute: nix run nixpkgs#nixos-rebuild -- switch --flake .#$service --target-host root@$service_ip"
         return 0
     fi
-    
+
+    # Bootstrap age key if needed
+    if ! bootstrap_age_key "$service" "$service_ip"; then
+        log_error "Failed to bootstrap age key for $service"
+        return 1
+    fi
+
+    log_info "Using SSH deployment for $service to $service_ip"
+    deploy_via_ssh_unchecked "$service" "$service_ip"
+}
+
+# Deploy via SSH using nixos-rebuild (without age key bootstrap)
+deploy_via_ssh_unchecked() {
+    local service="$1"
+    local service_ip="$2"
+
     log_info "Deploying $service to $service_ip via remote nixos-rebuild..."
-    
+
     # Use nix run nixpkgs#nixos-rebuild with remote target host
     # This builds locally and deploys remotely without copying the entire flake
     log_info "Building and deploying $service configuration..."
-    
+
     # Configure SSH options to prevent host key confirmation
     local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
-    
+
     if NIX_SSHOPTS="$ssh_opts" nix run nixpkgs#nixos-rebuild -- switch --flake ".#$service" --target-host "root@$service_ip"; then
         log_success "NixOS deployment successful for $service"
     else
@@ -443,12 +528,203 @@ deploy_terraform() {
     log_success "Terraform deployment completed for phase: $phase"
 }
 
+# Deploy Phase 2: Authentik Resources (tf:authentik)
+deploy_phase2_authentik() {
+    log_info "Deploying Phase 2: Authentik Resources (tf:authentik)..."
+
+    # Ensure core services are deployed and healthy first
+    if ! check_core_services_healthy; then
+        log_info "Core services not healthy, deploying core infrastructure first..."
+        deploy_core_infrastructure
+    fi
+
+    # Check if Phase 2 Terraform resources are already deployed
+    if check_phase2_terraform_deployed; then
+        log_info "Phase 2 Terraform resources already deployed, skipping Terraform deployment"
+    else
+        # Deploy Terraform Phase 2 resources
+        log_info "Deploying Terraform Phase 2 resources..."
+        if ! deploy_terraform_phase2; then
+            log_error "Failed to deploy Terraform Phase 2 resources"
+            return 1
+        fi
+    fi
+
+    # Update outpost tokens and secrets
+    log_info "Updating outpost tokens and secrets..."
+    if ! update_outpost_tokens; then
+        log_error "Failed to update outpost tokens"
+        return 1
+    fi
+
+    # Re-deploy authentik service with updated secrets
+    log_info "Re-deploying authentik service with updated outpost tokens..."
+    if ! redeploy_authentik_service; then
+        log_error "Failed to re-deploy authentik service"
+        return 1
+    fi
+
+    log_success "Phase 2 (tf:authentik) deployment completed successfully!"
+}
+
+# Check if core services are healthy
+check_core_services_healthy() {
+    local core_services=("postgresql" "dns" "caddy" "authentik")
+    local all_healthy=true
+
+    for service in "${core_services[@]}"; do
+        if ! is_service_healthy "$service"; then
+            log_info "Core service $service is not healthy"
+            all_healthy=false
+            break
+        fi
+    done
+
+    $all_healthy
+}
+
+# Check if Phase 2 Terraform resources are deployed
+check_phase2_terraform_deployed() {
+    if ! command -v terraform &> /dev/null; then
+        log_warning "Terraform not available, assuming Phase 2 not deployed"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT/terraform" || {
+        log_warning "Failed to change to Terraform directory"
+        return 1
+    }
+
+    # Check for Phase 2 resources in Terraform state
+    if terraform state list | grep -q "authentik_application.ldap_app\|authentik_application.radius_app"; then
+        log_info "Phase 2 resources found in Terraform state"
+        return 0
+    else
+        log_info "Phase 2 resources not found in Terraform state"
+        return 1
+    fi
+}
+
+# Deploy Terraform Phase 2 resources
+deploy_terraform_phase2() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would deploy Terraform Phase 2 resources"
+        return 0
+    fi
+
+    if ! command -v terraform &> /dev/null; then
+        log_error "Terraform not available, cannot deploy Phase 2 resources"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT/terraform" || {
+        log_error "Failed to change to Terraform directory"
+        return 1
+    }
+
+    # Plan Phase 2 deployment
+    log_info "Planning Terraform Phase 2 deployment..."
+    if ! terraform plan -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml"; then
+        log_error "Terraform plan failed for Phase 2"
+        return 1
+    fi
+
+    # Apply Phase 2 deployment
+    log_info "Applying Terraform Phase 2 deployment..."
+    if ! terraform apply -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml" --auto-approve; then
+        log_error "Terraform apply failed for Phase 2"
+        return 1
+    fi
+
+    log_success "Terraform Phase 2 deployment completed"
+    return 0
+}
+
+# Update outpost tokens using the update script
+update_outpost_tokens() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would update outpost tokens"
+        return 0
+    fi
+
+    # Get outpost IDs from Terraform output
+    local ldap_outpost_id
+    local radius_outpost_id
+
+    cd "$PROJECT_ROOT/terraform" || {
+        log_error "Failed to change to Terraform directory"
+        return 1
+    }
+
+    ldap_outpost_id=$(terraform output authentik_ldap_outpost_id 2>/dev/null || echo "")
+    radius_outpost_id=$(terraform output authentik_radius_outpost_id 2>/dev/null || echo "")
+
+    if [[ -z "$ldap_outpost_id" && -z "$radius_outpost_id" ]]; then
+        log_error "No outpost IDs found in Terraform output"
+        return 1
+    fi
+
+    # Get authentik admin token from secrets
+    local admin_token
+    admin_token=$(sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 5 "authentik:" | grep "AUTHENTIK_TOKEN:" | cut -d' ' -f2 | tr -d '\n' || echo "")
+
+    if [[ -z "$admin_token" ]]; then
+        log_error "Could not retrieve authentik admin token from secrets"
+        return 1
+    fi
+
+    # Build command arguments
+    local cmd_args=("-t" "$admin_token")
+    [[ -n "$ldap_outpost_id" ]] && cmd_args+=("-l" "$ldap_outpost_id")
+    [[ -n "$radius_outpost_id" ]] && cmd_args+=("-r" "$radius_outpost_id")
+
+    # Run the outpost token update script
+    log_info "Running outpost token update script..."
+    if ! "$PROJECT_ROOT/scripts/authentik/update-outpost-tokens-simple.sh" "${cmd_args[@]}"; then
+        log_error "Outpost token update script failed"
+        return 1
+    fi
+
+    log_success "Outpost tokens updated successfully"
+    return 0
+}
+
+# Re-deploy authentik service with updated secrets
+redeploy_authentik_service() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would re-deploy authentik service"
+        return 0
+    fi
+
+    log_info "Re-deploying authentik service..."
+    # Use unchecked deployment since age key should already be bootstrapped
+    local authentik_ip
+    if ! authentik_ip=$(get_service_ip "authentik"); then
+        log_error "Failed to get authentik IP address"
+        return 1
+    fi
+
+    if ! deploy_via_ssh_unchecked "authentik" "$authentik_ip"; then
+        log_error "Failed to re-deploy authentik service"
+        return 1
+    fi
+
+    # Wait for authentik to be healthy
+    if ! wait_for_service_health "authentik"; then
+        log_error "Authentik service failed to become healthy"
+        return 1
+    fi
+
+    log_success "Authentik service re-deployed successfully"
+    return 0
+}
+
 # Deploy a single service and its dependencies
 deploy_single_service() {
     local service="$1"
-    
+
     log_info "Deploying $service and its dependencies..."
-    
+
     # Check if this service requires Terraform infrastructure
     case "$service" in
         "postgresql"|"dns"|"caddy"|"authentik")
@@ -461,30 +737,30 @@ deploy_single_service() {
             fi
             ;;
     esac
-    
+
     # First, ensure core dependencies are healthy
     if ! is_service_healthy "postgresql"; then
         log_info "PostgreSQL not healthy, deploying core infrastructure first..."
         deploy_core_infrastructure
     fi
-    
+
     if ! is_service_healthy "caddy"; then
         log_info "Caddy not healthy, deploying core infrastructure first..."
         deploy_core_infrastructure
     fi
-    
+
     if ! is_service_healthy "authentik"; then
         log_info "Authentik not healthy, deploying core infrastructure first..."
         deploy_core_infrastructure
     fi
-    
+
     # Now deploy the target service
     log_info "Deploying target service: $service"
     deploy_service "$service"
-    
+
     # Wait for service to be healthy
     wait_for_service_health "$service"
-    
+
     log_success "$service deployment completed"
 }
 
@@ -504,24 +780,56 @@ main() {
     # Generate deployment plan
     generate_plan
     
-    # Check if we're deploying a specific service or everything
-    if [[ -n "${TARGET_SERVICE:-}" ]]; then
+    # Check deployment mode
+    if [[ -n "${TARGET_PHASE:-}" ]]; then
+        # Phase-specific deployment
+        case "$TARGET_PHASE" in
+            "1"|"infra")
+                log_info "Deploying Phase 1: Core Infrastructure"
+                # Check if infrastructure is already deployed
+                if ! check_terraform_state "infra"; then
+                    log_info "Infrastructure not deployed, running Terraform first..."
+                    deploy_terraform "infra"
+                else
+                    log_info "Infrastructure already deployed, skipping Terraform phase"
+                fi
+                # Deploy core infrastructure
+                deploy_core_infrastructure
+                ;;
+            "2"|"authentik"|"auth")
+                log_info "Deploying Phase 2: Authentik Resources"
+                deploy_phase2_authentik
+                ;;
+            *)
+                log_error "Unknown phase: $TARGET_PHASE"
+                log_error "Valid phases: 1/infra, 2/authentik/auth"
+                exit 1
+                ;;
+        esac
+    elif [[ -n "${TARGET_SERVICE:-}" ]]; then
+        # Service-specific deployment
         log_info "Deploying only service: $TARGET_SERVICE"
         deploy_single_service "$TARGET_SERVICE"
     else
-        log_info "Deploying all services"
-        # Check if infrastructure is already deployed
+        # Full deployment (all phases)
+        log_info "Deploying all phases (1-2) and services"
+
+        # Phase 1: Core Infrastructure
+        log_info "Phase 1: Core Infrastructure"
         if ! check_terraform_state "infra"; then
             log_info "Infrastructure not deployed, running Terraform first..."
             deploy_terraform "infra"
         else
             log_info "Infrastructure already deployed, skipping Terraform phase"
         fi
-        
-        # Deploy core infrastructure
         deploy_core_infrastructure
-        
-        # Deploy application services
+
+        # Phase 2: Authentik Resources
+        log_info "Phase 2: Authentik Resources"
+        deploy_phase2_authentik
+
+        # Phase 3: Application Services
+        log_info "Phase 3: Application Services"
         deploy_application_services
     fi
     
@@ -537,12 +845,16 @@ Options:
     -h, --help          Show this help message
     -v, --verbose       Enable verbose output
     --dry-run          Show what would be deployed without actually deploying
+    --phase PHASE       Deploy only the specified phase (1/infra, 2/authentik/auth)
     --service SERVICE   Deploy only the specified service and its dependencies
 
 Examples:
-    $0                    # Deploy all services
-    $0 --service vaultwarden  # Deploy only vaultwarden and dependencies
-    $0 --dry-run         # Show deployment plan without executing
+    $0                           # Deploy all phases (1-2) and services
+    $0 --phase 1                 # Deploy only Phase 1 (core infrastructure)
+    $0 --phase 2                 # Deploy only Phase 2 (authentik resources)
+    $0 --phase authentik         # Deploy only Phase 2 (authentik resources)
+    $0 --service vaultwarden     # Deploy only vaultwarden and dependencies
+    $0 --dry-run                 # Show deployment plan without executing
 
 EOF
 }
@@ -561,6 +873,10 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=true
             shift
+            ;;
+        --phase)
+            TARGET_PHASE="$2"
+            shift 2
             ;;
         --service)
             TARGET_SERVICE="$2"

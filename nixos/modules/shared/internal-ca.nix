@@ -45,48 +45,37 @@ in {
       "d /var/lib/shared-certs 0755 root root -"
     ];
     
-    # Create symlinks for certificates
+    # Copy certificates to shared directory
     system.activationScripts.setupSharedCerts = ''
-      # Create symlink for wildcard certificate (copy from existing file)
+      # Ensure directory exists
+      mkdir -p /var/lib/shared-certs
+      chmod 755 /var/lib/shared-certs
+      
+      # Copy wildcard certificate if it exists
       if [ -f ../../../certs/wildcard-nixmox-lan.crt ]; then
         cp ../../../certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.crt
         chmod 644 /var/lib/shared-certs/wildcard-nixmox-lan.crt
       fi
       
-      # Create CA bundle for containers
-      if [ -f /var/lib/shared-certs/internal-ca.crt ]; then
-        cat /var/lib/shared-certs/internal-ca.crt > /var/lib/shared-certs/ca-bundle.crt
+      # Copy internal CA certificate to system CA directory if it exists
+      if [ -f /var/lib/shared-certs/internal-ca.crt ] && [ -s /var/lib/shared-certs/internal-ca.crt ]; then
+        echo "Installing internal CA certificate to system CA directory..."
+        mkdir -p /etc/ssl/certs
+        cp /var/lib/shared-certs/internal-ca.crt /etc/ssl/certs/
+        chmod 644 /etc/ssl/certs/internal-ca.crt
+        echo "Internal CA certificate installed successfully"
+        
+        # Create a proper CA bundle for containers that includes both system CAs and our internal CA
+        echo "Creating CA bundle for containers..."
+        # Always create from individual PEM files to avoid corruption
+        echo "Creating CA bundle from individual PEM files..."
+        find /etc/ssl/certs -name "*.pem" -exec cat {} \; > /var/lib/shared-certs/ca-bundle.crt
+        echo "" >> /var/lib/shared-certs/ca-bundle.crt
+        cat /var/lib/shared-certs/internal-ca.crt >> /var/lib/shared-certs/ca-bundle.crt
+        echo "CA bundle created from individual PEM files + internal CA"
+      else
+        echo "Internal CA certificate not yet available (will be available after SOPS decryption)"
       fi
     '';
-    
-    # Copy CA certificate on activation
-    system.activationScripts.copyInternalCa = ''
-      echo "Installing internal CA certificate..."
-      # Ensure directory exists
-      mkdir -p /var/lib/shared-certs
-      chmod 755 /var/lib/shared-certs
-      
-      # Create a CA bundle that includes our internal CA for containers
-      echo "Creating CA bundle for containers..."
-      cat /etc/ssl/certs/ca-certificates.crt /var/lib/shared-certs/internal-ca.crt > /var/lib/shared-certs/ca-bundle.crt
-      
-      echo "Internal CA certificate installed successfully"
-    '';
-    
-    # Ensure the shared-certs directory exists
-    systemd.services.setup-shared-certs = {
-      description = "Setup shared certificates directory";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "podman.service" "docker.service" ];
-      
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = [
-          "${pkgs.coreutils}/bin/mkdir -p /var/lib/shared-certs"
-          "${pkgs.coreutils}/bin/chmod 755 /var/lib/shared-certs"
-        ];
-        RemainAfterExit = true;
-      };
-    };
   };
 }

@@ -35,6 +35,16 @@ variable "oidc_apps" {
   type        = string
 }
 
+variable "ldap_app" {
+  description = "LDAP application configuration from manifest"
+  type        = string
+}
+
+variable "radius_app" {
+  description = "RADIUS application configuration from manifest"
+  type        = string
+}
+
 variable "outpost_config" {
   description = "Outpost configuration from manifest"
   type        = string
@@ -43,6 +53,8 @@ variable "outpost_config" {
 # Local values
 locals {
   oidc_apps_data = jsondecode(var.oidc_apps)
+  ldap_app_data = jsondecode(var.ldap_app)
+  radius_app_data = jsondecode(var.radius_app)
   outpost_config_data = jsondecode(var.outpost_config)
   
   # Default flows
@@ -205,12 +217,32 @@ resource "random_password" "oidc_secrets" {
 # Generate applications for each OIDC service
 resource "authentik_application" "oidc_apps" {
   for_each = local.oidc_apps_data
-  
+
   name              = each.value.name
   slug              = each.value.name
   protocol_provider = authentik_provider_oauth2.oidc_apps[each.key].id
   meta_launch_url   = each.value.launch_url
   open_in_new_tab   = each.value.open_in_new_tab
+}
+
+# Generate LDAP application
+resource "authentik_application" "ldap_app" {
+  name              = local.ldap_app_data.name
+  slug              = local.ldap_app_data.slug
+  protocol_provider = authentik_provider_ldap.ldap.id
+  meta_description  = local.ldap_app_data.meta_description
+  meta_launch_url   = local.ldap_app_data.meta_launch_url
+  open_in_new_tab   = local.ldap_app_data.open_in_new_tab
+}
+
+# Generate RADIUS application
+resource "authentik_application" "radius_app" {
+  name              = local.radius_app_data.name
+  slug              = local.radius_app_data.slug
+  protocol_provider = authentik_provider_radius.radius.id
+  meta_description  = local.radius_app_data.meta_description
+  meta_launch_url   = local.radius_app_data.meta_launch_url
+  open_in_new_tab   = local.radius_app_data.open_in_new_tab
 }
 
 # Outputs

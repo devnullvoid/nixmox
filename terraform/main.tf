@@ -203,6 +203,8 @@ module "authentik_manifest" {
   authentik_insecure = true
 
   oidc_apps      = local.manifest.oidc_apps
+  ldap_app       = local.manifest.ldap_app
+  radius_app     = local.manifest.radius_app
   outpost_config = local.manifest.outpost_config
 }
 
