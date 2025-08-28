@@ -31,6 +31,15 @@ in {
       group = "root";
     };
     
+    # SOPS secrets for wildcard certificate (only when explicitly enabled)
+    sops.secrets."internal_ca/wildcard_cert" = mkIf cfg.enableWildcardKey {
+      sopsFile = ../../../secrets/default.yaml;
+      path = "/var/lib/shared-certs/wildcard-nixmox-lan.crt";
+      mode = "0644";
+      owner = "root";
+      group = "root";
+    };
+
     # SOPS secrets for wildcard private key (only when explicitly enabled)
     sops.secrets."internal_ca/wildcard_private_key" = mkIf cfg.enableWildcardKey {
       sopsFile = ../../../secrets/default.yaml;
@@ -50,12 +59,6 @@ in {
       # Ensure directory exists
       mkdir -p /var/lib/shared-certs
       chmod 755 /var/lib/shared-certs
-      
-      # Copy wildcard certificate if it exists
-      if [ -f ../../../certs/wildcard-nixmox-lan.crt ]; then
-        cp ../../../certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.crt
-        chmod 644 /var/lib/shared-certs/wildcard-nixmox-lan.crt
-      fi
       
       # Copy internal CA certificate to system CA directory if it exists
       if [ -f /var/lib/shared-certs/internal-ca.crt ] && [ -s /var/lib/shared-certs/internal-ca.crt ]; then

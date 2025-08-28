@@ -267,8 +267,12 @@ in {
 
         serviceConfig = {
           ExecStartPre = [
+            # Ensure all required directories exist before starting
+            "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}"
             "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}/data"
             "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}/logs"
+            # Set proper ownership
+            "${pkgs.coreutils}/bin/chown -R openbao:openbao ${cfg.openbao.dataDir}"
           ];
 
           # User and group

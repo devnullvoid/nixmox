@@ -140,10 +140,10 @@ locals {
   deployment_plan = var.incremental_mode ? jsondecode(local.manifest.deployment_plan) : null
 
   # Deployment planning information
-  containers_to_create = var.incremental_mode ? local.deployment_plan.containers_to_create : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
-  oidc_apps_to_create = var.incremental_mode ? local.deployment_plan.oidc_apps_to_create : keys(jsondecode(local.manifest.oidc_apps))
-  nixos_redeployments = var.incremental_mode ? local.deployment_plan.nixos_redeployments : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
-  execution_order = var.incremental_mode ? local.deployment_plan.execution_order : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
+  containers_to_create = var.incremental_mode && local.deployment_plan != null ? local.deployment_plan.containers_to_create : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
+  oidc_apps_to_create = var.incremental_mode && local.deployment_plan != null ? local.deployment_plan.oidc_apps_to_create : keys(jsondecode(local.manifest.oidc_apps))
+  nixos_redeployments = var.incremental_mode && local.deployment_plan != null ? local.deployment_plan.nixos_redeployments : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
+  execution_order = var.incremental_mode && local.deployment_plan != null ? local.deployment_plan.execution_order : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
   
   # Environment-specific configurations
   env_configs = {
@@ -183,10 +183,10 @@ locals {
     # In incremental mode, use only the containers that need to be created
     for service_name in local.containers_to_create :
     service_name => merge(
-      local.phase1_containers[service_name],
-      local.phase2_containers[service_name],
-      local.phase3_containers[service_name]
-    )...
+      local.phase1_containers[service_name] != null ? local.phase1_containers[service_name] : {},
+      local.phase2_containers[service_name] != null ? local.phase2_containers[service_name] : {},
+      local.phase3_containers[service_name] != null ? local.phase3_containers[service_name] : {}
+    )
   } : merge(
     var.deployment_phase >= 1 ? local.phase1_containers : {},
     var.deployment_phase >= 2 ? local.phase2_containers : {},
@@ -194,11 +194,11 @@ locals {
   )
 }
 
-# Ensure the nixmox pool exists
-resource "proxmox_pool" "nixmox" {
-  poolid = "nixmox"
-  comment = "NixMox deployment pool"
-}
+# Note: nixmox pool is created manually or by previous deployments
+# resource "proxmox_pool" "nixmox" {
+#   poolid = "nixmox"
+#   comment = "NixMox deployment pool"
+# }
 
 # Proxmox provider configuration (after locals to avoid circular dependency)
 provider "proxmox" {

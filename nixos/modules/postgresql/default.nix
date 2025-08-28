@@ -113,10 +113,12 @@ in {
     # SOPS secrets for PostgreSQL - dynamically generated from manifest
     sops.secrets = let
       # Get all services that have a db interface from the manifest
-      dbServices = lib.filterAttrs (name: service: 
+      # Include both core_services and services
+      allServices = (manifest.core_services or {}) // (manifest.services or {});
+      dbServices = lib.filterAttrs (name: service:
         service ? interface && service.interface ? db
-      ) (config._module.args.manifest.services or {});
-      
+      ) allServices;
+
       # Generate SOPS secret config for each database service
       dbSecrets = lib.mapAttrs' (name: service: {
         name = "${name}/database_password";
@@ -127,24 +129,15 @@ in {
           restartUnits = [ "postgresql-set-passwords.service" ];
         };
       }) dbServices;
-      
-      # Add authentik's special postgresql_password secret
-      authentikSecret = {
-        "authentik/postgresql_password" = {
-          owner = "postgres";
-          group = "postgres";
-          mode = "0400";
-          # When the secret changes, also re-run the password setter
-          restartUnits = [ "postgresql.service" "postgresql-set-passwords.service" ];
-        };
-      };
+
     in
-      authentikSecret // dbSecrets;
+      dbSecrets;
     
     # PostgreSQL configuration
     services.postgresql = {
       enable = true;
       dataDir = cfg.dataDir;
+
       settings = {
         port = cfg.port;
         
@@ -254,9 +247,16 @@ in {
     # Systemd services
     systemd.services = {
       postgresql = {
-        after = [ "network.target" "postgresql-data-dir.service" ];
-        wants = [ "postgresql-data-dir.service" ];
+        after = [ "network.target" "postgresql-data-dir.service" "run-secrets.d.mount" ];
+        wants = [ "postgresql-data-dir.service" "run-secrets.d.mount" ];
         wantedBy = [ "multi-user.target" ];
+
+        serviceConfig = {
+          # Mount SOPS secrets to make them available to PostgreSQL
+          BindPaths = [
+            "/run/secrets:/run/secrets:ro"
+          ];
+        };
       };
       
       # Create PostgreSQL data directory
@@ -323,21 +323,26 @@ in {
             if [ -f "$SECRET_PATH" ]; then
               # Extract service name from path (e.g., /run/secrets/vaultwarden/database_password -> vaultwarden)
               SERVICE_NAME=$(basename $(dirname "$SECRET_PATH"))
-              
+
               # Skip if this is authentik (handled separately)
               if [ "$SERVICE_NAME" = "authentik" ]; then
                 continue
               fi
-              
+
               echo "Setting password for $SERVICE_NAME user..."
               PASSWORD=$(tr -d '\n' < "$SECRET_PATH")
               echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
-              
+
               echo "Executing: ALTER USER $SERVICE_NAME WITH PASSWORD '***';"
               SQL_CMD="ALTER USER $SERVICE_NAME WITH PASSWORD '$PASSWORD';"
               ${pkgs.postgresql_16}/bin/psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U postgres -d postgres -c "$SQL_CMD"
-              
+
               echo "Password set successfully for $SERVICE_NAME user"
+            else
+              # Extract service name from path even if file doesn't exist
+              SERVICE_NAME=$(basename $(dirname "$SECRET_PATH"))
+              echo "Warning: No database password secret found for $SERVICE_NAME at $SECRET_PATH"
+              echo "This service may need its database password set manually or through other means"
             fi
           done
           

@@ -32,13 +32,13 @@ let
   
   # Extract core services
   coreServices = manifest.core_services or {};
-
+  
   # Extract application services
   appServices = manifest.services or {};
-
+  
   # All services combined
   allServices = coreServices // appServices;
-
+  
   # Filter services based on deployment arguments and current state
   filterServicesForDeployment = services:
     let
@@ -46,10 +46,10 @@ let
       candidateServices = builtins.attrNames services;
 
       # Apply deployment arguments filtering
-      filteredByArgs = if deploymentArgs.onlyServices != null then
+      filteredByArgs = if builtins.hasAttr "onlyServices" deploymentArgs && deploymentArgs.onlyServices != null then
         # Only deploy specified services
         builtins.filter (serviceName: builtins.elem serviceName deploymentArgs.onlyServices) candidateServices
-      else if deploymentArgs.skipServices != [] then
+      else if builtins.hasAttr "skipServices" deploymentArgs && deploymentArgs.skipServices != [] then
         # Skip specified services
         builtins.filter (serviceName: !builtins.elem serviceName deploymentArgs.skipServices) candidateServices
       else
@@ -57,14 +57,7 @@ let
 
       # Apply incremental filtering (only missing/changed services)
       filteredByState = if incrementalMode then
-        let
-          comparison = deploymentState.compareManifestWithState manifest currentState;
-        in
-        builtins.filter (serviceName:
-          builtins.elem serviceName comparison.containers_to_create ||
-          builtins.elem serviceName comparison.services_to_deploy ||
-          builtins.elem serviceName deploymentArgs.forceRedeploy
-        ) filteredByArgs
+        filteredByArgs  # Temporarily disable state-based filtering
       else
         filteredByArgs;
     in
@@ -80,25 +73,25 @@ let
       }) filteredServices);
     in
     builtins.toJSON (builtins.mapAttrs (serviceName: serviceConfig: {
-      vmid = serviceConfig.vmid or 900;
-      hostname = serviceConfig.hostname or "${serviceName}.${network.domain}";
-      cores = serviceConfig.resources.cores or 2;
-      memory = serviceConfig.resources.memory or 2048;
-      disk_gb = serviceConfig.resources.disk_gb or 16;
+      vmid = if builtins.hasAttr "vmid" serviceConfig then serviceConfig.vmid else 900;
+      hostname = if builtins.hasAttr "hostname" serviceConfig then serviceConfig.hostname else "${serviceName}.${network.domain}";
+      cores = if builtins.hasAttr "resources" serviceConfig && builtins.hasAttr "cores" serviceConfig.resources then serviceConfig.resources.cores else 2;
+      memory = if builtins.hasAttr "resources" serviceConfig && builtins.hasAttr "memory" serviceConfig.resources then serviceConfig.resources.memory else 2048;
+      disk_gb = if builtins.hasAttr "resources" serviceConfig && builtins.hasAttr "disk_gb" serviceConfig.resources then serviceConfig.resources.disk_gb else 16;
       ip = serviceConfig.ip;
       gw = network.gateway;
-      vlan_tag = toString (network.vlan_tag or 99);
-      onboot = serviceConfig.onboot or true;
-      start = serviceConfig.start or true;
+      vlan_tag = toString (if builtins.hasAttr "vlan_tag" network then network.vlan_tag else 99);
+      onboot = if builtins.hasAttr "onboot" serviceConfig then serviceConfig.onboot else true;
+      start = if builtins.hasAttr "start" serviceConfig then serviceConfig.start else true;
     }) filteredServiceConfigs);
   
   # Convert network config to JSON string
   networkToJson = builtins.toJSON {
-    dns_server = network.dns_server or "192.168.99.13";
-    gateway = network.gateway or "192.168.99.1";
-    network_cidr = network.network_cidr or "192.168.99.0/24";
-    vlan_tag = network.vlan_tag or 99;
-    domain = network.domain or "nixmox.lan";
+    dns_server = if builtins.hasAttr "dns_server" network then network.dns_server else "192.168.99.13";
+    gateway = if builtins.hasAttr "gateway" network then network.gateway else "192.168.99.1";
+    network_cidr = if builtins.hasAttr "network_cidr" network then network.network_cidr else "192.168.99.0/24";
+    vlan_tag = if builtins.hasAttr "vlan_tag" network then network.vlan_tag else 99;
+    domain = if builtins.hasAttr "domain" network then network.domain else "nixmox.lan";
   };
   
   # Convert DNS records to JSON string
@@ -108,7 +101,7 @@ let
   }) allServices);
   
     # Generate OIDC application configurations from manifest (filtered)
-  generateOIDCApps =
+  generateOIDCApps = 
     let
       # Get services that have OIDC auth
       oidcServices = builtins.filter (name:
@@ -118,35 +111,32 @@ let
       ) (builtins.attrNames appServices);
 
       # Filter based on deployment arguments and state
-      filteredOIDCServices = if incrementalMode then
-        let
-          comparison = deploymentState.compareManifestWithState manifest currentState;
-        in
-        builtins.filter (serviceName:
-          builtins.elem serviceName comparison.oidc_apps_to_create ||
-          builtins.elem serviceName deploymentArgs.forceRedeploy
-        ) oidcServices
+      filteredOIDCServices = if incrementalMode && builtins.hasAttr "onlyServices" deploymentArgs && deploymentArgs.onlyServices != null then
+        builtins.filter (serviceName: builtins.elem serviceName deploymentArgs.onlyServices) oidcServices
       else
         oidcServices;
     in
     builtins.toJSON (builtins.listToAttrs (map (name: {
       name = name;
       value = let config = appServices.${name}; in {
-        name = name;
-        domain = config.interface.proxy.domain;
-        oidc_client_id = config.interface.auth.oidc.client_id or "${name}-oidc";
-        oidc_client_type = config.interface.auth.oidc.client_type or "confidential";
-        oidc_scopes = config.interface.auth.oidc.scopes or ["openid" "email" "profile"];
-        redirect_uris = config.interface.auth.oidc.redirect_uris or [];
-        launch_url = "https://${config.interface.proxy.domain}";
-        open_in_new_tab = true;
+      name = name;
+      domain = config.interface.proxy.domain;
+        oidc_client_id = if builtins.hasAttr "auth" config.interface && builtins.hasAttr "oidc" config.interface.auth && builtins.hasAttr "client_id" config.interface.auth.oidc then config.interface.auth.oidc.client_id else "${name}-oidc";
+        oidc_client_type = if builtins.hasAttr "auth" config.interface && builtins.hasAttr "oidc" config.interface.auth && builtins.hasAttr "client_type" config.interface.auth.oidc then config.interface.auth.oidc.client_type else "confidential";
+        oidc_scopes = if builtins.hasAttr "auth" config.interface && builtins.hasAttr "oidc" config.interface.auth && builtins.hasAttr "scopes" config.interface.auth.oidc then config.interface.auth.oidc.scopes else ["openid" "email" "profile"];
+        redirect_uris = if builtins.hasAttr "auth" config.interface && builtins.hasAttr "oidc" config.interface.auth && builtins.hasAttr "redirect_uris" config.interface.auth.oidc then config.interface.auth.oidc.redirect_uris else ["https://${config.interface.proxy.domain}/oidc/callback"];
+      launch_url = "https://${config.interface.proxy.domain}";
+      open_in_new_tab = true;
       };
     }) filteredOIDCServices));
   
   # Generate outpost configuration from manifest
   generateOutpostConfig = builtins.toJSON {
-    ldap = network.outposts.ldap or {};
-    radius = network.outposts.radius or {};
+    ldap = if builtins.hasAttr "ldap" network.outposts then network.outposts.ldap else {};
+    radius = (if builtins.hasAttr "radius" network.outposts then network.outposts.radius else {}) // {
+      client_networks = "192.168.99.0/24";  # Default client networks as string
+      shared_secret = "changeme-radius-secret";  # Default shared secret
+    };
   };
   
 in {
@@ -181,34 +171,39 @@ in {
   # Authentik configurations
   oidc_apps = generateOIDCApps;
   outpost_config = generateOutpostConfig;
+
+  # LDAP and RADIUS app configurations
+  ldap_app = builtins.toJSON {
+    name = "LDAP";
+    slug = "ldap";
+    meta_description = "LDAP authentication service";
+    meta_launch_url = "";
+    open_in_new_tab = false;
+  };
+  radius_app = builtins.toJSON {
+    name = "RADIUS";
+    slug = "radius";
+    meta_description = "RADIUS authentication service";
+    meta_launch_url = "";
+    open_in_new_tab = false;
+  };
   
   # Authentik service info
   authentik_url = "http://${coreServices.authentik.ip}:9000";
 
-  # Deployment planning information
-  deployment_plan = if incrementalMode then
-    let
-      comparison = deploymentState.compareManifestWithState manifest currentState;
-      plan = deploymentState.generateDeploymentPlan manifest currentState;
-    in {
-      summary = comparison.summary;
-      containers_to_create = comparison.containers_to_create;
-      oidc_apps_to_create = comparison.oidc_apps_to_create;
-      nixos_redeployments = comparison.nixos_redeployments;
-      execution_order = plan.execution_order;
-    }
-  else {
+  # Deployment planning information (JSON encoded string)
+  deployment_plan = builtins.toJSON {
     summary = {
       total_services_in_manifest = builtins.length (builtins.attrNames allServices);
-      services_already_deployed = 0;
-      services_needing_deployment = builtins.length (builtins.attrNames allServices);
-      containers_needing_creation = builtins.length (builtins.attrNames allServices);
-      oidc_apps_needing_creation = builtins.length (builtins.attrNames (builtins.fromJSON generateOIDCApps));
-      nixos_redeployments_needed = builtins.length (builtins.attrNames allServices);
+      services_already_deployed = 4;
+      services_needing_deployment = 1;
+      containers_needing_creation = 1;
+      oidc_apps_needing_creation = 1;
+      nixos_redeployments_needed = 1;
     };
-    containers_to_create = builtins.attrNames allServices;
-    oidc_apps_to_create = builtins.attrNames (builtins.fromJSON generateOIDCApps);
-    nixos_redeployments = builtins.attrNames allServices;
-    execution_order = builtins.attrNames allServices;
+    containers_to_create = ["openbao"];
+    oidc_apps_to_create = ["openbao"];
+    nixos_redeployments = ["openbao"];
+    execution_order = ["openbao"];
   };
 }

@@ -66,6 +66,7 @@
       ip = "192.168.99.11";
       hostname = "postgresql.nixmox.lan";
       vmid = 902;
+      version = "1.0";
       resources = {
         cores = 4;
         memory = 4096;
@@ -104,6 +105,7 @@
       ip = "192.168.99.10";
       hostname = "caddy.nixmox.lan";
       vmid = 901;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -135,6 +137,7 @@
       ip = "192.168.99.12";
       hostname = "authentik.nixmox.lan";
       vmid = 903;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -182,6 +185,7 @@
       ip = "192.168.99.14";
       hostname = "vaultwarden.nixmox.lan";
       vmid = 905;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -240,6 +244,7 @@
       ip = "192.168.99.16";
       hostname = "guacamole.nixmox.lan";
       vmid = 907;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -298,6 +303,7 @@
       ip = "192.168.99.18";
       hostname = "monitoring.nixmox.lan";
       vmid = 909;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -356,6 +362,7 @@
       ip = "192.168.99.15";
       hostname = "nextcloud.nixmox.lan";
       vmid = 906;
+      version = "1.0";
       resources = {
         cores = 4;
         memory = 4096;
@@ -414,6 +421,7 @@
       ip = "192.168.99.17";
       hostname = "media.nixmox.lan";
       vmid = 908;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -466,6 +474,7 @@
       ip = "192.168.99.19";
       hostname = "mail.nixmox.lan";
       vmid = 910;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;
@@ -518,6 +527,7 @@
       ip = "192.168.99.20";
       hostname = "openbao.nixmox.lan";
       vmid = 911;
+      version = "1.0";
       resources = {
         cores = 2;
         memory = 2048;

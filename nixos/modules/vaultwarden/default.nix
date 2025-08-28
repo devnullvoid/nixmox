@@ -305,7 +305,13 @@ in {
         
         serviceConfig = {
           ExecStartPre = [
+            # Ensure all required directories exist before starting
+            "${pkgs.coreutils}/bin/mkdir -p ${cfg.vaultwarden.dataDir}"
             "${pkgs.coreutils}/bin/mkdir -p ${cfg.vaultwarden.dataDir}/data"
+            "${pkgs.coreutils}/bin/mkdir -p ${cfg.vaultwarden.webVault.path}"
+            # Set proper ownership
+            "${pkgs.coreutils}/bin/chown -R vaultwarden:vaultwarden ${cfg.vaultwarden.dataDir}"
+            "${pkgs.coreutils}/bin/chown -R vaultwarden:vaultwarden ${cfg.vaultwarden.webVault.path}"
           ];
           # User and group
           User = "vaultwarden";
