@@ -22,6 +22,10 @@ LIB_PATH="$PROJECT_ROOT"
 DRY_RUN=false
 TARGET_SERVICE=""
 TARGET_PHASE=""
+INCREMENTAL_MODE=false
+ONLY_SERVICES=""
+SKIP_SERVICES=""
+FORCE_REDEPLOY=""
 
 # Manifest reading functions
 get_service_ip() {
@@ -480,26 +484,41 @@ check_terraform_state() {
 # Deploy Terraform infrastructure
 deploy_terraform() {
     local phase="$1"
-    
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY-RUN] Would execute Terraform for phase: $phase"
         log_info "[DRY-RUN] Would run: cd terraform/environments/dev && terraform plan && terraform apply"
         return 0
     fi
-    
+
     if ! command -v terraform &> /dev/null; then
         log_error "Terraform not available, skipping $phase phase"
         return 1
     fi
-    
+
     log_info "Executing Terraform for phase: $phase"
-    
+
     # Change to Terraform directory
     cd "$PROJECT_ROOT/terraform/environments/dev" || {
         log_error "Failed to change to Terraform directory"
         return 1
     }
-    
+
+    # Build Terraform variables
+    local tf_vars=""
+    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
+        tf_vars="$tf_vars -var=\"incremental_mode=true\""
+    fi
+    if [[ -n "$ONLY_SERVICES" ]]; then
+        tf_vars="$tf_vars -var=\"only_services=$ONLY_SERVICES\""
+    fi
+    if [[ -n "$SKIP_SERVICES" ]]; then
+        tf_vars="$tf_vars -var=\"skip_services=$SKIP_SERVICES\""
+    fi
+    if [[ -n "$FORCE_REDEPLOY" ]]; then
+        tf_vars="$tf_vars -var=\"force_redeploy=$FORCE_REDEPLOY\""
+    fi
+
     # Initialize Terraform if needed
     if [[ ! -d ".terraform" ]]; then
         log_info "Initializing Terraform..."
@@ -508,23 +527,23 @@ deploy_terraform() {
             return 1
         fi
     fi
-    
+
     # Plan and apply
     log_info "Planning Terraform changes..."
-    if ! terraform plan -out=tfplan; then
+    if ! terraform plan $tf_vars -out=tfplan; then
         log_error "Terraform plan failed"
         return 1
     fi
-    
+
     log_info "Applying Terraform changes..."
     if ! terraform apply tfplan; then
         log_error "Terraform apply failed"
         return 1
     fi
-    
+
     # Clean up plan file
     rm -f tfplan
-    
+
     log_success "Terraform deployment completed for phase: $phase"
 }
 
@@ -725,6 +744,47 @@ deploy_single_service() {
 
     log_info "Deploying $service and its dependencies..."
 
+    # In incremental mode, be smarter about dependencies
+    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
+        log_info "🔍 Incremental mode: analyzing dependencies for $service"
+
+        # Get service dependencies
+        local deps
+        deps=$(get_service_dependencies "$service")
+
+        if [[ -n "$deps" && "$deps" != "[]" ]]; then
+            log_info "Dependencies for $service: $deps"
+
+            # Check each dependency
+            local dep_array
+            IFS=',' read -ra dep_array <<< "$deps"
+
+            for dep in "${dep_array[@]}"; do
+                # Remove quotes and brackets
+                dep=$(echo "$dep" | sed 's/["\[\]]//g')
+
+                if [[ -n "$dep" ]]; then
+                    log_info "Checking dependency: $dep"
+
+                    # Check if dependency service is healthy
+                    if is_service_healthy "$dep"; then
+                        log_info "✅ Dependency $dep is already healthy"
+                    else
+                        log_info "⚠️  Dependency $dep is not healthy, deploying it first..."
+
+                        # Recursively deploy the dependency
+                        if ! deploy_single_service "$dep"; then
+                            log_error "Failed to deploy dependency $dep"
+                            return 1
+                        fi
+                    fi
+                fi
+            done
+        else
+            log_info "No dependencies found for $service"
+        fi
+    fi
+
     # Check if this service requires Terraform infrastructure
     case "$service" in
         "postgresql"|"dns"|"caddy"|"authentik")
@@ -738,20 +798,48 @@ deploy_single_service() {
             ;;
     esac
 
-    # First, ensure core dependencies are healthy
-    if ! is_service_healthy "postgresql"; then
-        log_info "PostgreSQL not healthy, deploying core infrastructure first..."
-        deploy_core_infrastructure
-    fi
+    # In incremental mode, check if core services are needed
+    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
+        # Only deploy core infrastructure if it's actually needed
+        local needs_core=false
 
-    if ! is_service_healthy "caddy"; then
-        log_info "Caddy not healthy, deploying core infrastructure first..."
-        deploy_core_infrastructure
-    fi
+        if ! is_service_healthy "postgresql"; then
+            log_info "PostgreSQL not healthy, will deploy core infrastructure..."
+            needs_core=true
+        fi
 
-    if ! is_service_healthy "authentik"; then
-        log_info "Authentik not healthy, deploying core infrastructure first..."
-        deploy_core_infrastructure
+        if ! is_service_healthy "caddy"; then
+            log_info "Caddy not healthy, will deploy core infrastructure..."
+            needs_core=true
+        fi
+
+        if ! is_service_healthy "authentik"; then
+            log_info "Authentik not healthy, will deploy core infrastructure..."
+            needs_core=true
+        fi
+
+        if [[ "$needs_core" == "true" ]]; then
+            log_info "Deploying required core infrastructure..."
+            deploy_core_infrastructure
+        else
+            log_info "Core infrastructure is healthy, skipping core deployment"
+        fi
+    else
+        # Original behavior for non-incremental mode
+        if ! is_service_healthy "postgresql"; then
+            log_info "PostgreSQL not healthy, deploying core infrastructure first..."
+            deploy_core_infrastructure
+        fi
+
+        if ! is_service_healthy "caddy"; then
+            log_info "Caddy not healthy, deploying core infrastructure first..."
+            deploy_core_infrastructure
+        fi
+
+        if ! is_service_healthy "authentik"; then
+            log_info "Authentik not healthy, deploying core infrastructure first..."
+            deploy_core_infrastructure
+        fi
     fi
 
     # Now deploy the target service
@@ -764,19 +852,78 @@ deploy_single_service() {
     log_success "$service deployment completed"
 }
 
+# Show incremental deployment plan
+show_incremental_plan() {
+    log_info "🔍 Analyzing current deployment state..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would analyze deployment state and show incremental plan"
+        return 0
+    fi
+
+    # Run terraform plan with incremental mode to see what would be deployed
+    if command -v terraform &> /dev/null; then
+        log_info "Checking Terraform incremental plan..."
+        cd "$PROJECT_ROOT/terraform/environments/dev" || {
+            log_warning "Failed to change to Terraform directory"
+            return 1
+        }
+
+        # Build Terraform variables for incremental mode
+        local tf_vars="-var=\"incremental_mode=true\""
+        if [[ -n "$ONLY_SERVICES" ]]; then
+            tf_vars="$tf_vars -var=\"only_services=$ONLY_SERVICES\""
+        fi
+        if [[ -n "$SKIP_SERVICES" ]]; then
+            tf_vars="$tf_vars -var=\"skip_services=$SKIP_SERVICES\""
+        fi
+        if [[ -n "$FORCE_REDEPLOY" ]]; then
+            tf_vars="$tf_vars -var=\"force_redeploy=$FORCE_REDEPLOY\""
+        fi
+
+        if terraform plan $tf_vars; then
+            log_success "Incremental deployment plan generated successfully"
+        else
+            log_warning "Failed to generate incremental deployment plan"
+        fi
+    else
+        log_warning "Terraform not available, cannot show incremental plan"
+    fi
+}
+
 # Main deployment function
 main() {
     log_info "Starting NixMox orchestrator deployment..."
-    
+
     # Change to project root
     cd "$PROJECT_ROOT"
-    
+
     # Check prerequisites
     check_prerequisites
-    
+
     # Validate manifest
     validate_manifest
-    
+
+    # Show incremental deployment plan if enabled
+    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
+        log_info "🚀 Incremental deployment mode enabled"
+        if [[ -n "$ONLY_SERVICES" ]]; then
+            log_info "📋 Only deploying services: $ONLY_SERVICES"
+        fi
+        if [[ -n "$SKIP_SERVICES" ]]; then
+            log_info "🚫 Skipping services: $SKIP_SERVICES"
+        fi
+        if [[ -n "$FORCE_REDEPLOY" ]]; then
+            log_info "🔄 Force redeploying services: $FORCE_REDEPLOY"
+        fi
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            show_incremental_plan
+            log_success "Dry run completed - no changes made"
+            exit 0
+        fi
+    fi
+
     # Generate deployment plan
     generate_plan
     
@@ -848,13 +995,24 @@ Options:
     --phase PHASE       Deploy only the specified phase (1/infra, 2/authentik/auth)
     --service SERVICE   Deploy only the specified service and its dependencies
 
+Incremental Deployment Options:
+    --incremental       Enable incremental deployment mode (only deploy missing/changed components)
+    --only SERVICES      Deploy only specific services (comma-separated list)
+    --skip SERVICES      Skip specific services (comma-separated list)
+    --force SERVICES     Force redeploy specific services (comma-separated list)
+
 Examples:
     $0                           # Deploy all phases (1-2) and services
     $0 --phase 1                 # Deploy only Phase 1 (core infrastructure)
     $0 --phase 2                 # Deploy only Phase 2 (authentik resources)
-    $0 --phase authentik         # Deploy only Phase 2 (authentik resources)
     $0 --service vaultwarden     # Deploy only vaultwarden and dependencies
     $0 --dry-run                 # Show deployment plan without executing
+
+Incremental Examples:
+    $0 --incremental             # Deploy only missing/changed components
+    $0 --only openbao            # Deploy only OpenBao service
+    $0 --skip monitoring,mail    # Deploy all except monitoring and mail
+    $0 --force vaultwarden       # Force redeploy vaultwarden even if unchanged
 
 EOF
 }
@@ -880,6 +1038,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         --service)
             TARGET_SERVICE="$2"
+            shift 2
+            ;;
+        --incremental)
+            INCREMENTAL_MODE=true
+            shift
+            ;;
+        --only)
+            ONLY_SERVICES="$2"
+            shift 2
+            ;;
+        --skip)
+            SKIP_SERVICES="$2"
+            shift 2
+            ;;
+        --force)
+            FORCE_REDEPLOY="$2"
             shift 2
             ;;
         *)

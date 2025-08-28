@@ -78,6 +78,36 @@ variable "secrets_file" {
   default     = ""
 }
 
+variable "incremental_mode" {
+  description = "Enable incremental deployment mode"
+  type        = bool
+  default     = false
+}
+
+variable "only_services" {
+  description = "Deploy only specific services (comma-separated list)"
+  type        = string
+  default     = ""
+}
+
+variable "skip_services" {
+  description = "Skip specific services (comma-separated list)"
+  type        = string
+  default     = ""
+}
+
+variable "force_redeploy" {
+  description = "Force redeploy specific services (comma-separated list)"
+  type        = string
+  default     = ""
+}
+
+variable "deployment_state_file" {
+  description = "Path to deployment state file for incremental deployments"
+  type        = string
+  default     = "../deployment-state.json"
+}
+
 # SOPS data source
 data "sops_file" "secrets" {
   count = var.secrets_file != "" ? 1 : 0
@@ -86,19 +116,34 @@ data "sops_file" "secrets" {
 
 # External data source for manifest
 data "external" "manifest" {
-  program = ["nix", "eval", "-f", "${path.module}/terraform-manifest.nix", "--json"]
+  program = var.incremental_mode ? [
+    "bash", "-c", "NIX_INCREMENTAL_MODE=true NIX_DEPLOY_ARGS='${jsonencode({
+      onlyServices = var.only_services != "" ? split(",", var.only_services) : null
+      skipServices = var.skip_services != "" ? split(",", var.skip_services) : []
+      forceRedeploy = var.force_redeploy != "" ? split(",", var.force_redeploy) : []
+    })}' nix eval -f ${path.module}/terraform-manifest.nix --json"
+  ] : ["nix", "eval", "-f", "${path.module}/terraform-manifest.nix", "--json"]
 }
 
 # Local values from manifest
 locals {
   manifest = data.external.manifest.result
-  
+
   # Parse JSON strings back to objects
   phase1_containers = jsondecode(local.manifest.phase1_containers)
   phase2_containers = jsondecode(local.manifest.phase2_containers)
   phase3_containers = jsondecode(local.manifest.phase3_containers)
   network_config = jsondecode(local.manifest.network_config)
   dns_records = jsondecode(local.manifest.dns_records)
+
+  # Parse deployment plan if in incremental mode
+  deployment_plan = var.incremental_mode ? jsondecode(local.manifest.deployment_plan) : null
+
+  # Deployment planning information
+  containers_to_create = var.incremental_mode ? local.deployment_plan.containers_to_create : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
+  oidc_apps_to_create = var.incremental_mode ? local.deployment_plan.oidc_apps_to_create : keys(jsondecode(local.manifest.oidc_apps))
+  nixos_redeployments = var.incremental_mode ? local.deployment_plan.nixos_redeployments : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
+  execution_order = var.incremental_mode ? local.deployment_plan.execution_order : keys(merge(local.phase1_containers, local.phase2_containers, local.phase3_containers))
   
   # Environment-specific configurations
   env_configs = {
@@ -133,8 +178,16 @@ locals {
     (var.pm_api_url != "" && var.pm_api_token_id != "" && var.pm_api_token_secret != "")
   )
   
-  # Get containers to deploy based on phase
-  containers_to_deploy = merge(
+  # Get containers to deploy based on phase and incremental mode
+  containers_to_deploy = var.incremental_mode ? {
+    # In incremental mode, use only the containers that need to be created
+    for service_name in local.containers_to_create :
+    service_name => merge(
+      local.phase1_containers[service_name],
+      local.phase2_containers[service_name],
+      local.phase3_containers[service_name]
+    )...
+  } : merge(
     var.deployment_phase >= 1 ? local.phase1_containers : {},
     var.deployment_phase >= 2 ? local.phase2_containers : {},
     var.deployment_phase >= 3 ? local.phase3_containers : {}
@@ -206,6 +259,10 @@ module "authentik_manifest" {
   ldap_app       = local.manifest.ldap_app
   radius_app     = local.manifest.radius_app
   outpost_config = local.manifest.outpost_config
+
+  # Incremental deployment parameters
+  incremental_mode = var.incremental_mode
+  oidc_apps_to_create = var.incremental_mode ? local.oidc_apps_to_create : []
 }
 
 # Phase 3: Application-specific Terraform resources (if any)

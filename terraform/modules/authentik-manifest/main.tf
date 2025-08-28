@@ -50,12 +50,31 @@ variable "outpost_config" {
   type        = string
 }
 
+variable "incremental_mode" {
+  description = "Enable incremental deployment mode"
+  type        = bool
+  default     = false
+}
+
+variable "oidc_apps_to_create" {
+  description = "List of OIDC apps to create (for incremental mode)"
+  type        = list(string)
+  default     = []
+}
+
 # Local values
 locals {
   oidc_apps_data = jsondecode(var.oidc_apps)
   ldap_app_data = jsondecode(var.ldap_app)
   radius_app_data = jsondecode(var.radius_app)
   outpost_config_data = jsondecode(var.outpost_config)
+
+  # Filter OIDC apps for incremental deployment
+  filtered_oidc_apps = var.incremental_mode ? {
+    for app_name, app_config in local.oidc_apps_data :
+    app_name => app_config
+    if contains(var.oidc_apps_to_create, app_name)
+  } : local.oidc_apps_data
   
   # Default flows
   default_flows = {
@@ -171,7 +190,7 @@ resource "authentik_outpost" "radius" {
 
 # Generate OIDC providers for each service in the manifest
 resource "authentik_provider_oauth2" "oidc_apps" {
-  for_each = local.oidc_apps_data
+  for_each = local.filtered_oidc_apps
   
   name               = "${each.value.name} OIDC"
   client_id          = each.value.oidc_client_id
@@ -206,7 +225,7 @@ resource "authentik_provider_oauth2" "oidc_apps" {
 # Generate random secrets for confidential OIDC clients only
 resource "random_password" "oidc_secrets" {
   for_each = {
-    for name, config in local.oidc_apps_data : name => config
+    for name, config in local.filtered_oidc_apps : name => config
     if config.oidc_client_type == "confidential"
   }
   
@@ -216,7 +235,7 @@ resource "random_password" "oidc_secrets" {
 
 # Generate applications for each OIDC service
 resource "authentik_application" "oidc_apps" {
-  for_each = local.oidc_apps_data
+  for_each = local.filtered_oidc_apps
 
   name              = each.value.name
   slug              = each.value.name

@@ -512,6 +512,54 @@
         };
       };
     };
+
+    openbao = {
+      enable = true;
+      ip = "192.168.99.20";
+      hostname = "openbao.nixmox.lan";
+      vmid = 911;
+      resources = {
+        cores = 2;
+        memory = 2048;
+        disk_gb = 32;
+      };
+      onboot = true;
+      start = true;
+      depends_on = [ "caddy" "authentik" ];
+      ports = [ 8200 ];
+      interface = {
+        terraform = {
+          # Infrastructure created automatically from manifest
+          # Authentik OIDC setup handled by authentik-manifest module
+        };
+        auth = {
+          type = "oidc";
+          provider = "authentik";
+          oidc = {
+            client_id = "openbao-oidc";
+            client_type = "confidential";
+            redirect_uris = [ "https://bao.nixmox.lan/oidc/callback" ];
+            scopes = [ "openid" "email" "profile" ];
+            username_claim = "preferred_username";
+            groups_claim = "groups";
+          };
+        };
+        proxy = {
+          domain = "bao.nixmox.lan";
+          path = "/";
+          upstream = "192.168.99.20:8200";
+          tls = true;
+          authz = true;
+        };
+        health = {
+          startup = "systemctl is-active --quiet openbao";
+          liveness = "curl -f -s http://localhost:8200/v1/sys/health";
+          interval = 30;
+          timeout = 60;
+          retries = 3;
+        };
+      };
+    };
   };
 
   # Deployment configuration
@@ -519,7 +567,7 @@
     tf_infra = [ "postgresql" "dns" "caddy" "authentik" ];
     nix_core = [ "postgresql" "dns" "caddy" "authentik" ];
     tf_auth_core = [ "authentik" ];
-    services = [ "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail" ];
+    services = [ "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail" "openbao" ];
   };
 
   # Health check configuration
