@@ -1,9 +1,22 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.media;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configuration from manifest
+  serviceConfig = manifest.services.media or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+
+  # Get authentication configuration from manifest
+  authConfig = serviceConfig.interface.auth or {};
 in {
   options.services.nixmox.media = {
     enable = mkEnableOption "Media server stack";
@@ -16,8 +29,8 @@ in {
 
     hostName = mkOption {
       type = types.str;
-      default = "";
-      description = "Public host name for media services; defaults to <subdomain>.<services.nixmox.domain>";
+      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      description = "Public host name for media services (from manifest proxy config)";
     };
 
     # Jellyfin configuration

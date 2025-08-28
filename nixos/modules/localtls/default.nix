@@ -1,17 +1,31 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.localtls;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
 in {
   options.services.nixmox.localtls = {
     enable = mkEnableOption "Generate and trust a local CA and server certificate";
 
     domains = mkOption {
       type = with types; listOf str;
-      default = let base = config.services.nixmox.domain; in [ "auth.${base}" "vault.${base}" "guac.${base}" ];
-      description = "DNS names to include as SANs in the self-signed certificate (first used as CN).";
+      default = [
+        "auth.${baseDomain}"
+        "vault.${baseDomain}"
+        "guac.${baseDomain}"
+        "bao.${baseDomain}"
+        "media.${baseDomain}"
+        "vaultwarden.${baseDomain}"
+        "nextcloud.${baseDomain}"
+        "monitoring.${baseDomain}"
+        "mail.${baseDomain}"
+      ];
+      description = "DNS names to include as SANs in the self-signed certificate (from manifest network config).";
     };
 
     caddyCertDir = mkOption {

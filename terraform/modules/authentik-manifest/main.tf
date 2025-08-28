@@ -62,6 +62,12 @@ variable "oidc_apps_to_create" {
   default     = []
 }
 
+variable "secrets_data" {
+  description = "Secrets data from SOPS file"
+  type        = map(any)
+  default     = {}
+}
+
 # Local values
 locals {
   oidc_apps_data = jsondecode(var.oidc_apps)
@@ -194,7 +200,7 @@ resource "authentik_provider_oauth2" "oidc_apps" {
   
   name               = "${each.value.name} OIDC"
   client_id          = each.value.oidc_client_id
-  client_secret      = each.value.oidc_client_type == "confidential" ? random_password.oidc_secrets[each.key].result : null
+  client_secret      = local.oidc_client_secrets[each.key]
   authorization_flow = data.authentik_flow.provider_authorize_implicit.id
   invalidation_flow  = data.authentik_flow.default_invalidation.id
   client_type        = each.value.oidc_client_type
@@ -222,13 +228,45 @@ resource "authentik_provider_oauth2" "oidc_apps" {
   }
 }
 
-# Generate random secrets for confidential OIDC clients only
-resource "random_password" "oidc_secrets" {
-  for_each = {
-    for name, config in local.filtered_oidc_apps : name => config
-    if config.oidc_client_type == "confidential"
+# Extract OIDC client secrets from secrets data based on client type
+locals {
+  confidential_clients = [
+    for svc_name, svc_config in local.filtered_oidc_apps :
+    svc_name if svc_config.oidc_client_type == "confidential"
+  ]
+
+  # Extract oidc_client_secret from secrets file for each service
+  oidc_client_secrets_from_file = {
+    for service_name, service_data in var.secrets_data :
+    service_name => lookup(service_data, "oidc_client_secret", null)
+    if can(lookup(service_data, "oidc_client_secret", null)) &&
+       contains(local.confidential_clients, service_name)
   }
-  
+
+  # Confidential clients that need random passwords (no secret in file)
+  clients_needing_random = {
+    for svc_name, svc_config in local.filtered_oidc_apps :
+    svc_name => svc_config
+    if svc_config.oidc_client_type == "confidential" &&
+       !can(lookup(local.oidc_client_secrets_from_file, svc_name, null))
+  }
+
+  # For confidential clients: use from file if exists, otherwise use random
+  # For public clients: always null
+  oidc_client_secrets = {
+    for svc_name, svc_config in local.filtered_oidc_apps :
+    svc_name => (
+      svc_config.oidc_client_type == "public" ? null :
+      lookup(local.oidc_client_secrets_from_file, svc_name,
+             try(random_password.oidc_client_secrets[svc_name].result, null))
+    )
+  }
+}
+
+# Generate random client secrets for confidential clients without secrets in file
+resource "random_password" "oidc_client_secrets" {
+  for_each = local.clients_needing_random
+
   length  = 32
   special = true
 }

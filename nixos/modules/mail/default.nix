@@ -1,23 +1,33 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.mail;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configuration from manifest
+  serviceConfig = manifest.services.mail or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
 in {
   options.services.nixmox.mail = {
     enable = mkEnableOption "Mail server (Postfix + Dovecot)";
     
     domain = mkOption {
       type = types.str;
-      default = "mail.nixmox.lan";
-      description = "Domain for mail service";
+      default = proxyConfig.domain or "mail.nixmox.lan";
+      description = "Domain for mail service (from manifest proxy config)";
     };
-    
+
     primaryDomain = mkOption {
       type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for mail";
+      default = baseDomain;
+      description = "Primary domain for mail (from manifest network config)";
     };
   };
 

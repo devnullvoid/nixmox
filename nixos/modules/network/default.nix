@@ -1,43 +1,62 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.network;
-  
-  # Import the network configuration
-  networkConfig = import ../../network-config.nix;
+
+  # Get network configuration from manifest
+  networkConfig = manifest.network or {};
+
+  # Get all services from manifest for dynamic host mappings
+  allServices = (manifest.core_services or {}) // (manifest.services or {});
+
+  # Generate dynamic host mappings from manifest services
+  dynamicHostMappings = builtins.mapAttrs (serviceName: serviceConfig:
+    {
+      hostname = serviceConfig.hostname or "${serviceName}.${networkConfig.domain or "nixmox.lan"}";
+      ip = serviceConfig.ip or "127.0.0.1";
+    }
+  ) allServices;
+
+  # Generate dynamic DNS records from manifest services
+  dynamicDnsRecords = builtins.mapAttrs (serviceName: serviceConfig:
+    {
+      domain = serviceConfig.hostname or "${serviceName}.${networkConfig.domain or "nixmox.lan"}";
+      ip = serviceConfig.ip or "127.0.0.1";
+    }
+  ) allServices;
   
 in {
   options.services.nixmox.network = {
     enable = mkEnableOption "NixMox network configuration";
     
-    # Network infrastructure
+    # Network infrastructure (manifest-driven)
     dns_server = mkOption {
       type = types.str;
-      default = networkConfig.network.dns_server;
-      description = "Internal DNS server IP address";
+      default = networkConfig.dns_server or "192.168.99.1";
+      description = "Internal DNS server IP address (from manifest network config)";
     };
-    
+
     gateway = mkOption {
       type = types.str;
-      default = networkConfig.network.gateway;
-      description = "Network gateway IP address";
+      default = networkConfig.gateway or "192.168.99.1";
+      description = "Network gateway IP address (from manifest network config)";
     };
-    
+
     network_cidr = mkOption {
       type = types.str;
-      default = networkConfig.network.network_cidr;
-      description = "Network CIDR range";
+      default = networkConfig.network_cidr or "192.168.99.0/24";
+      description = "Network CIDR range (from manifest network config)";
     };
-    
+
     vlan_tag = mkOption {
       type = types.int;
-      default = networkConfig.network.vlan_tag;
-      description = "VLAN tag for the network";
+      default = networkConfig.vlan_tag or 99;
+      description = "VLAN tag for the network (from manifest network config)";
     };
     
-    # Container configurations
+    # Container configurations (manifest-driven)
     containers = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -55,11 +74,11 @@ in {
           };
         };
       });
-      default = networkConfig.containers;
-      description = "Container network configurations";
+      default = networkConfig.containers or {};
+      description = "Container network configurations (from manifest network config)";
     };
-    
-    # DNS records
+
+    # DNS records (manifest-driven)
     dns_records = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -73,11 +92,11 @@ in {
           };
         };
       });
-      default = networkConfig.dns_records;
-      description = "DNS records for internal resolution";
+      default = dynamicDnsRecords;
+      description = "DNS records for internal resolution (dynamically generated from manifest)";
     };
-    
-    # Host mappings
+
+    # Host mappings (manifest-driven)
     host_mappings = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -91,8 +110,8 @@ in {
           };
         };
       });
-      default = networkConfig.host_mappings;
-      description = "Hostname to IP mappings";
+      default = dynamicHostMappings;
+      description = "Hostname to IP mappings (dynamically generated from manifest)";
     };
   };
   

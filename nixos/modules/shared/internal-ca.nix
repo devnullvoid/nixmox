@@ -54,28 +54,28 @@ in {
       "d /var/lib/shared-certs 0755 root root -"
     ];
     
+    # Set environment variables to use our custom CA bundle
+    environment.variables = {
+      SSL_CERT_FILE = "/var/lib/shared-certs/ca-bundle.crt";
+      CURL_CA_BUNDLE = "/var/lib/shared-certs/ca-bundle.crt";
+    };
+
     # Copy certificates to shared directory
     system.activationScripts.setupSharedCerts = ''
       # Ensure directory exists
       mkdir -p /var/lib/shared-certs
       chmod 755 /var/lib/shared-certs
-      
-      # Copy internal CA certificate to system CA directory if it exists
+
+      # Create a proper CA bundle for containers that includes both system CAs and our internal CA
       if [ -f /var/lib/shared-certs/internal-ca.crt ] && [ -s /var/lib/shared-certs/internal-ca.crt ]; then
-        echo "Installing internal CA certificate to system CA directory..."
-        mkdir -p /etc/ssl/certs
-        cp /var/lib/shared-certs/internal-ca.crt /etc/ssl/certs/
-        chmod 644 /etc/ssl/certs/internal-ca.crt
-        echo "Internal CA certificate installed successfully"
-        
-        # Create a proper CA bundle for containers that includes both system CAs and our internal CA
         echo "Creating CA bundle for containers..."
-        # Always create from individual PEM files to avoid corruption
-        echo "Creating CA bundle from individual PEM files..."
-        find /etc/ssl/certs -name "*.pem" -exec cat {} \; > /var/lib/shared-certs/ca-bundle.crt
-        echo "" >> /var/lib/shared-certs/ca-bundle.crt
+        # Copy system CA bundle and append our internal CA
+        if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+          cp /etc/ssl/certs/ca-certificates.crt /var/lib/shared-certs/ca-bundle.crt
+          echo "" >> /var/lib/shared-certs/ca-bundle.crt
+        fi
         cat /var/lib/shared-certs/internal-ca.crt >> /var/lib/shared-certs/ca-bundle.crt
-        echo "CA bundle created from individual PEM files + internal CA"
+        echo "CA bundle created with internal CA appended"
       else
         echo "Internal CA certificate not yet available (will be available after SOPS decryption)"
       fi

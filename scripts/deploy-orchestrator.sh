@@ -675,8 +675,8 @@ update_outpost_tokens() {
         return 1
     }
 
-    ldap_outpost_id=$(terraform output authentik_ldap_outpost_id 2>/dev/null || echo "")
-    radius_outpost_id=$(terraform output authentik_radius_outpost_id 2>/dev/null || echo "")
+    ldap_outpost_id=$(terraform output authentik_ldap_outpost_id 2>/dev/null | tr -d '"' || echo "")
+    radius_outpost_id=$(terraform output authentik_radius_outpost_id 2>/dev/null | tr -d '"' || echo "")
 
     if [[ -z "$ldap_outpost_id" && -z "$radius_outpost_id" ]]; then
         log_error "No outpost IDs found in Terraform output"
@@ -685,7 +685,7 @@ update_outpost_tokens() {
 
     # Get authentik admin token from secrets
     local admin_token
-    admin_token=$(sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 5 "authentik:" | grep "AUTHENTIK_TOKEN:" | cut -d' ' -f2 | tr -d '\n' || echo "")
+    admin_token=$(sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 20 "authentik:" | grep "AUTHENTIK_BOOTSTRAP_TOKEN=" | cut -d'=' -f2 | tr -d '\n' || echo "")
 
     if [[ -z "$admin_token" ]]; then
         log_error "Could not retrieve authentik admin token from secrets"

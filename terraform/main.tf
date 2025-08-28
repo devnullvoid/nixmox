@@ -260,6 +260,9 @@ module "authentik_manifest" {
   radius_app     = local.manifest.radius_app
   outpost_config = local.manifest.outpost_config
 
+  # Pass secrets data for OIDC client secrets
+  secrets_data = local.secrets_data
+
   # Incremental deployment parameters
   incremental_mode = var.incremental_mode
   oidc_apps_to_create = var.incremental_mode ? local.oidc_apps_to_create : []

@@ -1,9 +1,26 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.nextcloud;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configuration from manifest
+  serviceConfig = manifest.services.nextcloud or {};
+
+  # Get database configuration from manifest
+  dbConfig = serviceConfig.interface.db or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+
+  # Get authentication configuration from manifest
+  authConfig = serviceConfig.interface.auth or {};
+
 in {
   options.services.nixmox.nextcloud = {
     enable = mkEnableOption "Nextcloud file sharing platform";
@@ -11,16 +28,16 @@ in {
     subdomain = mkOption {
       type = types.str;
       default = "nextcloud";
-      description = "Subdomain for Nextcloud; full host becomes <subdomain>.<services.nixmox.domain>";
+      description = "Subdomain for Nextcloud; full host becomes <subdomain>.<domain>";
     };
 
     hostName = mkOption {
       type = types.str;
-      default = "";
-      description = "Public host name for Nextcloud; defaults to <subdomain>.<services.nixmox.domain>";
+      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      description = "Public host name for Nextcloud (from manifest proxy config)";
     };
 
-    # Database configuration
+    # Database configuration (manifest-driven)
     database = {
       type = mkOption {
         type = types.enum [ "postgresql" "mysql" "sqlite" ];
@@ -30,28 +47,28 @@ in {
 
       host = mkOption {
         type = types.str;
-        default = "postgresql.nixmox.lan";
-        description = "Database host";
+        default = dbConfig.host or "postgresql.nixmox.lan";
+        description = "Database host (from manifest)";
       };
 
       port = mkOption {
         type = types.int;
-        default = 5432;
-        description = "Database port";
+        default = dbConfig.port or 5432;
+        description = "Database port (from manifest)";
       };
 
       name = mkOption {
         type = types.str;
-        default = "nextcloud";
-        description = "Database name";
+        default = dbConfig.name or "nextcloud";
+        description = "Database name (from manifest)";
       };
 
       user = mkOption {
         type = types.str;
-        default = "nextcloud";
-        description = "Database user";
+        default = dbConfig.owner or "nextcloud";
+        description = "Database user (from manifest)";
       };
-      
+
       password = mkOption {
         type = types.str;
         default = "changeme";
@@ -59,7 +76,7 @@ in {
       };
     };
 
-    # Redis configuration
+    # Redis configuration (manifest-driven)
     redis = {
       enable = mkOption {
         type = types.bool;
@@ -69,7 +86,7 @@ in {
 
       host = mkOption {
         type = types.str;
-        default = "redis.nixmox.lan";
+        default = "localhost";  # Redis is local to Nextcloud container
         description = "Redis host";
       };
 
@@ -111,7 +128,7 @@ in {
     };
   };
 
-  config = mkIf cfg.enable (
+  config = lib.mkIf cfg.enable (
     let
       hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
     in {

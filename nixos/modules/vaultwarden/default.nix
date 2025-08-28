@@ -1,42 +1,54 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
-# Vaultwarden PostgreSQL Configuration
-# 
+# Vaultwarden PostgreSQL Configuration (Manifest-Driven)
+#
 # This module configures Vaultwarden to use PostgreSQL instead of SQLite.
-# 
-# To configure the database connection:
-# 1. Add the database password to secrets/default.yaml:
-#    vaultwarden:
-#      database_password: your_secure_password
-# 
-# 2. The DATABASE_URL will be automatically constructed from:
-#    - Host: 192.168.99.11 (PostgreSQL server)
-#    - Port: 5432
-#    - Database: vaultwarden
-#    - User: vaultwarden
-#    - Password: from SOPS secrets
-# 
-# 3. The actual DATABASE_URL with password should be set in the SOPS
-#    environment file (vaultwarden/env) to override the default.
+# All configuration values are now driven by the service manifest.
+#
+# Database configuration is automatically constructed from manifest values:
+# - Host: from manifest.services.vaultwarden.interface.db.host
+# - Port: from manifest.services.vaultwarden.interface.db.port
+# - Database: from manifest.services.vaultwarden.interface.db.name
+# - User: from manifest.services.vaultwarden.interface.db.owner
+# - Password: from SOPS secrets
 
 let
   cfg = config.services.nixmox.vaultwarden;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configuration from manifest
+  serviceConfig = manifest.services.vaultwarden or {};
+
+  # Get database configuration from manifest
+  dbConfig = serviceConfig.interface.db or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+
+  # Get authentication configuration from manifest
+  authConfig = serviceConfig.interface.auth or {};
+
+  # Construct database URL from manifest values
+  databaseUrl = "postgresql://${dbConfig.owner or "vaultwarden"}:***@${dbConfig.host or "postgresql.nixmox.lan"}:${toString (dbConfig.port or 5432)}/${dbConfig.name or "vaultwarden"}";
 in {
   options.services.nixmox.vaultwarden = {
     enable = mkEnableOption "Vaultwarden password manager";
     
     domain = mkOption {
       type = types.str;
-      default = "vaultwarden.nixmox.lan";
-      description = "Domain for Vaultwarden service";
+      default = proxyConfig.domain or "vaultwarden.nixmox.lan";
+      description = "Domain for Vaultwarden service (from manifest proxy config)";
     };
-    
+
     primaryDomain = mkOption {
       type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for services";
+      default = baseDomain;
+      description = "Primary domain for services (from manifest network config)";
     };
     
     # Vaultwarden configuration
@@ -53,36 +65,36 @@ in {
         description = "Vaultwarden data directory";
       };
       
-      # Database configuration
+      # Database configuration (manifest-driven)
       database = {
         url = mkOption {
           type = types.str;
-          default = "postgresql://vaultwarden:vaultwarden123@192.168.99.11:5432/vaultwarden";
-          description = "Database URL for Vaultwarden (PostgreSQL)";
+          default = databaseUrl;
+          description = "Database URL for Vaultwarden (constructed from manifest)";
         };
-        
+
         host = mkOption {
           type = types.str;
-          default = "192.168.99.11";
-          description = "PostgreSQL host address";
+          default = dbConfig.host or "postgresql.nixmox.lan";
+          description = "PostgreSQL host address (from manifest)";
         };
-        
+
         port = mkOption {
           type = types.int;
-          default = 5432;
-          description = "PostgreSQL port";
+          default = dbConfig.port or 5432;
+          description = "PostgreSQL port (from manifest)";
         };
-        
+
         name = mkOption {
           type = types.str;
-          default = "vaultwarden";
-          description = "PostgreSQL database name";
+          default = dbConfig.name or "vaultwarden";
+          description = "PostgreSQL database name (from manifest)";
         };
-        
+
         user = mkOption {
           type = types.str;
-          default = "vaultwarden";
-          description = "PostgreSQL username";
+          default = dbConfig.owner or "vaultwarden";
+          description = "PostgreSQL username (from manifest)";
         };
       };
       

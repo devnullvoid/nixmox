@@ -1,9 +1,42 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox.monitoring;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configurations from manifest
+  serviceConfig = manifest.services.monitoring or {};
+
+  # Get database configuration from manifest
+  dbConfig = serviceConfig.interface.db or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+
+  # Get all services from manifest for dynamic target generation
+  allServices = (manifest.core_services or {}) // (manifest.services or {});
+
+  # Generate dynamic Prometheus targets from manifest
+  prometheusTargets = builtins.mapAttrs (serviceName: serviceConfig:
+    let
+      hostname = serviceConfig.hostname or "${serviceName}.${baseDomain}";
+    in
+    "${hostname}:9100"
+  ) (lib.filterAttrs (name: config:
+    # Include services that typically have node exporters
+    builtins.elem name [
+      "authentik" "caddy" "dns" "mail" "media" "nextcloud" "vaultwarden"
+      "guacamole" "monitoring" "postgresql"
+    ]
+  ) allServices);
+
+  # Convert to list format
+  prometheusTargetsList = builtins.attrValues prometheusTargets ++ ["localhost:9100"];
 in {
   options.services.nixmox.monitoring = {
     enable = mkEnableOption "Monitoring stack (Prometheus + Grafana)";
@@ -16,8 +49,8 @@ in {
 
     hostName = mkOption {
       type = types.str;
-      default = "";
-      description = "Public host name for monitoring services; defaults to <subdomain>.<services.nixmox.domain>";
+      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      description = "Public host name for monitoring services (from manifest proxy config)";
     };
     
     # Prometheus configuration
@@ -42,17 +75,8 @@ in {
       
       targets = mkOption {
         type = types.listOf types.str;
-        default = [
-          "authentik.nixmox.lan:9100"
-          "caddy.nixmox.lan:9100"
-          "mail.nixmox.lan:9100"
-          "media.nixmox.lan:9100"
-          "nextcloud.nixmox.lan:9100"
-          "vaultwarden.nixmox.lan:9100"
-          "dns.nixmox.lan:9100"
-          "localhost:9100"
-        ];
-        description = "Prometheus scrape targets";
+        default = prometheusTargetsList;
+        description = "Prometheus scrape targets (dynamically generated from manifest)";
       };
       
       dataDir = mkOption {
@@ -128,7 +152,7 @@ in {
           evaluation_interval = cfg.prometheus.evaluationInterval;
         };
 
-        # Scrape configuration
+        # Scrape configuration (manifest-driven)
         scrapeConfigs = [
           {
             job_name = "prometheus";
@@ -145,7 +169,9 @@ in {
             job_name = "postgresql";
             static_configs = [
               {
-                targets = [ "postgresql.nixmox.lan:9187" ];
+                targets = [
+                  "${allServices.postgresql.hostname or "postgresql.nixmox.lan"}:9187"
+                ];
                 labels = {
                   job = "postgresql";
                 };
@@ -156,9 +182,23 @@ in {
             job_name = "caddy";
             static_configs = [
               {
-                targets = [ "localhost:9090" ]; # Caddy exporter
+                targets = [
+                  "${allServices.caddy.hostname or "caddy.nixmox.lan"}:9090"
+                ];
+                labels = {
+                  job = "caddy";
+                };
               }
             ];
+          }
+          {
+            job_name = "node";
+            static_configs = builtins.map (target: {
+              targets = [ target ];
+              labels = {
+                job = "node";
+              };
+            }) cfg.prometheus.targets;
           }
         ];
 
@@ -178,11 +218,11 @@ in {
         listenAddress = "127.0.0.1";
         port = 9093;
 
-        # Basic configuration
+        # Basic configuration (manifest-driven)
         configuration = {
           global = {
-            smtp_smarthost = "mail.nixmox.lan:587";
-            smtp_from = "alertmanager@nixmox.lan";
+            smtp_smarthost = "${allServices.mail.hostname or "mail.nixmox.lan"}:587";
+            smtp_from = "alertmanager@${baseDomain}";
           };
 
           route = {
@@ -228,12 +268,12 @@ in {
             allow_sign_up = false;
           };
 
-          # Database configuration
+          # Database configuration (manifest-driven)
           database = {
             type = "postgres";
-            host = "postgresql.nixmox.lan:5432";
-            name = "grafana";
-            user = "grafana";
+            host = "${dbConfig.host or "postgresql.nixmox.lan"}:${toString (dbConfig.port or 5432)}";
+            name = dbConfig.name or "grafana";
+            user = dbConfig.owner or "grafana";
             password = cfg.grafana.dbPassword;
             ssl_mode = "disable";
           };

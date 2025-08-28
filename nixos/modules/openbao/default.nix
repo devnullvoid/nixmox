@@ -1,41 +1,56 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
-# OpenBao NixOS Configuration
+# OpenBao NixOS Configuration (Manifest-Driven)
 #
 # This module configures OpenBao (open source fork of HashiCorp Vault) to run as a service.
+# All configuration values are now driven by the service manifest.
 #
-# To configure OpenBao:
-# 1. Add OpenBao secrets to secrets/default.yaml:
-#    openbao:
-#      root_token: your_secure_root_token
-#      unseal_keys: [key1, key2, key3, key4, key5]
-#      oidc_client_secret: your_oidc_client_secret
-#
-# 2. The module will automatically:
-#    - Create OpenBao user and group
-#    - Set up systemd service with proper security settings
-#    - Configure TLS using internal CA certificates
-#    - Set up OIDC authentication with Authentik
-#    - Mount secrets via SOPS
+# Database and proxy configuration are automatically constructed from manifest values:
+# - Domain: from manifest.services.openbao.interface.proxy.domain
+# - Authentik integration: from manifest.services.openbao.interface.auth.oidc.*
+# - TLS certificates: from manifest network configuration
 
 let
   cfg = config.services.nixmox.openbao;
+
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
+
+  # Get service configuration from manifest
+  serviceConfig = manifest.services.openbao or {};
+
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+
+  # Get authentication configuration from manifest
+  authConfig = serviceConfig.interface.auth or {};
+
+  # Get OIDC configuration from manifest
+  oidcConfig = authConfig.oidc or {};
+
+  # Get core services for Authentik configuration
+  coreServices = manifest.core_services or {};
+  authentikConfig = coreServices.authentik or {};
+
+  # Construct Authentik OIDC issuer URL
+  authentikIssuer = "${authentikConfig.hostname or "authentik.nixmox.lan"}/application/o/${oidcConfig.client_id or "openbao-oidc"}/";
 in {
   options.services.nixmox.openbao = {
     enable = mkEnableOption "OpenBao secrets management service";
 
     domain = mkOption {
       type = types.str;
-      default = "openbao.nixmox.lan";
-      description = "Domain for OpenBao service";
+      default = proxyConfig.domain or "bao.nixmox.lan";
+      description = "Domain for OpenBao service (from manifest proxy config)";
     };
 
     primaryDomain = mkOption {
       type = types.str;
-      default = "nixmox.lan";
-      description = "Primary domain for services";
+      default = baseDomain;
+      description = "Primary domain for services (from manifest network config)";
     };
 
     # OpenBao configuration
@@ -88,14 +103,14 @@ in {
 
         issuer = mkOption {
           type = types.str;
-          default = "https://auth.nixmox.lan/application/o/openbao-oidc/";
-          description = "OIDC issuer URL";
+          default = "https://${authentikIssuer}";
+          description = "OIDC issuer URL (constructed from manifest)";
         };
 
         clientId = mkOption {
           type = types.str;
-          default = "openbao-oidc";
-          description = "OIDC client ID";
+          default = oidcConfig.client_id or "openbao-oidc";
+          description = "OIDC client ID (from manifest auth config)";
         };
 
         clientSecret = mkOption {
