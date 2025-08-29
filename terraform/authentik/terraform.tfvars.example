@@ -1,0 +1,5 @@
+# Authentik Configuration Example
+# Copy this file to terraform.tfvars and fill in your values
+
+# Use SOPS encrypted secrets file
+secrets_file = "../secrets/default.yaml"

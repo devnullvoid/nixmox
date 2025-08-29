@@ -1,0 +1,26 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# Terraform logs
+*.log
+tf.log
+
+# Backup files
+*.backup
+
+# Environment-specific files
+environments/*/terraform.tfvars
+environments/*/.terraform/
+
+# Legacy files (keep for reference but ignore state)
+legacy-phases/*.tfstate
+legacy-phases/*.tfstate.*
+
+# Temporary files
+*.tmp
+*.temp

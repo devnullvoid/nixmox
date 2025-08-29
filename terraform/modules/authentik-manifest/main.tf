@@ -50,17 +50,11 @@ variable "outpost_config" {
   type        = string
 }
 
-variable "incremental_mode" {
-  description = "Enable incremental deployment mode"
-  type        = bool
-  default     = false
-}
 
-variable "oidc_apps_to_create" {
-  description = "List of OIDC apps to create (for incremental mode)"
-  type        = list(string)
-  default     = []
-}
+
+# No deployment_phase needed - this module deploys all authentik resources
+
+
 
 variable "secrets_data" {
   description = "Secrets data from SOPS file"
@@ -75,12 +69,8 @@ locals {
   radius_app_data = jsondecode(var.radius_app)
   outpost_config_data = jsondecode(var.outpost_config)
 
-  # Filter OIDC apps for incremental deployment
-  filtered_oidc_apps = var.incremental_mode ? {
-    for app_name, app_config in local.oidc_apps_data :
-    app_name => app_config
-    if contains(var.oidc_apps_to_create, app_name)
-  } : local.oidc_apps_data
+  # OIDC apps (all apps, filtered by deployment phase in resources)
+  oidc_apps = local.oidc_apps_data
   
   # Default flows
   default_flows = {
@@ -120,6 +110,10 @@ data "authentik_property_mapping_provider_scope" "scopes" {
 # LDAP provider (for exposing Authentik users via LDAP)
 resource "authentik_provider_ldap" "ldap" {
   name       = "LDAP Provider"
+
+  lifecycle {
+    prevent_destroy = true
+  }
   base_dn    = local.outpost_config_data.ldap.base_dn
   bind_flow  = data.authentik_flow.default_authentication.id
   unbind_flow = data.authentik_flow.default_invalidation.id
@@ -141,6 +135,10 @@ resource "authentik_outpost" "ldap" {
     authentik_provider_ldap.ldap.id,
   ]
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   config = jsonencode({
     authentik_host = var.authentik_url
     authentik_host_insecure = var.authentik_insecure
@@ -161,6 +159,10 @@ resource "authentik_outpost" "ldap" {
 # RADIUS provider (for exposing Authentik users via RADIUS)
 resource "authentik_provider_radius" "radius" {
   name               = "RADIUS Provider"
+
+  lifecycle {
+    prevent_destroy = true
+  }
   authorization_flow = data.authentik_flow.default_authentication.id
   invalidation_flow  = data.authentik_flow.default_invalidation.id
   shared_secret      = local.outpost_config_data.radius.shared_secret
@@ -176,6 +178,10 @@ resource "authentik_outpost" "radius" {
   protocol_providers = [
     authentik_provider_radius.radius.id,
   ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   config = jsonencode({
     authentik_host = var.authentik_url
@@ -196,9 +202,10 @@ resource "authentik_outpost" "radius" {
 
 # Generate OIDC providers for each service in the manifest
 resource "authentik_provider_oauth2" "oidc_apps" {
-  for_each = local.filtered_oidc_apps
-  
+  for_each = local.oidc_apps
+
   name               = "${each.value.name} OIDC"
+
   client_id          = each.value.oidc_client_id
   client_secret      = local.oidc_client_secrets[each.key]
   authorization_flow = data.authentik_flow.provider_authorize_implicit.id
@@ -221,6 +228,7 @@ resource "authentik_provider_oauth2" "oidc_apps" {
   ]
 
   lifecycle {
+    prevent_destroy = true
     ignore_changes = [
       # client_id,
       # client_secret,
@@ -232,7 +240,7 @@ resource "authentik_provider_oauth2" "oidc_apps" {
 # Extract OIDC client secrets from secrets data based on client type
 locals {
   confidential_clients = [
-    for svc_name, svc_config in local.filtered_oidc_apps :
+    for svc_name, svc_config in local.oidc_apps :
     svc_name if svc_config.oidc_client_type == "confidential"
   ]
 
@@ -246,7 +254,7 @@ locals {
 
   # Confidential clients that need random passwords (no secret in file)
   clients_needing_random = {
-    for svc_name, svc_config in local.filtered_oidc_apps :
+    for svc_name, svc_config in local.oidc_apps :
     svc_name => svc_config
     if svc_config.oidc_client_type == "confidential" &&
        !can(lookup(local.oidc_client_secrets_from_file, svc_name, null))
@@ -255,7 +263,7 @@ locals {
   # For confidential clients: use from file if exists, otherwise use random
   # For public clients: always null
   oidc_client_secrets = {
-    for svc_name, svc_config in local.filtered_oidc_apps :
+    for svc_name, svc_config in local.oidc_apps :
     svc_name => (
       svc_config.oidc_client_type == "public" ? null :
       lookup(local.oidc_client_secrets_from_file, svc_name,
@@ -274,11 +282,15 @@ resource "random_password" "oidc_client_secrets" {
 
 # Generate applications for each OIDC service
 resource "authentik_application" "oidc_apps" {
-  for_each = local.filtered_oidc_apps
+  for_each = local.oidc_apps
 
   name              = each.value.name
   slug              = each.value.name
   protocol_provider = authentik_provider_oauth2.oidc_apps[each.key].id
+
+  lifecycle {
+    prevent_destroy = true
+  }
   meta_launch_url   = each.value.launch_url
   open_in_new_tab   = each.value.open_in_new_tab
 }
@@ -288,6 +300,10 @@ resource "authentik_application" "ldap_app" {
   name              = local.ldap_app_data.name
   slug              = local.ldap_app_data.slug
   protocol_provider = authentik_provider_ldap.ldap.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
   meta_description  = local.ldap_app_data.meta_description
   meta_launch_url   = local.ldap_app_data.meta_launch_url
   open_in_new_tab   = local.ldap_app_data.open_in_new_tab
@@ -298,6 +314,10 @@ resource "authentik_application" "radius_app" {
   name              = local.radius_app_data.name
   slug              = local.radius_app_data.slug
   protocol_provider = authentik_provider_radius.radius.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
   meta_description  = local.radius_app_data.meta_description
   meta_launch_url   = local.radius_app_data.meta_launch_url
   open_in_new_tab   = local.radius_app_data.open_in_new_tab

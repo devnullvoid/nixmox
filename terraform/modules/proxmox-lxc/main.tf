@@ -43,6 +43,12 @@ variable "provision_with_rebuild" {
   default     = false
 }
 
+variable "provision_with_bootstrap" {
+  description = "If true, runs bootstrap configuration setup for each container (only for new containers)"
+  type        = bool
+  default     = false
+}
+
 variable "flake_root" {
   description = "Path to the flake root used in nixos-rebuild --flake <path>#<host>"
   type        = string
@@ -154,10 +160,8 @@ resource "proxmox_lxc" "container" {
   vmid      = each.value.vmid
   hostname  = each.value.hostname
   ostemplate = local.template_path
-  password  = "changeme"
   cores     = each.value.cores
   memory    = each.value.memory
-  ssh_public_keys = var.ssh_public_keys
 
   rootfs {
     storage = var.storage
@@ -185,8 +189,9 @@ resource "proxmox_lxc" "container" {
 }
 
 # Push minimal configuration.nix using pct, then run nixos-rebuild inside the container without SSH
+# Only run bootstrap for new containers, not existing ones
 resource "null_resource" "bootstrap_config" {
-  for_each = var.containers
+  for_each = var.provision_with_bootstrap ? var.containers : {}
 
   triggers = {
     vmid     = each.value.vmid

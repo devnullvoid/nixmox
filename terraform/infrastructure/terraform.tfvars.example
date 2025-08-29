@@ -1,0 +1,11 @@
+# Infrastructure Configuration Example
+# Copy this file to terraform.tfvars and fill in your values
+
+# Option 1: Use SOPS encrypted secrets file (recommended)
+secrets_file = "../secrets/default.yaml"
+
+# Option 2: Use individual variables (if not using SOPS)
+# pm_api_url = "https://your-proxmox-host:8006/api2/json"
+# pm_api_token_id = "your-token-id"
+# pm_api_token_secret = "your-token-secret"
+# pm_tls_insecure = true

@@ -196,8 +196,8 @@ let
           actions = map (serviceName: {
             type = "create_container";
             service = serviceName;
-            ip = manifest.services.${serviceName}.ip;
-            vmid = manifest.services.${serviceName}.vmid;
+            ip = (manifest.services.${serviceName} or manifest.core_services.${serviceName}).ip;
+            vmid = (manifest.services.${serviceName} or manifest.core_services.${serviceName}).vmid;
           }) comparison.containers_to_create;
         };
 
@@ -206,8 +206,16 @@ let
           actions = map (serviceName: {
             type = "create_oidc_app";
             service = serviceName;
-            client_id = manifest.services.${serviceName}.interface.auth.oidc.client_id;
-            redirect_uris = manifest.services.${serviceName}.interface.auth.oidc.redirect_uris;
+            client_id = if builtins.hasAttr "client_id" manifest.services.${serviceName}.interface.auth.oidc
+                       then manifest.services.${serviceName}.interface.auth.oidc.client_id
+                       else if builtins.hasAttr "terraform" manifest.services.${serviceName}.interface &&
+                               builtins.hasAttr "variables" manifest.services.${serviceName}.interface.terraform &&
+                               builtins.hasAttr "oidc_client_id" manifest.services.${serviceName}.interface.terraform.variables
+                       then manifest.services.${serviceName}.interface.terraform.variables.oidc_client_id
+                       else "${serviceName}-oidc";
+            redirect_uris = if builtins.hasAttr "redirect_uris" manifest.services.${serviceName}.interface.auth.oidc
+                           then manifest.services.${serviceName}.interface.auth.oidc.redirect_uris
+                           else [];
           }) comparison.oidc_apps_to_create;
         };
 
@@ -216,7 +224,7 @@ let
           actions = map (serviceName: {
             type = "deploy_nixos";
             service = serviceName;
-            ip = manifest.services.${serviceName}.ip;
+            ip = (manifest.services.${serviceName} or manifest.core_services.${serviceName}).ip;
           }) comparison.nixos_redeployments;
         };
       };
