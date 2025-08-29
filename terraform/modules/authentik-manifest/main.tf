@@ -245,11 +245,11 @@ locals {
   ]
 
   # Extract oidc_client_secret from secrets file for each service
+  # The secrets_data structure is flat: { "nextcloud.oidc_client_secret" = "...", "vaultwarden.oidc_client_secret" = "..." }
   oidc_client_secrets_from_file = {
-    for service_name, service_data in var.secrets_data :
-    service_name => lookup(service_data, "oidc_client_secret", null)
-    if can(lookup(service_data, "oidc_client_secret", null)) &&
-       contains(local.confidential_clients, service_name)
+    for svc_name in local.confidential_clients :
+    svc_name => try(var.secrets_data["${svc_name}.oidc_client_secret"], null)
+    if can(var.secrets_data["${svc_name}.oidc_client_secret"])
   }
 
   # Confidential clients that need random passwords (no secret in file)
@@ -337,14 +337,18 @@ output "radius_outpost_id" {
 output "oidc_apps" {
   description = "Generated OIDC applications"
   value = {
-    for name, app in authentik_application.oidc_apps : name => {
+    for name, app in authentik_application.oidc_apps :
+    name => {
       id = app.id
+      name = app.name
       slug = app.slug
-      provider_id = authentik_provider_oauth2.oidc_apps[name].id
-      client_id = authentik_provider_oauth2.oidc_apps[name].client_id
-      client_secret = authentik_provider_oauth2.oidc_apps[name].client_secret
+      protocol_provider = app.protocol_provider
     }
   }
-  sensitive = true
+}
+
+output "confidential_clients" {
+  description = "List of confidential clients that need secrets"
+  value = local.confidential_clients
 }
 

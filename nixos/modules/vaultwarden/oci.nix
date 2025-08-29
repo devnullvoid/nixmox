@@ -105,6 +105,19 @@ in {
     # Podman bridged networking needs nftables (netavark) for port publishing
     networking.nftables.enable = true;
 
+    # Create Vaultwarden data directory
+    systemd.services.vaultwarden-data-dir = {
+      description = "Create Vaultwarden data directory";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "podman-vaultwarden.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.coreutils}/bin/mkdir -p ${cfg.dataDir}";
+        ExecStartPost = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/chown 1000:1000 ${cfg.dataDir} && ${pkgs.coreutils}/bin/chmod 755 ${cfg.dataDir}'";
+      };
+    };
+
     # SOPS secrets for Vaultwarden container
     sops.secrets = {
       "vaultwarden/env" = {
