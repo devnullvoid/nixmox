@@ -222,8 +222,9 @@ resource "authentik_provider_oauth2" "oidc_apps" {
 
   lifecycle {
     ignore_changes = [
-      client_id,
-      client_secret,
+      # client_id,
+      # client_secret,
+      signing_key,
     ]
   }
 }

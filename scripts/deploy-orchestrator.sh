@@ -443,6 +443,40 @@ deploy_via_ssh_unchecked() {
     fi
 }
 
+# Retry wrapper for Terraform commands to handle intermittent network issues
+terraform_retry() {
+    local max_attempts=3
+    local attempt=1
+    local exit_code=0
+
+    # Go HTTP environment variables for better network handling
+    export GODEBUG="http2client=0,netdns=go"
+    export HTTP_PROXY=""
+    export HTTPS_PROXY=""
+    export NO_PROXY=""
+
+    while [ $attempt -le $max_attempts ]; do
+        log_info "Terraform attempt $attempt/$max_attempts: $@"
+
+        if timeout 300 terraform "$@"; then
+            log_info "Terraform succeeded on attempt $attempt"
+            return 0
+        else
+            exit_code=$?
+            log_warning "Terraform attempt $attempt failed (exit code: $exit_code)"
+        fi
+
+        if [ $attempt -eq $max_attempts ]; then
+            log_error "All $max_attempts Terraform attempts failed"
+            return $exit_code
+        fi
+
+        log_info "Waiting 5 seconds before retry..."
+        sleep 5
+        ((attempt++))
+    done
+}
+
 # Check if Terraform infrastructure is already deployed
 check_terraform_state() {
     local phase="$1"
@@ -528,16 +562,16 @@ deploy_terraform() {
         fi
     fi
 
-    # Plan and apply
+    # Plan and apply with retry
     log_info "Planning Terraform changes..."
-    if ! terraform plan $tf_vars -out=tfplan; then
-        log_error "Terraform plan failed"
+    if ! terraform_retry plan $tf_vars -out=tfplan; then
+        log_error "Terraform plan failed after retries"
         return 1
     fi
 
     log_info "Applying Terraform changes..."
-    if ! terraform apply tfplan; then
-        log_error "Terraform apply failed"
+    if ! terraform_retry apply tfplan; then
+        log_error "Terraform apply failed after retries"
         return 1
     fi
 
@@ -643,15 +677,15 @@ deploy_terraform_phase2() {
 
     # Plan Phase 2 deployment
     log_info "Planning Terraform Phase 2 deployment..."
-    if ! terraform plan -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml"; then
-        log_error "Terraform plan failed for Phase 2"
+    if ! terraform_retry plan -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml"; then
+        log_error "Terraform plan failed for Phase 2 after retries"
         return 1
     fi
 
     # Apply Phase 2 deployment
     log_info "Applying Terraform Phase 2 deployment..."
-    if ! terraform apply -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml" --auto-approve; then
-        log_error "Terraform apply failed for Phase 2"
+    if ! terraform_retry apply -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml" --auto-approve; then
+        log_error "Terraform apply failed for Phase 2 after retries"
         return 1
     fi
 
@@ -881,7 +915,7 @@ show_incremental_plan() {
             tf_vars="$tf_vars -var=\"force_redeploy=$FORCE_REDEPLOY\""
         fi
 
-        if terraform plan $tf_vars; then
+        if terraform_retry plan $tf_vars; then
             log_success "Incremental deployment plan generated successfully"
         else
             log_warning "Failed to generate incremental deployment plan"

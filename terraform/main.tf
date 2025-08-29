@@ -209,9 +209,13 @@ provider "proxmox" {
 }
 
 provider "authentik" {
-  url      = "http://192.168.99.12:9000"  # Authentik IP from manifest
+  url      = local.manifest.authentik_url
   token    = try(local.secrets_data.authentik_bootstrap_token, "")
   insecure = true
+
+  # Note: If you encounter "network is unreachable" errors, use the retry script:
+  # ./retry-terraform.sh plan -var="deployment_phase=2" -var="secrets_file=../secrets/default.yaml"
+  # This handles Go HTTP client connection pool exhaustion issues
 }
 
 # Proxmox LXC module - Phase 1: Create ALL containers (infrastructure + applications)
