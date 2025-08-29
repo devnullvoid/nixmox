@@ -26,6 +26,7 @@ INCREMENTAL_MODE=false
 ONLY_SERVICES=""
 SKIP_SERVICES=""
 FORCE_REDEPLOY=""
+TERRAFORM_ONLY=false
 
 # Manifest reading functions
 get_service_ip() {
@@ -944,8 +945,19 @@ main() {
                 deploy_core_infrastructure
                 ;;
             "2"|"authentik"|"auth")
-                log_info "Deploying Phase 2: Authentik Resources"
-                deploy_phase2_authentik
+                if [[ "$TERRAFORM_ONLY" == "true" ]]; then
+                    log_info "Deploying Phase 2: Authentik Resources (Terraform only)"
+                    # Check if Authentik resources are already deployed
+                    if ! check_terraform_authentik; then
+                        log_info "Authentik resources not deployed, running Terraform first..."
+                        deploy_terraform_authentik
+                    else
+                        log_info "Authentik resources already deployed, skipping Terraform phase"
+                    fi
+                else
+                    log_info "Deploying Phase 2: Authentik Resources (full deployment)"
+                    deploy_phase2_authentik
+                fi
                 ;;
             *)
                 log_error "Unknown phase: $TARGET_PHASE"
@@ -1000,11 +1012,13 @@ Incremental Deployment Options:
     --only SERVICES      Deploy only specific services (comma-separated list)
     --skip SERVICES      Skip specific services (comma-separated list)
     --force SERVICES     Force redeploy specific services (comma-separated list)
+    --terraform-only     For Phase 2, run only Terraform without outpost token updates
 
 Examples:
     $0                           # Deploy all phases (1-2) and services
     $0 --phase 1                 # Deploy only Phase 1 (core infrastructure)
-    $0 --phase 2                 # Deploy only Phase 2 (authentik resources)
+    $0 --phase 2                 # Deploy only Phase 2 (authentik resources + outpost tokens)
+    $0 --phase 2 --terraform-only # Deploy only Phase 2 Terraform (no outpost tokens)
     $0 --service vaultwarden     # Deploy only vaultwarden and dependencies
     $0 --dry-run                 # Show deployment plan without executing
 
@@ -1055,6 +1069,10 @@ while [[ $# -gt 0 ]]; do
         --force)
             FORCE_REDEPLOY="$2"
             shift 2
+            ;;
+        --terraform-only)
+            TERRAFORM_ONLY=true
+            shift
             ;;
         *)
             log_error "Unknown option: $1"

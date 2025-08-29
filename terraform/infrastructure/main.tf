@@ -54,6 +54,12 @@ variable "secrets_file" {
   default     = ""
 }
 
+variable "provision_with_bootstrap" {
+  description = "Whether to run bootstrap configuration setup for containers"
+  type        = bool
+  default     = true
+}
+
 # SOPS data source
 data "sops_file" "secrets" {
   count = var.secrets_file != "" ? 1 : 0
@@ -108,7 +114,7 @@ module "lxc" {
 
   ssh_public_keys        = try(local.secrets_data.ssh_public_keys, "")
   provision_with_rebuild = try(local.secrets_data.provision_with_rebuild, false)
-  provision_with_bootstrap = false  # Disable bootstrap for existing containers
+  provision_with_bootstrap = try(local.secrets_data.provision_with_bootstrap, var.provision_with_bootstrap)
   flake_root             = try(local.secrets_data.flake_root, "")
   hydra_template         = try(local.secrets_data.hydra_template, "")
   nixos_version          = try(local.secrets_data.nixos_version, "25.05")

@@ -1,5 +1,5 @@
 # NixMox Deployment Justfile
-# Integrates Terraform and phased deployment
+# Integrates Terraform and orchestrator deployment
 
 # Global settings
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -9,80 +9,84 @@ default:
 	@just --list
 
 # =============================================================================
-# Terraform Commands (using existing Terraform config)
+# Terraform Commands (New Separated Structure)
 # =============================================================================
 
-# Terraform commands for the main configuration
-tf-init env="dev":
-	@echo "Initializing Terraform for {{env}} environment..."
-	cd terraform && terraform init
+# Infrastructure Terraform commands
+tf-infra-init:
+	@echo "Initializing Terraform infrastructure..."
+	cd terraform/infrastructure && terraform init
 
-tf-plan env="dev":
-	@echo "Planning Terraform changes for {{env}} environment..."
-	cd terraform && terraform plan -var="environment={{env}}"
+tf-infra-plan:
+	@echo "Planning Terraform infrastructure changes..."
+	cd terraform/infrastructure && terraform plan -var="secrets_file=../secrets/default.yaml"
 
-tf-apply env="dev":
-	@echo "Applying Terraform changes for {{env}} environment..."
-	cd terraform && terraform apply -var="environment={{env}}"
+tf-infra-apply:
+	@echo "Applying Terraform infrastructure changes..."
+	cd terraform/infrastructure && terraform apply -var="secrets_file=../secrets/default.yaml"
 
-tf-apply-auto env="dev":
-	@echo "Applying Terraform changes for {{env}} environment (auto-approve)..."
-	cd terraform && terraform apply -auto-approve -var="environment={{env}}"
+tf-infra-apply-auto:
+	@echo "Applying Terraform infrastructure changes (auto-approve)..."
+	cd terraform/infrastructure && terraform apply -auto-approve -var="secrets_file=../secrets/default.yaml"
 
-tf-destroy env="dev":
-	@echo "Destroying Terraform resources for {{env}} environment..."
-	cd terraform && terraform destroy -var="environment={{env}}"
+tf-infra-destroy:
+	@echo "Destroying Terraform infrastructure..."
+	cd terraform/infrastructure && terraform destroy -var="secrets_file=../secrets/default.yaml"
 
-# Terraform commands for phased deployment
-tf-init-phases env="dev":
-	@echo "Initializing Terraform phases for {{env}} environment..."
-	cd terraform/phases && terraform init
+# Authentik Terraform commands
+tf-auth-init:
+	@echo "Initializing Terraform Authentik..."
+	cd terraform/authentik && terraform init
 
-tf-plan-phase env="dev" phase="1":
-	@echo "Planning Phase {{phase}} for {{env}} environment..."
-	cd terraform/phases && terraform plan -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
+tf-auth-plan:
+	@echo "Planning Terraform Authentik changes..."
+	cd terraform/authentik && terraform plan -var="secrets_file=../secrets/default.yaml"
 
-tf-apply-phase env="dev" phase="1":
-	@echo "Applying Phase {{phase}} for {{env}} environment..."
-	cd terraform/phases && terraform apply -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
+tf-auth-apply:
+	@echo "Applying Terraform Authentik changes..."
+	cd terraform/authentik && terraform apply -var="secrets_file=../secrets/default.yaml"
 
-tf-apply-phase-auto env="dev" phase="1":
-	@echo "Applying Phase {{phase}} for {{env}} environment (auto-approve)..."
-	cd terraform/phases && terraform apply -auto-approve -var="environment={{env}}" -var="deployment_phase={{phase}}" -var="secrets_file=../environments/{{env}}/secrets.sops.yaml"
+tf-auth-apply-auto:
+	@echo "Applying Terraform Authentik changes (auto-approve)..."
+	cd terraform/authentik && terraform apply -auto-approve -var="secrets_file=../secrets/default.yaml"
+
+tf-auth-destroy:
+	@echo "Destroying Terraform Authentik resources..."
+	cd terraform/authentik && terraform destroy -var="secrets_file=../secrets/default.yaml"
 
 # =============================================================================
-# Phased Deployment Commands
+# Orchestrator Deployment Commands
 # =============================================================================
 
-# Deploy Phase 1: Infrastructure Foundation (DNS, PostgreSQL, Caddy)
-deploy-phase1 env="dev":
+# Deploy Phase 1: Infrastructure Foundation (DNS, PostgreSQL, Caddy, Authentik)
+deploy-phase1:
 	@echo "Deploying Phase 1: Infrastructure Foundation"
-	./scripts/deploy-phases.sh -e {{env}} -p 1
+	./scripts/deploy-orchestrator.sh --phase 1
 
-# Deploy Phase 2: Authentication Foundation (Authentik only)
-deploy-phase2 env="dev":
-	@echo "Deploying Phase 2: Authentication Foundation (Authentik)"
-	./scripts/deploy-phases.sh -e {{env}} -p 2
+# Deploy Phase 2: Authentik Resources (Terraform + outpost tokens)
+deploy-phase2:
+	@echo "Deploying Phase 2: Authentik Resources (full deployment)"
+	./scripts/deploy-orchestrator.sh --phase 2
 
-# Deploy Phase 3: Application Services (all depend on Authentik)
-deploy-phase3 env="dev":
-	@echo "Deploying Phase 3: Application Services"
-	./scripts/deploy-phases.sh -e {{env}} -p 3
+# Deploy Phase 2: Authentik Resources (Terraform only)
+deploy-phase2-tf:
+	@echo "Deploying Phase 2: Authentik Resources (Terraform only)"
+	./scripts/deploy-orchestrator.sh --phase 2 --terraform-only
 
-# Deploy Phase 4: Advanced Configuration (Authentik outposts)
-deploy-phase4 env="dev":
-	@echo "Deploying Phase 4: Advanced Configuration"
-	./scripts/deploy-phases.sh -e {{env}} -p 4
-
-# Deploy to specific phase
-deploy-to-phase phase env="dev":
-	@echo "Deploying to Phase {{phase}}"
-	./scripts/deploy-phases.sh -e {{env}} -p {{phase}}
+# Deploy specific service
+deploy-service service:
+	@echo "Deploying service: {{service}}"
+	./scripts/deploy-orchestrator.sh --service {{service}}
 
 # Deploy everything
-deploy-all env="dev":
-	@echo "Deploying all phases"
-	./scripts/deploy-phases.sh -e {{env}} -p 4
+deploy-all:
+	@echo "Deploying all phases and services"
+	./scripts/deploy-orchestrator.sh
+
+# Dry run to see what would be deployed
+deploy-dry-run:
+	@echo "Dry run - showing what would be deployed"
+	./scripts/deploy-orchestrator.sh --dry-run
 
 # =============================================================================
 # NixOS Image Building
@@ -103,42 +107,6 @@ build-all-images:
 # List available hosts
 list-hosts:
 	./scripts/build-images.sh -l
-
-# =============================================================================
-# Colmena Deployment Commands
-# =============================================================================
-
-# Colmena build and apply
-colmena-build:
-	nix run nixpkgs#colmena -- build
-
-colmena-apply:
-	nix run nixpkgs#colmena -- apply
-
-# Deploy by tags
-colmena-apply-infra:
-	@echo "Deploying infrastructure (caddy, postgresql, dns, authentik)"
-	nix run nixpkgs#colmena -- apply --on @infra
-
-colmena-apply-core:
-	@echo "Deploying core services (caddy, dns, postgresql)"
-	nix run nixpkgs#colmena -- apply --on @core
-
-colmena-apply-auth:
-	@echo "Deploying authentication (authentik)"
-	nix run nixpkgs#colmena -- apply --on @auth
-
-colmena-apply-database:
-	@echo "Deploying database (postgresql)"
-	nix run nixpkgs#colmena -- apply --on @database
-
-colmena-apply-services:
-	@echo "Deploying application services"
-	nix run nixpkgs#colmena -- apply --on @services
-
-# Deploy specific host
-colmena-apply-host host:
-	nix run nixpkgs#colmena -- apply --on {{host}}
 
 # =============================================================================
 # Development and Testing
@@ -165,14 +133,22 @@ validate-flake:
 	@echo "✓ Flake validation passed"
 
 # Show deployment status
-deployment-status env="dev":
-	@echo "Deployment Status for {{env}} environment:"
-	@if [ -f "terraform/phases/terraform.tfstate" ]; then \
-		echo "  ✓ Phase 1: Infrastructure containers created"; \
+deployment-status:
+	@echo "Deployment Status:"
+	@if [ -f "terraform/infrastructure/terraform.tfstate" ]; then \
+		echo "  ✓ Infrastructure: Terraform state exists"; \
 	else \
-		echo "  ✗ Phase 1: Infrastructure containers not created"; \
+		echo "  ✗ Infrastructure: No Terraform state"; \
 	fi
-	@echo "  Next step: just deploy-phase1 env={{env}}"
+	@if [ -f "terraform/authentik/terraform.tfstate" ]; then \
+		echo "  ✓ Authentik: Terraform state exists"; \
+	else \
+		echo "  ✗ Authentik: No Terraform state"; \
+	fi
+	@echo ""
+	@echo "Next steps:"
+	@echo "  just deploy-phase1                    # Deploy infrastructure"
+	@echo "  just deploy-phase2                    # Deploy Authentik resources"
 
 # =============================================================================
 # Utility Commands
@@ -182,75 +158,70 @@ deployment-status env="dev":
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf images/
-	rm -rf terraform/.terraform
-	rm -rf terraform/phases/.terraform
+	rm -rf terraform/infrastructure/.terraform
+	rm -rf terraform/authentik/.terraform
+	rm -rf terraform/infrastructure/*.tfplan
+	rm -rf terraform/authentik/*.tfplan
 	@echo "✓ Cleaned"
 
 # Show help
 show-help:
 	@echo "NixMox Deployment Commands:"
 	@echo ""
-	@echo "Phased Deployment:"
-	@echo "  just deploy-phase1 ENV=dev          # Deploy infrastructure"
-	@echo "  just deploy-phase2 ENV=dev          # Deploy core services"
-	@echo "  just deploy-phase3 ENV=dev          # Deploy applications"
-	@echo "  just deploy-phase4 ENV=dev          # Deploy advanced config"
+	@echo "Orchestrator Deployment:"
+	@echo "  just deploy-phase1                    # Deploy infrastructure"
+	@echo "  just deploy-phase2                    # Deploy Authentik resources (full)"
+	@echo "  just deploy-phase2-tf                 # Deploy Authentik resources (Terraform only)"
+	@echo "  just deploy-service caddy             # Deploy specific service"
+	@echo "  just deploy-all                       # Deploy everything"
+	@echo "  just deploy-dry-run                   # Show deployment plan"
 	@echo ""
-	@echo "Terraform (Main):"
-	@echo "  just tf-init ENV=dev                # Initialize main Terraform"
-	@echo "  just tf-plan ENV=dev                # Plan main Terraform changes"
-	@echo "  just tf-apply ENV=dev               # Apply main Terraform changes"
+	@echo "Terraform Infrastructure:"
+	@echo "  just tf-infra-init                    # Initialize infrastructure Terraform"
+	@echo "  just tf-infra-plan                    # Plan infrastructure changes"
+	@echo "  just tf-infra-apply                   # Apply infrastructure changes"
+	@echo "  just tf-infra-apply-auto              # Apply infrastructure (auto-approve)"
 	@echo ""
-	@echo "Terraform (Phased):"
-	@echo "  just tf-init-phases ENV=dev         # Initialize phased Terraform"
-	@echo "  just tf-plan-phase ENV=dev PHASE=1 # Plan specific phase"
-	@echo "  just tf-apply-phase ENV=dev PHASE=1 # Apply specific phase"
+	@echo "Terraform Authentik:"
+	@echo "  just tf-auth-init                     # Initialize Authentik Terraform"
+	@echo "  just tf-auth-plan                     # Plan Authentik changes"
+	@echo "  just tf-auth-apply                    # Apply Authentik changes"
+	@echo "  just tf-auth-apply-auto               # Apply Authentik (auto-approve)"
 	@echo ""
 	@echo "Image Building:"
-	@echo "  just build-images                    # Build all LXC images"
-	@echo "  just build-host caddy               # Build specific host"
-	@echo "  just list-hosts                     # List available hosts"
-	@echo ""
-	@echo "Colmena:"
-	@echo "  just colmena-apply-infra            # Deploy infrastructure"
-	@echo "  just colmena-apply-services         # Deploy application services"
+	@echo "  just build-images                     # Build all LXC images"
+	@echo "  just build-host caddy                 # Build specific host"
+	@echo "  just list-hosts                       # List available hosts"
 	@echo ""
 	@echo "Testing:"
-	@echo "  just test-configs                   # Test all NixOS configs"
-	@echo "  just validate-flake                 # Validate flake"
+	@echo "  just test-configs                     # Test all NixOS configs"
+	@echo "  just validate-flake                   # Validate flake"
+	@echo "  just deployment-status                # Show deployment status"
 	@echo ""
 	@echo "Examples:"
-	@echo "  just deploy-phase1 env=staging      # Deploy Phase 1 to staging"
-	@echo "  just build-images                   # Build all images"
-	@echo "  just tf-plan-phase env=prod PHASE=2 # Plan Phase 2 for production"
+	@echo "  just deploy-phase1                    # Deploy infrastructure"
+	@echo "  just deploy-phase2-tf                 # Deploy Authentik Terraform only"
+	@echo "  just tf-infra-plan                    # Plan infrastructure changes"
+	@echo "  just tf-auth-apply-auto               # Apply Authentik changes automatically"
 
-# NixOS Configuration Deployment
-deploy-nixos: deploy-nixos-help
-    @echo "Use the NixOS deployment script:"
-    @echo "  ./scripts/deploy-nixos.sh help"
+# =============================================================================
+# Quick Commands (Common Workflows)
+# =============================================================================
 
-deploy-nixos-help:
-    @echo "NixOS deployment commands:"
-    @echo "  ./scripts/deploy-nixos.sh caddy                    # Deploy to Caddy container"
-    @echo "  ./scripts/deploy-nixos.sh postgresql               # Deploy to PostgreSQL container"
-    @echo "  ./scripts/deploy-nixos.sh dns                      # Deploy to DNS container"
-    @echo "  ./scripts/deploy-nixos.sh --all-phase1             # Deploy to all Phase 1 containers"
-    @echo "  ./scripts/deploy-nixos.sh --all                    # Deploy to all containers"
-    @echo "  ./scripts/deploy-nixos.sh -n caddy                 # Dry run for Caddy"
-    @echo "  ./scripts/deploy-nixos.sh -t 600 caddy             # Deploy with 10 min timeout"
+# Quick infrastructure deployment
+infra: tf-infra-init tf-infra-plan tf-infra-apply-auto
+	@echo "✓ Infrastructure deployment completed"
 
-# Simplified deployment commands using the new script
-deploy-simple: deploy-simple-help
-    @echo "Use the simplified deployment script:"
-    @echo "  ./scripts/deploy-simple.sh help"
+# Quick Authentik deployment (Terraform only)
+auth-tf: tf-auth-init tf-auth-plan tf-auth-apply-auto
+	@echo "✓ Authentik Terraform deployment completed"
 
-deploy-simple-help:
-    @echo "Quick deployment commands:"
-    @echo "  ./scripts/deploy-simple.sh status                    # Show deployment status"
-    @echo "  ./scripts/deploy-simple.sh -p 1 plan               # Plan Phase 1"
-    @echo "  ./scripts/deploy-simple.sh -p 1 deploy             # Deploy Phase 1 (infrastructure)"
-    @echo "  ./scripts/deploy-simple.sh -p 2 deploy             # Deploy Phase 2 (services)"
-    @echo "  ./scripts/deploy-simple.sh ssh caddy               # SSH to Caddy container"
-    @echo "  ./scripts/deploy-simple.sh logs caddy              # Show Caddy logs"
+# Quick Authentik deployment (full)
+auth: tf-auth-init tf-auth-plan tf-auth-apply-auto
+	@echo "✓ Authentik Terraform deployment completed"
+	@echo "Note: Run 'just deploy-phase2' for full deployment with outpost tokens"
 
-# Legacy deployment commands (keeping for backward compatibility)
+# Quick full deployment
+full: infra auth
+	@echo "✓ Full deployment completed"
+	@echo "Note: Run 'just deploy-all' for complete orchestrator deployment"

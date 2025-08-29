@@ -306,29 +306,13 @@ in {
           #!/bin/sh
           set -e
           
-          # Wait for SOPS secret to be present (up to ~30s)
-          for i in $(seq 1 30); do
-            if [ -f "/run/secrets/authentik/postgresql_password" ]; then
-              break
-            fi
-            sleep 1
-          done
-
-          # Set passwords for all users from SOPS secrets
           echo "Setting passwords for all database users..."
           
-          # Dynamic password setting for all database services
-          # This will automatically handle any new services added to the manifest
-          for SECRET_PATH in /run/secrets/*/database_password; do
+          # Set passwords for all database users from SOPS secrets
+          # Explicitly list the services to avoid glob expansion issues in systemd
+          for SERVICE_NAME in authentik guacamole monitoring nextcloud vaultwarden; do
+            SECRET_PATH="/run/secrets/$SERVICE_NAME/database_password"
             if [ -f "$SECRET_PATH" ]; then
-              # Extract service name from path (e.g., /run/secrets/vaultwarden/database_password -> vaultwarden)
-              SERVICE_NAME=$(basename $(dirname "$SECRET_PATH"))
-
-              # Skip if this is authentik (handled separately)
-              if [ "$SERVICE_NAME" = "authentik" ]; then
-                continue
-              fi
-
               echo "Setting password for $SERVICE_NAME user..."
               PASSWORD=$(tr -d '\n' < "$SECRET_PATH")
               echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
@@ -339,54 +323,11 @@ in {
 
               echo "Password set successfully for $SERVICE_NAME user"
             else
-              # Extract service name from path even if file doesn't exist
-              SERVICE_NAME=$(basename $(dirname "$SECRET_PATH"))
               echo "Warning: No database password secret found for $SERVICE_NAME at $SECRET_PATH"
-              echo "This service may need its database password set manually or through other means"
             fi
           done
           
-
-          
-
-          
-
-          
-
-          
-          # Set Authentik user password from SOPS secrets (strip trailing newline)
-          if [ -f "/run/secrets/authentik/postgresql_password" ]; then
-            echo "Setting password for authentik user..."
-            
-            PASSWORD=$(tr -d '\n' < /run/secrets/authentik/postgresql_password)
-            echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
-            
-            echo "Executing: ALTER USER authentik WITH PASSWORD '***';"
-            
-            # Use proper shell variable handling to avoid escaping issues
-            SQL_CMD="ALTER USER authentik WITH PASSWORD '$PASSWORD';"
-            ${pkgs.postgresql_16}/bin/psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U postgres -d postgres -c "$SQL_CMD"
-            
-            # Check what was actually set in the database
-            echo "Database password hash after setting:"
-            ${pkgs.postgresql_16}/bin/psql -h /var/run/postgresql -U postgres -d postgres -c "SELECT rolname, substring(rolpassword,1,50) FROM pg_authid WHERE rolname='authentik';"
-            
-            LEN=$(printf %s "$PASSWORD" | wc -c)
-            FP=$(printf %s "$PASSWORD" | ${pkgs.coreutils}/bin/sha256sum | cut -c1-12)
-            echo "Password set successfully for authentik user (len=$LEN, sha256_12=$FP)"
-            
-            # Test connection
-            echo "Testing connection..."
-            if PGPASSWORD="$PASSWORD" ${pkgs.postgresql_16}/bin/psql -h 127.0.0.1 -U authentik -d authentik -c 'SELECT 1;' >/dev/null 2>&1; then
-              echo "Verified authentik login OK"
-            else
-              echo "Warning: authentik login verification failed"
-            fi
-          else
-            echo "Warning: SOPS secret for authentik/postgresql_password not found"
-          fi
-          
-          # Add more users here as needed
+          echo "All database passwords have been set"
         '';
         Restart = "on-failure";
         RestartSec = "30s";
