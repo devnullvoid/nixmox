@@ -87,81 +87,48 @@
           openbao = import ./nixos/modules/openbao;
         };
 
-        # Generate NixOS configurations for each host
-        nixosConfigurations = {
-          caddy = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "caddy"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          postgresql = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "postgresql"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          authentik = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "authentik"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          dns = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "dns"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          guacamole = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "guacamole"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          vaultwarden = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [
-              (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "vaultwarden"; })
+        # Dynamically generate NixOS configurations from manifest
+        nixosConfigurations = let
+          # Import the manifest
+          manifest = import ./nixos/service-manifest.nix;
+          
+          # Helper function to create a NixOS configuration for a service
+          mkServiceConfig = serviceName: serviceConfig: let
+            # Base modules for all services
+            baseModules = [
+              (import ./nixos/hosts/nixmox-host.nix { inherit manifest; inherit serviceName; })
+            ];
+            
+            # Special case for vaultwarden (needs OCI module)
+            extraModules = if serviceName == "vaultwarden" then [
               ./nixos/modules/vaultwarden/oci.nix
               {
                 # Enable OCI version instead of native service
                 services.nixmox.vaultwarden.oci.enable = true;
               }
-            ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          nextcloud = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "nextcloud"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          media = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "media"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          monitoring = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "monitoring"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          mail = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "mail"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-
-          openbao = inputs.nixpkgs.lib.nixosSystem {
-            system = "x86_64-linux";
-            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "openbao"; }) ];
-            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
-          };
-        };
+            ] else [];
+            
+            # Combine base and extra modules
+            allModules = baseModules ++ extraModules;
+          in
+            inputs.nixpkgs.lib.nixosSystem {
+              system = "x86_64-linux";
+              modules = allModules;
+              specialArgs = { inherit inputs; inherit manifest; };
+            };
+          
+          # Get all enabled services from manifest
+          enabledServices = let
+            allServices = (manifest.core_services or {}) // (manifest.services or {});
+            enabledNames = builtins.attrNames (builtins.removeAttrs allServices 
+              (builtins.filter (name: !(allServices.${name}.enable or false)) (builtins.attrNames allServices))
+            );
+          in
+            builtins.listToAttrs (map (name: { inherit name; value = allServices.${name}; }) enabledNames);
+          
+        in
+          # Generate configurations for all enabled services
+          builtins.mapAttrs mkServiceConfig enabledServices;
 
         # Generate packages for container images
         packages = builtins.mapAttrs (system: nixpkgs: 
