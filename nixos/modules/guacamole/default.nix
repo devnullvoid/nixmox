@@ -1,4 +1,4 @@
-{ inputs ? {}, lib, config, pkgs, manifest, ... }:
+{ config, pkgs, lib, manifest, ... }:
 
 with lib;
 
@@ -42,7 +42,7 @@ let
       name = guacamoleConfig.interface.db.name or "guacamole";
       user = guacamoleConfig.interface.db.user or "guacamole";
       # Password will come from SOPS database_password secret
-      password = config.sops.secrets.guacamole_database_password.path;
+      password = "CHANGEME";
     };
     
     # Bootstrap admin user configuration
@@ -98,7 +98,8 @@ let
   keytool = "${pkgs.openjdk}/bin/keytool";
 in {
   imports = [
-    inputs.sops-nix.nixosModules.sops
+    # SOPS will be imported by the core module
+    ../shared/internal-ca.nix
   ];
 
   options.services.nixmox.guacamole = {
@@ -249,7 +250,8 @@ in {
       postgresql-port = cfg.database.port;
       postgresql-database = cfg.database.name;
       postgresql-username = cfg.database.user;
-      postgresql-password = cfg.database.password;
+      # Password will be replaced by systemd service
+      postgresql-password = "CHANGEME";
 
       # OIDC with Authentik per Guacamole docs
       openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
@@ -271,6 +273,59 @@ in {
     environment.etc."guacamole/lib/postgresql-${pgVer}.jar".source = pgDriverSrc;
     environment.etc."guacamole/extensions/guacamole-auth-jdbc-postgresql-${guacVer}.jar".source = "${pgExtension}/guacamole-auth-jdbc-postgresql-${guacVer}.jar";
 
+    # Generate guacamole.properties at runtime with actual password and copy extensions
+    systemd.services.guacamole-generate-config = {
+      description = "Generate guacamole.properties with actual database password and copy extensions";
+      wantedBy = [ "tomcat.service" "multi-user.target" ];
+      before = [ "tomcat.service" ];
+      script = ''
+        # Create directories
+        mkdir -p /var/lib/guacamole/extensions
+        mkdir -p /var/lib/guacamole/lib
+        
+        # Copy extensions and lib files
+        cp -r /etc/guacamole/extensions/* /var/lib/guacamole/extensions/
+        cp -r /etc/guacamole/lib/* /var/lib/guacamole/lib/
+        
+        # Generate guacamole.properties with actual password
+        cat > /var/lib/guacamole/guacamole.properties << EOF
+        # Generated with Nix
+
+        extension-priority = openid
+        guacd-hostname = localhost
+        guacd-port = 4822
+        openid-allowed-redirect-uris = https://${cfg.hostName}/guacamole/
+        openid-authorization-endpoint = https://${cfg.authentikDomain}/application/o/authorize/
+        openid-client-id = ${cfg.clientId}
+        openid-issuer = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/
+        openid-jwks-endpoint = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/jwks/
+        openid-max-token-length = 8192
+        openid-redirect-uri = https://${cfg.hostName}/guacamole/
+        openid-scope = openid email profile
+        openid-username-claim-type = preferred_username
+        openid-validate-token = true
+        postgresql-database = ${cfg.database.name}
+        postgresql-hostname = ${cfg.database.host}
+        postgresql-password = $(cat ${config.sops.secrets.guacamole_database_password.path})
+        postgresql-port = ${toString cfg.database.port}
+        postgresql-username = ${cfg.database.user}
+        EOF
+        
+        # Set proper permissions
+        chown -R tomcat:tomcat /var/lib/guacamole/
+        chmod 600 /var/lib/guacamole/guacamole.properties
+        chmod 755 /var/lib/guacamole/extensions
+        chmod 755 /var/lib/guacamole/lib
+        
+        echo "[guacamole-generate-config] Configuration and extensions copied successfully"
+      '';
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+    };
+
+
     # Note: No local PostgreSQL configuration - using external database
 
     # Initialize Guacamole DB schema if empty (using external PostgreSQL)
@@ -284,9 +339,12 @@ in {
         echo "Port: ${toString cfg.database.port}"
         echo "User: ${cfg.database.user}"
         echo "Database: ${cfg.database.name}"
+
+        # PGPASSWORD=$(cat ${config.sops.secrets.guacamole_database_password.path})
+        export PGPASSWORD=$DATABASE_PASSWORD
         
         # Test basic connectivity first
-        PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
+        ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
           echo "Database connection failed"
           exit 1
         }
@@ -294,10 +352,10 @@ in {
         echo "Database connection successful"
         
         # Check if database is empty
-        output=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
+        output=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
         if [[ "$output" == *"Did not find any relations."* ]]; then
           echo "[guacamole-bootstrapper] Info: installing guacamole postgres database schema..."
-          ${cat} ${pgExtension}/schema/*.sql | PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
+          ${cat} ${pgExtension}/schema/*.sql | ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
         else
           echo "Database already has tables, skipping schema import"
         fi
@@ -310,10 +368,13 @@ in {
       };
     };
 
-    # Ensure Tomcat starts after network (no local PostgreSQL dependency)
+    # Ensure Tomcat starts after network and config generation
     systemd.services.tomcat = {
-      after = [ "network.target" ];
+      after = [ "network.target" "guacamole-generate-config.service" ];
       serviceConfig = {
+        Environment = [
+          "GUACAMOLE_HOME=/var/lib/guacamole"
+        ];
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
           # Import internal CA into a Java truststore so Guacamole trusts Authentik TLS (ignore failures)
@@ -353,16 +414,18 @@ in {
 
         echo "[guacamole-bootstrap-admin] Starting Guacamole admin user setup..."
 
+        # PGPASSWORD=$(cat ${config.sops.secrets.guacamole_database_password.path})
+        export PGPASSWORD=$DATABASE_PASSWORD
         # Step 1: Rename existing guacadmin user to akadmin if it exists
         echo "[guacamole-bootstrap-admin] Checking for existing guacadmin user..."
-        EXISTING_GUACADMIN=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+        EXISTING_GUACADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
           -U ${cfg.database.user} -d ${cfg.database.name} -c "
         SELECT COUNT(*) FROM guacamole_entity WHERE name = 'guacadmin' AND type = 'USER';
         " | tr -d ' ')
         
         if [ "$EXISTING_GUACADMIN" -gt 0 ]; then
           echo "[guacamole-bootstrap-admin] Found existing guacadmin user, renaming to akadmin..."
-          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           UPDATE guacamole_entity 
           SET name = 'akadmin' 
@@ -375,7 +438,7 @@ in {
 
         # Step 2: Check if akadmin user already exists
         echo "[guacamole-bootstrap-admin] Checking if akadmin user exists..."
-        EXISTING_AKADMIN=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+        EXISTING_AKADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
           -U ${cfg.database.user} -d ${cfg.database.name} -c "
         SELECT COUNT(*) FROM guacamole_entity WHERE name = 'akadmin' AND type = 'USER';
         " | tr -d ' ')
@@ -384,7 +447,7 @@ in {
           echo "[guacamole-bootstrap-admin] akadmin user already exists, ensuring admin permissions..."
           
           # Ensure admin permissions exist
-          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_system_permission (entity_id, permission)
           SELECT e.entity_id, 'ADMINISTER'
@@ -437,7 +500,7 @@ in {
           HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
           
           # Create new akadmin user
-          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_entity (name, type) 
           VALUES ('akadmin', 'USER')
@@ -455,7 +518,7 @@ in {
           "
           
           # Grant admin permissions
-          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_system_permission (entity_id, permission)
           SELECT e.entity_id, 'ADMINISTER'
@@ -500,6 +563,12 @@ in {
         echo "[guacamole-bootstrap-admin] Admin user setup completed successfully"
       '';
     };
+
+    # Enable internal CA for certificate trust
+    services.nixmox.internalCa.enable = true;
+    
+    # Also enable wildcard key for HTTPS serving
+    services.nixmox.internalCa.enableWildcardKey = true;
   });
 }
 

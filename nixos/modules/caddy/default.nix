@@ -160,7 +160,7 @@ in {
                 "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
               
               ${lib.optionalString (service.extraConfig != "") 
-                (builtins.replaceStrings ["\n"] ["\n              "] service.extraConfig)}
+                service.extraConfig}
               
               # Basic reverse proxy configuration
               ${lib.optionalString (!(service.skipDefaultProxy or false)) "reverse_proxy ${service.backend}:${toString service.port}"}
@@ -189,6 +189,8 @@ in {
       serviceConfig = {
         Restart = mkForce "always";
         RestartSec = mkForce "10s";
+        # Since admin is off, we need to restart instead of reload
+        ExecReload = mkForce "/bin/systemctl restart caddy.service";
       };
     };
 

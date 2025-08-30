@@ -294,7 +294,7 @@
         };
         proxy = {
           domain = "guac.nixmox.lan";
-          path = "/guacamole/";
+          path = "/guacamole";
           upstream = "192.168.99.16:8280";
           tls = true;
           authz = true;

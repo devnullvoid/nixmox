@@ -323,97 +323,99 @@ in {
     services.forgejo = {
       enable = true;
       
-      # Database configuration
-      database = {
-        DB_TYPE = "postgres";
-        HOST = "${cfg.database.host}:${toString cfg.database.port}";
-        NAME = cfg.database.name;
-        USER = cfg.database.user;
-        PASSWD = cfg.database.password;
-        SSL_MODE = "disable";
-      };
-      
-      # Server configuration
-      server = {
-        DOMAIN = cfg.server.domain;
-        ROOT_URL = cfg.server.root_url;
-        HTTP_ADDR = cfg.server.http_addr;
-        HTTP_PORT = cfg.server.http_port;
-        APP_NAME = cfg.server.app_name;
-        APP_URL = cfg.server.app_url;
-        LANDING_PAGE = "explore";
-        ENABLE_GZIP = true;
-      };
-      
-      # Repository configuration
-      repository = {
-        ROOT = cfg.repository.root;
-        SCRIPT_TYPE = cfg.repository.script_type;
-        MAX_CREATION_LIMIT = cfg.repository.max_creation_limit;
-        DEFAULT_BRANCH = cfg.repository.default_branch;
-        DEFAULT_PRIVATE = "last";
-        DEFAULT_PUSH_CREATE_PRIVATE = true;
-        DEFAULT_PUSH_CREATE_PRIVATE_ORG = true;
-        DEFAULT_PUSH_CREATE_PRIVATE_TEAM = true;
-      };
-      
-      # Security configuration
-      security = {
-        INSTALL_LOCK = cfg.security.install_lock;
-        SECRET_KEY = cfg.security.secret_key;
-        INTERNAL_TOKEN = cfg.security.internal_token;
-        PASSWORD_HASH_ALGO = cfg.security.password_hash_algorithm;
-        MIN_PASSWORD_LENGTH = cfg.security.min_password_length;
-        REQUIRE_SIGNIN_VIEW = false;
-        ENABLE_CAPTCHA = false;
-        ENABLE_NOTIFY_MAIL = false;
-      };
-      
-      # OIDC configuration
-      oauth2 = {
-        ENABLE = true;
-        JWT_SECRET = config.sops.secrets.forgejo_jwt_secret.path;
-      };
-      
-      # User configuration
-      user = {
-        ENABLE_EMAIL_NOTIFICATION = false;
-        ENABLE_WEB_NOTIFICATION = false;
-        DEFAULT_EMAIL_NOTIFICATIONS = "disabled";
-        DEFAULT_WEB_NOTIFICATIONS = "disabled";
-      };
-      
-      # Mail configuration (disabled for now)
-      mailer = {
-        ENABLED = false;
-      };
-      
-      # Logging configuration
-      log = {
-        LEVEL = "Info";
-        ROOT_PATH = "/var/log/forgejo";
-        XORM = "Info";
-        ACCESS = "Info";
-        ROUTER = "Info";
-      };
-      
-      # Cache configuration
-      cache = {
-        ADAPTER = "memory";
-        INTERVAL = 60;
-      };
-      
-      # Session configuration
-      session = {
-        PROVIDER = "db";
-        PROVIDER_CONFIG = "file=/var/lib/forgejo/sessions";
-        SAME_SITE = "lax";
-      };
-      
-      # Cron configuration
-      cron = {
-        ENABLE = true;
-        RUN_AT_START = true;
+      settings = {
+        # Database configuration
+        database = {
+          DB_TYPE = lib.mkForce "postgres";
+          HOST = lib.mkForce "${cfg.database.host}:${toString cfg.database.port}";
+          NAME = lib.mkForce cfg.database.name;
+          USER = lib.mkForce cfg.database.user;
+          PASSWD = lib.mkForce cfg.database.password;
+          SSL_MODE = lib.mkForce "disable";
+        };
+        
+        # Server configuration
+        server = {
+          DOMAIN = cfg.server.domain;
+          ROOT_URL = cfg.server.root_url;
+          HTTP_ADDR = cfg.server.http_addr;
+          HTTP_PORT = cfg.server.http_port;
+          APP_NAME = cfg.server.app_name;
+          APP_URL = cfg.server.app_url;
+          LANDING_PAGE = "explore";
+          ENABLE_GZIP = true;
+        };
+        
+        # Repository configuration
+        repository = {
+          ROOT = cfg.repository.root;
+          SCRIPT_TYPE = cfg.repository.script_type;
+          MAX_CREATION_LIMIT = cfg.repository.max_creation_limit;
+          DEFAULT_BRANCH = cfg.repository.default_branch;
+          DEFAULT_PRIVATE = "last";
+          DEFAULT_PUSH_CREATE_PRIVATE = true;
+          DEFAULT_PUSH_CREATE_PRIVATE_ORG = true;
+          DEFAULT_PUSH_CREATE_PRIVATE_TEAM = true;
+        };
+        
+        # Security configuration
+        security = {
+          INSTALL_LOCK = cfg.security.install_lock;
+          SECRET_KEY = cfg.security.secret_key;
+          INTERNAL_TOKEN = cfg.security.internal_token;
+          PASSWORD_HASH_ALGO = cfg.security.password_hash_algorithm;
+          MIN_PASSWORD_LENGTH = cfg.security.min_password_length;
+          REQUIRE_SIGNIN_VIEW = false;
+          ENABLE_CAPTCHA = false;
+          ENABLE_NOTIFY_MAIL = false;
+        };
+        
+        # OIDC configuration
+        oauth2 = {
+          ENABLE = true;
+          JWT_SECRET = config.sops.secrets.forgejo_jwt_secret.path;
+        };
+        
+        # User configuration
+        user = {
+          ENABLE_EMAIL_NOTIFICATION = false;
+          ENABLE_WEB_NOTIFICATION = false;
+          DEFAULT_EMAIL_NOTIFICATIONS = "disabled";
+          DEFAULT_WEB_NOTIFICATIONS = "disabled";
+        };
+        
+        # Mail configuration (disabled for now)
+        mailer = {
+          ENABLED = false;
+        };
+        
+        # Logging configuration
+        log = {
+          LEVEL = "Info";
+          ROOT_PATH = "/var/log/forgejo";
+          XORM = "Info";
+          ACCESS = "Info";
+          ROUTER = "Info";
+        };
+        
+        # Cache configuration
+        cache = {
+          ADAPTER = "memory";
+          INTERVAL = 60;
+        };
+        
+        # Session configuration
+        session = {
+          PROVIDER = "db";
+          PROVIDER_CONFIG = "file=/var/lib/forgejo/sessions";
+          SAME_SITE = "lax";
+        };
+        
+        # Cron configuration
+        cron = {
+          ENABLE = true;
+          RUN_AT_START = true;
+        };
       };
     };
     

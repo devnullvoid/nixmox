@@ -97,13 +97,31 @@ let
           -Server
         }
       '';
+      
+      # Add path-based routing for services that need it
+      pathBasedRouting = if skipDefaultProxy && (proxy.path or "/") != "/" then ''
+        # Handle path-based routing with redirect and proxy
+        # Redirect root and non-service paths to the service path
+        @notService {
+          not path ${proxy.path}*
+        }
+        redir @notService ${proxy.path}
+        
+        # Proxy everything to upstream
+        reverse_proxy ${backend}:${toString port} {
+          flush_interval -1
+        }
+      '' else "";
+      
+      # Combine extra config with path-based routing
+      finalExtraConfig = extraConfig + pathBasedRouting;
     in {
       domain = domain;
       backend = backend;
       port = port;
       enableAuth = useOidc || useForwardAuth;
       skipDefaultProxy = skipDefaultProxy;
-      extraConfig = extraConfig;
+      extraConfig = finalExtraConfig;
     };
   
   # Generate services configuration from manifest
