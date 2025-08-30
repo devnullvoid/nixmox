@@ -15,12 +15,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
-    # Authentik integration
-    authentik-nix = {
-      url = "github:nix-community/authentik-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    
     # NixOS generators for container images
     nixos-generators = {
       url = "github:nix-community/nixos-generators";
@@ -32,22 +26,10 @@
       url = "github:terranix/terranix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # Colmena for deployment
-    colmena = {
-      url = "github:zhaofengli/colmena";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs = inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } (top@{ config, withSystem, moduleWithSystem, ... }: {
-      imports = [
-        # Import flake modules for each major component
-        ./flake-modules/development.nix
-        ./flake-modules/deployment.nix
-      ];
-
       # Import the service manifest
       _module.args.manifest = import ./nixos/service-manifest.nix;
 
@@ -61,16 +43,6 @@
         # Core flake attributes
         description = "NixMox - NixOS LXC Orchestration on Proxmox";
         
-        # Helper functions and configurations
-        lib = {
-          # Helper function to generate container images
-          mkContainerImage = hostName: modules: inputs.nixos-generators.nixosGenerate {
-            system = "x86_64-linux";
-            format = "proxmox-lxc";
-            modules = modules;
-          };
-        };
-
         # Reusable NixOS modules
         nixosModules = {
           core = import ./nixos/modules/core.nix;
