@@ -206,13 +206,6 @@ in {
       hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
     in {
 
-    # SOPS secrets configuration
-    sops.secrets.guacamole_env = {
-      sopsFile = ../../../secrets/default.yaml;
-      key = "guacamole/env";
-      mode = "0400";
-    };
-    
     # Database password secret (for PostgreSQL module)
     sops.secrets.guacamole_database_password = {
       sopsFile = ../../../secrets/default.yaml;
@@ -238,34 +231,39 @@ in {
     # Host the client on Tomcat, avoid common 8080 clashes
     services.tomcat.port = cfg.tomcatPort;
 
-    # Guacamole client settings (rendered by the upstream module)
-    services.guacamole-client.settings = {
-      guacd-hostname = "localhost";
-      guacd-port = config.services.guacamole-server.port;
-      # Use OIDC for authentication
-      extension-priority = "openid";
+    # Render guacamole.properties via sops template; avoid duplicating settings
+    sops.templates.guacamole_properties = {
+      # Write the final config where Tomcat will read it via GUACAMOLE_HOME
+      path = "/etc/guacamole/guacamole.properties";
+      owner = "tomcat";
+      group = "tomcat";
+      mode = "0400";
+      # Restart Tomcat when the rendered template changes
+      restartUnits = [ "tomcat.service" ];
+      content = ''
+        # Generated with sops-nix
+        extension-priority = openid
+        guacd-hostname = localhost
+        guacd-port = ${toString config.services.guacamole-server.port}
+        
+        openid-authorization-endpoint = https://${cfg.authentikDomain}/application/o/authorize/
+        openid-jwks-endpoint = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/jwks/
+        openid-issuer = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/
+        openid-client-id = ${cfg.clientId}
+        openid-redirect-uri = https://${hostNameEffective}/guacamole/
+        openid-username-claim-type = preferred_username
+        openid-scope = openid email profile
+        openid-allowed-redirect-uris = https://${hostNameEffective}/guacamole/
+        openid-validate-token = true
+        openid-max-token-length = 8192
 
-      # Database config - use external PostgreSQL
-      postgresql-hostname = cfg.database.host;
-      postgresql-port = cfg.database.port;
-      postgresql-database = cfg.database.name;
-      postgresql-username = cfg.database.user;
-      # Password will be replaced by systemd service
-      postgresql-password = "CHANGEME";
-
-      # OIDC with Authentik per Guacamole docs
-      openid-authorization-endpoint = "https://${cfg.authentikDomain}/application/o/authorize/";
-      openid-jwks-endpoint = "https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/jwks/";
-      openid-issuer = "https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/";
-      openid-client-id = cfg.clientId;
-      openid-redirect-uri = "https://${hostNameEffective}/guacamole/";
-      openid-username-claim-type = "preferred_username";
-      openid-scope = "openid email profile";
-      
-      # Additional OIDC options to fix redirect loops
-      openid-allowed-redirect-uris = "https://${hostNameEffective}/guacamole/";
-      openid-validate-token = "true";
-      openid-max-token-length = "8192";
+        postgresql-database = ${cfg.database.name}
+        postgresql-hostname = ${cfg.database.host}
+        postgresql-port = ${toString cfg.database.port}
+        postgresql-username = ${cfg.database.user}
+        # Embed secret via sops-nix placeholder; replaced at activation
+        postgresql-password = ${config.sops.placeholder.guacamole_database_password}
+      '';
     };
 
     # Provide required extensions and JDBC driver
@@ -273,57 +271,7 @@ in {
     environment.etc."guacamole/lib/postgresql-${pgVer}.jar".source = pgDriverSrc;
     environment.etc."guacamole/extensions/guacamole-auth-jdbc-postgresql-${guacVer}.jar".source = "${pgExtension}/guacamole-auth-jdbc-postgresql-${guacVer}.jar";
 
-    # Generate guacamole.properties at runtime with actual password and copy extensions
-    systemd.services.guacamole-generate-config = {
-      description = "Generate guacamole.properties with actual database password and copy extensions";
-      wantedBy = [ "tomcat.service" "multi-user.target" ];
-      before = [ "tomcat.service" ];
-      script = ''
-        # Create directories
-        mkdir -p /var/lib/guacamole/extensions
-        mkdir -p /var/lib/guacamole/lib
-        
-        # Copy extensions and lib files
-        cp -r /etc/guacamole/extensions/* /var/lib/guacamole/extensions/
-        cp -r /etc/guacamole/lib/* /var/lib/guacamole/lib/
-        
-        # Generate guacamole.properties with actual password
-        cat > /var/lib/guacamole/guacamole.properties << EOF
-        # Generated with Nix
-
-        extension-priority = openid
-        guacd-hostname = localhost
-        guacd-port = 4822
-        openid-allowed-redirect-uris = https://${cfg.hostName}/guacamole/
-        openid-authorization-endpoint = https://${cfg.authentikDomain}/application/o/authorize/
-        openid-client-id = ${cfg.clientId}
-        openid-issuer = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/
-        openid-jwks-endpoint = https://${cfg.authentikDomain}/application/o/${cfg.oidcProviderPath}/jwks/
-        openid-max-token-length = 8192
-        openid-redirect-uri = https://${cfg.hostName}/guacamole/
-        openid-scope = openid email profile
-        openid-username-claim-type = preferred_username
-        openid-validate-token = true
-        postgresql-database = ${cfg.database.name}
-        postgresql-hostname = ${cfg.database.host}
-        postgresql-password = $(cat ${config.sops.secrets.guacamole_database_password.path})
-        postgresql-port = ${toString cfg.database.port}
-        postgresql-username = ${cfg.database.user}
-        EOF
-        
-        # Set proper permissions
-        chown -R tomcat:tomcat /var/lib/guacamole/
-        chmod 600 /var/lib/guacamole/guacamole.properties
-        chmod 755 /var/lib/guacamole/extensions
-        chmod 755 /var/lib/guacamole/lib
-        
-        echo "[guacamole-generate-config] Configuration and extensions copied successfully"
-      '';
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-    };
+    # Remove runtime copy/generation; rely on GUACAMOLE_HOME=/etc/guacamole and sops template
 
 
     # Note: No local PostgreSQL configuration - using external database
@@ -340,8 +288,8 @@ in {
         echo "User: ${cfg.database.user}"
         echo "Database: ${cfg.database.name}"
 
-        # PGPASSWORD=$(cat ${config.sops.secrets.guacamole_database_password.path})
-        export PGPASSWORD=$DATABASE_PASSWORD
+        # Read database password directly from SOPS-managed file
+        export PGPASSWORD="$(<${config.sops.secrets.guacamole_database_password.path})"
         
         # Test basic connectivity first
         ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
@@ -362,30 +310,29 @@ in {
       '';
       serviceConfig = {
         Type = "oneshot";
-        EnvironmentFile = [
-          config.sops.secrets.guacamole_env.path
-        ];
       };
     };
 
     # Ensure Tomcat starts after network and config generation
     systemd.services.tomcat = {
-      after = [ "network.target" "guacamole-generate-config.service" ];
+      after = [ "network.target" ];
       serviceConfig = {
         Environment = [
-          "GUACAMOLE_HOME=/var/lib/guacamole"
+          "GUACAMOLE_HOME=/etc/guacamole"
         ];
         ExecStartPre = [
-          "${pkgs.coreutils}/bin/mkdir -p /var/lib/guacamole"
+          "${pkgs.coreutils}/bin/mkdir -p /etc/guacamole"
           # Import internal CA into a Java truststore so Guacamole trusts Authentik TLS (ignore failures)
-          "${pkgs.bash}/bin/bash -lc '${keytool} -importcert -trustcacerts -alias nixmox-internal-ca -file /var/lib/shared-certs/internal-ca.crt -keystore /var/lib/guacamole/java-cacerts -storepass changeit -noprompt || true'"
+          "${pkgs.bash}/bin/bash -lc '${keytool} -importcert -trustcacerts -alias nixmox-internal-ca -file /var/lib/shared-certs/internal-ca.crt -keystore /etc/guacamole/java-cacerts -storepass changeit -noprompt || true'"
+          "${pkgs.bash}/bin/bash -lc 'test -f /etc/guacamole/java-cacerts && chown tomcat:tomcat /etc/guacamole/java-cacerts || true'"
+          "${pkgs.bash}/bin/bash -lc 'test -f /etc/guacamole/java-cacerts && chmod 600 /etc/guacamole/java-cacerts || true'"
         ];
       };
     };
 
     # Point Tomcat/Java at the truststore containing our local CA
     services.tomcat.javaOpts = [
-      "-Djavax.net.ssl.trustStore=/var/lib/guacamole/java-cacerts"
+      "-Djavax.net.ssl.trustStore=/etc/guacamole/java-cacerts"
       "-Djavax.net.ssl.trustStorePassword=changeit"
     ];
 
@@ -401,9 +348,6 @@ in {
       };
       serviceConfig = {
         Type = "oneshot";
-        EnvironmentFile = [
-          config.sops.secrets.guacamole_env.path
-        ];
       };
       script = ''
         set -euo pipefail
@@ -414,8 +358,8 @@ in {
 
         echo "[guacamole-bootstrap-admin] Starting Guacamole admin user setup..."
 
-        # PGPASSWORD=$(cat ${config.sops.secrets.guacamole_database_password.path})
-        export PGPASSWORD=$DATABASE_PASSWORD
+        # Read database password directly from SOPS-managed file
+        export PGPASSWORD="$(<${config.sops.secrets.guacamole_database_password.path})"
         # Step 1: Rename existing guacadmin user to akadmin if it exists
         echo "[guacamole-bootstrap-admin] Checking for existing guacadmin user..."
         EXISTING_GUACADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
@@ -571,5 +515,3 @@ in {
     services.nixmox.internalCa.enableWildcardKey = true;
   });
 }
-
-
