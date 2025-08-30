@@ -138,10 +138,8 @@ in {
       ports = [ ];
       volumes = [
         "${cfg.dataDir}:/data"
-        # Mount the shared internal CA certificate
-        "/var/lib/shared-certs/internal-ca.crt:/etc/ssl/certs/internal-ca.crt:ro"
-        # Mount the CA bundle that includes both system CAs and internal CA
-        "/var/lib/shared-certs/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro"
+        # Mount the system CA bundle that now includes our internal CA
+        "/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
       ];
       extraOptions = [
         "--network=host"
@@ -159,8 +157,8 @@ in {
         DATABASE_CONNECTION_RETRIES = "3";
         DATABASE_POOL_SIZE = "10";
 
-        # SSL Configuration - point to the CA bundle that includes both system CAs and internal CA
-        SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
+        # SSL Configuration - use the system default CA bundle path (now includes our internal CA)
+        # No need to override SSL_CERT_FILE - let the container use the standard path
 
         # SSO Configuration - using correct values from Authentik
         SSO_ENABLED = "true";
