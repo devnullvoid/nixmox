@@ -18,6 +18,7 @@ terraform/environments/*/.terraform/
 # SOPS decrypted files (security)
 **/secrets.decrypted.yaml
 **/secrets.decrypted.yml
+**/secrets/*.backup.*
 **/*.decrypted.*
 
 # Internal CA certificates (contain private keys)
