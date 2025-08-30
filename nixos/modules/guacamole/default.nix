@@ -41,7 +41,8 @@ let
       port = guacamoleConfig.interface.db.port or 5432;
       name = guacamoleConfig.interface.db.name or "guacamole";
       user = guacamoleConfig.interface.db.user or "guacamole";
-      password = guacamoleConfig.interface.db.password or "changeme"; # TODO: Use SOPS
+      # Password will come from SOPS database_password secret
+      password = config.sops.secrets.guacamole_database_password.path;
     };
     
     # Bootstrap admin user configuration
@@ -96,6 +97,10 @@ let
   cat = "${pkgs.coreutils}/bin/cat";
   keytool = "${pkgs.openjdk}/bin/keytool";
 in {
+  imports = [
+    inputs.sops-nix.nixosModules.sops
+  ];
+
   options.services.nixmox.guacamole = {
     enable = mkEnableOption "Guacamole, a clientless remote desktop gateway";
 
@@ -200,6 +205,20 @@ in {
       hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
     in {
 
+    # SOPS secrets configuration
+    sops.secrets.guacamole_env = {
+      sopsFile = ../../../secrets/default.yaml;
+      key = "guacamole/env";
+      mode = "0400";
+    };
+    
+    # Database password secret (for PostgreSQL module)
+    sops.secrets.guacamole_database_password = {
+      sopsFile = ../../../secrets/default.yaml;
+      key = "guacamole/database_password";
+      mode = "0400";
+    };
+
     # Add PostgreSQL client tools for database schema import
     environment.systemPackages = with pkgs; [
       postgresql
@@ -267,7 +286,7 @@ in {
         echo "Database: ${cfg.database.name}"
         
         # Test basic connectivity first
-        ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
+        PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "SELECT 1 as test;" || {
           echo "Database connection failed"
           exit 1
         }
@@ -275,18 +294,18 @@ in {
         echo "Database connection successful"
         
         # Check if database is empty
-        output=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
+        output=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -c "\\dt" 2>&1)
         if [[ "$output" == *"Did not find any relations."* ]]; then
           echo "[guacamole-bootstrapper] Info: installing guacamole postgres database schema..."
-          ${cat} ${pgExtension}/schema/*.sql | ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
+          ${cat} ${pgExtension}/schema/*.sql | PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -U ${cfg.database.user} -d ${cfg.database.name} -f -
         else
           echo "Database already has tables, skipping schema import"
         fi
       '';
       serviceConfig = {
         Type = "oneshot";
-        Environment = [
-          "PGPASSWORD=${cfg.database.password}"
+        EnvironmentFile = [
+          config.sops.secrets.guacamole_env.path
         ];
       };
     };
@@ -321,8 +340,8 @@ in {
       };
       serviceConfig = {
         Type = "oneshot";
-        Environment = [
-          "PGPASSWORD=${cfg.database.password}"
+        EnvironmentFile = [
+          config.sops.secrets.guacamole_env.path
         ];
       };
       script = ''
@@ -336,14 +355,14 @@ in {
 
         # Step 1: Rename existing guacadmin user to akadmin if it exists
         echo "[guacamole-bootstrap-admin] Checking for existing guacadmin user..."
-        EXISTING_GUACADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+        EXISTING_GUACADMIN=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
           -U ${cfg.database.user} -d ${cfg.database.name} -c "
         SELECT COUNT(*) FROM guacamole_entity WHERE name = 'guacadmin' AND type = 'USER';
         " | tr -d ' ')
         
         if [ "$EXISTING_GUACADMIN" -gt 0 ]; then
           echo "[guacamole-bootstrap-admin] Found existing guacadmin user, renaming to akadmin..."
-          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           UPDATE guacamole_entity 
           SET name = 'akadmin' 
@@ -356,7 +375,7 @@ in {
 
         # Step 2: Check if akadmin user already exists
         echo "[guacamole-bootstrap-admin] Checking if akadmin user exists..."
-        EXISTING_AKADMIN=$(${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
+        EXISTING_AKADMIN=$(PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -t -A \
           -U ${cfg.database.user} -d ${cfg.database.name} -c "
         SELECT COUNT(*) FROM guacamole_entity WHERE name = 'akadmin' AND type = 'USER';
         " | tr -d ' ')
@@ -365,7 +384,7 @@ in {
           echo "[guacamole-bootstrap-admin] akadmin user already exists, ensuring admin permissions..."
           
           # Ensure admin permissions exist
-          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_system_permission (entity_id, permission)
           SELECT e.entity_id, 'ADMINISTER'
@@ -418,7 +437,7 @@ in {
           HASH=$(printf "%s" "$SALT$PASS" | ${pkgs.openssl}/bin/openssl dgst -sha256 -binary | ${pkgs.coreutils}/bin/base64)
           
           # Create new akadmin user
-          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_entity (name, type) 
           VALUES ('akadmin', 'USER')
@@ -436,7 +455,7 @@ in {
           "
           
           # Grant admin permissions
-          ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
+          PGPASSWORD=$DATABASE_PASSWORD ${psql} -h ${cfg.database.host} -p ${toString cfg.database.port} -v ON_ERROR_STOP=1 \
             -U ${cfg.database.user} -d ${cfg.database.name} -c "
           INSERT INTO guacamole_system_permission (entity_id, permission)
           SELECT e.entity_id, 'ADMINISTER'
