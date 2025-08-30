@@ -57,6 +57,7 @@
           dns = import ./nixos/modules/dns;
           mail = import ./nixos/modules/mail;
           openbao = import ./nixos/modules/openbao;
+          forgejo = import ./nixos/modules/forgejo;
         };
 
         # Dynamically generate NixOS configurations from manifest

@@ -581,6 +581,65 @@
         };
       };
     };
+
+    forgejo = {
+      enable = true;
+      ip = "192.168.99.21";
+      hostname = "forgejo.nixmox.lan";
+      vmid = 912;
+      version = "1.0";
+      resources = {
+        cores = 4;
+        memory = 4096;
+        disk_gb = 64;
+      };
+      onboot = true;
+      start = true;
+      depends_on = [ "postgresql" "caddy" "authentik" ];
+      ports = [ 3000 ];
+      interface = {
+        terraform = {
+          modules = [ "./terraform/forgejo" ];
+          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
+          variables = {
+            domain = "nixmox.lan";
+            oidc_client_id = "forgejo-oidc";
+            oidc_scopes = [ "openid" "email" "profile" ];
+          };
+        };
+        db = {
+          host = "192.168.99.11";
+          name = "forgejo";
+          owner = "forgejo";
+          port = 5432;
+        };
+        auth = {
+          type = "oidc";
+          provider = "authentik";
+          oidc = {
+            client_type = "confidential";
+            redirect_uris = [ "https://git.nixmox.lan/user/oauth2/authentik/callback" ];
+            scopes = [ "openid" "email" "profile" ];
+            username_claim = "preferred_username";
+            groups_claim = "groups";
+          };
+        };
+        proxy = {
+          domain = "git.nixmox.lan";
+          path = "/";
+          upstream = "192.168.99.21:3000";
+          tls = true;
+          authz = true;
+        };
+        health = {
+          startup = "systemctl is-active --quiet forgejo";
+          liveness = "curl -f -s http://localhost:3000/api/v1/version";
+          interval = 30;
+          timeout = 60;
+          retries = 3;
+        };
+      };
+    };
   };
 
   # Deployment configuration
@@ -588,7 +647,7 @@
     tf_infra = [ "postgresql" "dns" "caddy" "authentik" ];
     nix_core = [ "postgresql" "dns" "caddy" "authentik" ];
     tf_auth_core = [ "authentik" ];
-    services = [ "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail" "openbao" ];
+    services = [ "vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail" "openbao" "forgejo" ];
   };
 
   # Health check configuration
