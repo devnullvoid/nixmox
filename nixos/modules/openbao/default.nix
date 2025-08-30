@@ -183,69 +183,52 @@ in {
       };
     };
 
-    # OpenBao service
+    # Use the built-in NixOS OpenBao service
     services.openbao = {
       enable = true;
-
-      # Basic settings
-      address = "0.0.0.0:${toString cfg.openbao.port}";
-      dataDir = cfg.openbao.dataDir;
-
-      # TLS configuration
-      tlsCertFile = cfg.openbao.tls.certFile;
-      tlsKeyFile = cfg.openbao.tls.keyFile;
-      tlsCaFile = cfg.openbao.tls.caFile;
-
-      # Storage backend (file storage for simplicity)
-      storage = {
-        file = {
-          path = "${cfg.openbao.dataDir}/data";
+      
+      # Configure OpenBao using the settings option
+      settings = {
+        # Storage backend
+        storage = {
+          file = {
+            path = "${cfg.openbao.dataDir}/data";
+          };
         };
-      };
-
-      # Listener configuration
-      listener.tcp = {
-        address = "0.0.0.0:${toString cfg.openbao.port}";
-        tls_cert_file = cfg.openbao.tls.certFile;
-        tls_key_file = cfg.openbao.tls.keyFile;
-        tls_ca_file = cfg.openbao.tls.caFile;
-      };
-
-      # UI settings
-      ui = true;
-
-      # API settings
-      api_addr = "https://bao.${cfg.primaryDomain}";
-      cluster_addr = "https://${config.networking.hostName}.${cfg.primaryDomain}:${toString cfg.openbao.port}";
-
-      # Seal configuration (using Shamir seal)
-      seal = {
-        shamir = {
-          secret_shares = 5;
-          secret_threshold = 3;
+        
+        # Listener configuration - HTTP mode without TLS
+        listener = {
+          tcp = {
+            type = "tcp";
+            address = "0.0.0.0:${toString cfg.openbao.port}";
+            # Explicitly disable TLS to prevent automatic ACME behavior
+            tls_disable = true;
+          };
         };
-      };
-
-      # Telemetry (basic)
-      telemetry = {
-        disable_hostname = true;
-        prometheus_retention_time = "30s";
-      };
-
-      # Additional environment variables
-      extraEnvironmentVars = cfg.openbao.environment // {
-        # OIDC Configuration
-        OPENBAO_OIDC_ISSUER = cfg.openbao.oidc.issuer;
-        OPENBAO_OIDC_CLIENT_ID = cfg.openbao.oidc.clientId;
-        OPENBAO_OIDC_REDIRECT_URI = cfg.openbao.oidc.redirectUri;
-
+        
         # UI settings
-        OPENBAO_UI = "true";
-        OPENBAO_DISABLE_MLOCK = "true";
-
-        # Clustering (disabled for single node)
-        OPENBAO_CLUSTER_ADDR = "https://${config.networking.hostName}.${cfg.primaryDomain}:${toString cfg.openbao.port}";
-        OPENBAO_API_ADDR = "https://bao.${cfg.primaryDomain}";
+        ui = true;
+        
+        # API settings - using HTTP since TLS is disabled
+        api_addr = "http://${cfg.domain}";
+        cluster_addr = "http://${config.networking.hostName}.${cfg.primaryDomain}:${toString cfg.openbao.port}";
+        
+        # Seal configuration (using Shamir seal)
+        seal = {
+          shamir = {
+            secret_shares = 5;
+            secret_threshold = 3;
+          };
+        };
+        
+        # Telemetry
+        telemetry = {
+          disable_hostname = true;
+          prometheus_retention_time = "30s";
+        };
+        
+        # Explicitly disable automatic TLS/ACME behavior
+        disable_cache = false;
       };
     };
 
@@ -256,7 +239,7 @@ in {
       ];
     };
 
-    # Create OpenBao user
+    # Create OpenBao user and group (if not handled by the built-in service)
     users.users.openbao = {
       isSystemUser = true;
       group = "openbao";
@@ -272,63 +255,6 @@ in {
       "d ${cfg.openbao.dataDir}/data 0755 openbao openbao"
       "d ${cfg.openbao.dataDir}/logs 0755 openbao openbao"
     ];
-
-    # Systemd services
-    systemd.services = {
-      # OpenBao service
-      "openbao" = {
-        after = [ "network.target" ];
-        wantedBy = [ "multi-user.target" ];
-
-        serviceConfig = {
-          ExecStartPre = [
-            # Ensure all required directories exist before starting
-            "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}"
-            "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}/data"
-            "${pkgs.coreutils}/bin/mkdir -p ${cfg.openbao.dataDir}/logs"
-            # Set proper ownership
-            "${pkgs.coreutils}/bin/chown -R openbao:openbao ${cfg.openbao.dataDir}"
-          ];
-
-          # User and group
-          User = "openbao";
-          Group = "openbao";
-
-          # Working directory
-          WorkingDirectory = cfg.openbao.dataDir;
-
-          # Sensitive environment via SOPS
-          EnvironmentFile = config.sops.secrets."openbao/env".path;
-
-          # Environment
-          Environment = lib.mapAttrsToList (name: value: "${name}=${toString value}") config.services.openbao.extraEnvironmentVars;
-
-          # Security settings
-          NoNewPrivileges = true;
-          ProtectSystem = "strict";
-          ProtectHome = true;
-          PrivateTmp = true;
-          PrivateDevices = true;
-          ProtectKernelTunables = true;
-          ProtectKernelModules = true;
-          ProtectControlGroups = true;
-          RestrictRealtime = true;
-          RestrictSUIDSGID = true;
-
-          # Capabilities
-          AmbientCapabilities = "CAP_NET_BIND_SERVICE";
-          CapabilityBoundingSet = "CAP_NET_BIND_SERVICE";
-
-          # Logging
-          StandardOutput = "journal";
-          StandardError = "journal";
-
-          # Restart policy
-          Restart = "always";
-          RestartSec = "10s";
-        };
-      };
-    };
 
     # Health check for OpenBao
     systemd.services.openbao-health = {

@@ -75,6 +75,12 @@ in
   # Enable common services (SSH, monitoring, etc.)
   services.nixmox.enable = true;
   
+  # Configure SSH keys from manifest
+  services.nixmox.sshKeys = {
+    nixmox = network.ssh_keys.nixmox or [];
+    root = network.ssh_keys.root or [];
+  };
+  
   # Enable the specific service
   services.nixmox.${serviceName}.enable = true;
   

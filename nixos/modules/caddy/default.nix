@@ -31,11 +31,11 @@ in {
     };
     
     # Development mode (disable automatic HTTPS)
-    developmentMode = mkOption {
-      type = types.bool;
-      default = false;
-      description = "Disable automatic HTTPS for development";
-    };
+    # developmentMode = mkOption {
+    #   type = types.bool;
+    #   default = false;
+    #   description = "Disable automatic HTTPS for development";
+    # };
 
     # Internal CA configuration
     useInternalCa = mkOption {
@@ -66,26 +66,26 @@ in {
     };
 
     # Enable localtls for development/testing
-    localtls = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable localtls for development/testing";
-      };
-    };
+    # localtls = {
+    #   enable = mkOption {
+    #     type = types.bool;
+    #     default = true;
+    #     description = "Enable localtls for development/testing";
+    #   };
+    # };
 
     # Authentik configuration
-    authentikDomain = mkOption {
-      type = types.str;
-      default = "authentik.nixmox.lan";
-      description = "Authentik domain for forward auth";
-    };
+    # authentikDomain = mkOption {
+    #   type = types.str;
+    #   default = "authentik.nixmox.lan";
+    #   description = "Authentik domain for forward auth";
+    # };
 
-    authentikUpstream = mkOption {
-      type = types.str;
-      default = "authentik.nixmox.lan:9000";
-      description = "Authentik upstream for forward auth";
-    };
+    # authentikUpstream = mkOption {
+    #   type = types.str;
+    #   default = "authentik.nixmox.lan:9000";
+    #   description = "Authentik upstream for forward auth";
+    # };
 
     # Service definitions
     services = mkOption {
@@ -198,9 +198,9 @@ in {
       enableWildcardKey = cfg.internalCa.enableWildcardKey;
     };
 
-    # Enable localtls for development/testing
-    services.nixmox.localtls = mkIf cfg.localtls.enable {
-      enable = true;
-    };
+    # # Enable localtls for development/testing
+    # services.nixmox.localtls = mkIf cfg.localtls.enable {
+    #   enable = true;
+    # };
   };
 }

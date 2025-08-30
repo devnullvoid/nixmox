@@ -271,7 +271,7 @@ is_service_healthy() {
 # Wait for a service to be healthy
 wait_for_service_health() {
     local service="$1"
-    local max_attempts=30
+    local max_attempts=5
     local attempt=1
     
     # Skip waiting during dry runs

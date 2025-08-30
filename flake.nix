@@ -84,6 +84,7 @@
           vaultwarden = import ./nixos/modules/vaultwarden;
           dns = import ./nixos/modules/dns;
           mail = import ./nixos/modules/mail;
+          openbao = import ./nixos/modules/openbao;
         };
 
         # Generate NixOS configurations for each host
@@ -152,6 +153,12 @@
           mail = inputs.nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "mail"; }) ];
+            specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
+          };
+
+          openbao = inputs.nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ (import ./nixos/hosts/nixmox-host.nix { inherit (config._module.args) manifest; serviceName = "openbao"; }) ];
             specialArgs = { inherit inputs; inherit (config._module.args) manifest; };
           };
         };

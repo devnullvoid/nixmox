@@ -283,7 +283,7 @@ redeploy_authentik() {
 
 # Verify outpost services
 verify_services() {
-    local max_attempts=20
+    local max_attempts=12
     local attempt=1
     
     log_info "Verifying outpost services are running..."

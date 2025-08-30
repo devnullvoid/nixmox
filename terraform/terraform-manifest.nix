@@ -39,6 +39,7 @@ let
     network_cidr = network.network_cidr or "192.168.99.0/24";
     vlan_tag = network.vlan_tag or 99;
     domain = network.domain or "nixmox.lan";
+    ssh_keys = network.ssh_keys or {};
   };
 
   # Convert DNS records to JSON string

@@ -135,7 +135,7 @@ deploy_terraform_outpost() {
 wait_for_outpost_and_get_token() {
     local outpost_id="$1"
     local bootstrap_token="$2"
-    local max_attempts=30
+    local max_attempts=15
     local attempt=1
     
     log_info "Waiting for outpost $outpost_id to be ready..."
@@ -246,7 +246,7 @@ redeploy_authentik() {
 
 # Verify outpost services are running
 verify_outpost_services() {
-    local max_attempts=20
+    local max_attempts=12
     local attempt=1
     
     log_info "Verifying outpost services are running..."
