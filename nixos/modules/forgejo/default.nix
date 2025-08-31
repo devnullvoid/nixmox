@@ -23,8 +23,7 @@ let
       port = forgejoConfig.interface.db.port or 5432;
       name = forgejoConfig.interface.db.name or "forgejo";
       user = forgejoConfig.interface.db.owner or "forgejo";
-      # Password will come from SOPS database_password secret
-      password = config.sops.secrets.forgejo_database_password.path;
+      # Password will come from SOPS database_password secret via passwordFile
     };
     
     # OIDC configuration
@@ -105,11 +104,7 @@ in {
         description = "PostgreSQL username";
       };
       
-      password = mkOption {
-        type = types.str;
-        default = manifestConfig.database.password;
-        description = "PostgreSQL password (should be overridden via SOPS)";
-      };
+
     };
     
     # OIDC configuration
@@ -323,16 +318,19 @@ in {
     services.forgejo = {
       enable = true;
       
+      # Database configuration
+      database = {
+        type = "postgres";
+        host = cfg.database.host;
+        port = cfg.database.port;
+        name = cfg.database.name;
+        user = cfg.database.user;
+        passwordFile = config.sops.secrets.forgejo_database_password.path;
+        createDatabase = false; # We create it manually
+      };
+      
       settings = {
-        # Database configuration
-        database = {
-          DB_TYPE = lib.mkForce "postgres";
-          HOST = lib.mkForce "${cfg.database.host}:${toString cfg.database.port}";
-          NAME = lib.mkForce cfg.database.name;
-          USER = lib.mkForce cfg.database.user;
-          PASSWD = lib.mkForce cfg.database.password;
-          SSL_MODE = lib.mkForce "disable";
-        };
+        # Database configuration is handled at service level
         
         # Server configuration
         server = {
@@ -447,6 +445,8 @@ in {
           "FORGEJO_WORK_DIR=/var/lib/forgejo"
           "FORGEJO_CUSTOM=/var/lib/forgejo/custom"
         ];
+        
+
       };
     };
     

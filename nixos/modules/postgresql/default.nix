@@ -309,8 +309,13 @@ in {
           echo "Setting passwords for all database users..."
           
           # Set passwords for all database users from SOPS secrets
-          # Explicitly list the services to avoid glob expansion issues in systemd
-          for SERVICE_NAME in authentik guacamole monitoring nextcloud vaultwarden; do
+          # Dynamically discover services with database configurations from manifest
+          cd /run/secrets
+          for SERVICE_NAME in */; do
+            # Remove trailing slash
+            SERVICE_NAME=''${SERVICE_NAME%/}
+            
+            # Check if this service has a database password secret
             SECRET_PATH="/run/secrets/$SERVICE_NAME/database_password"
             if [ -f "$SECRET_PATH" ]; then
               echo "Setting password for $SERVICE_NAME user..."
@@ -323,7 +328,7 @@ in {
 
               echo "Password set successfully for $SERVICE_NAME user"
             else
-              echo "Warning: No database password secret found for $SERVICE_NAME at $SECRET_PATH"
+              echo "Debug: No database password secret found for $SERVICE_NAME at $SECRET_PATH"
             fi
           done
           
