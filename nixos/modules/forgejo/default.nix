@@ -290,7 +290,9 @@ in {
     sops.secrets.forgejo_oidc_client_secret = {
       sopsFile = ../../../secrets/default.yaml;
       key = "forgejo/oidc_client_secret";
-      mode = "0400";
+      mode = "0440";
+      owner = "forgejo";
+      group = "forgejo";
     };
     
     # Secret key
@@ -368,11 +370,13 @@ in {
           ENABLE_NOTIFY_MAIL = false;
         };
         
-        # OIDC configuration
-        oauth2 = {
-          ENABLE = true;
-          JWT_SECRET = config.sops.secrets.forgejo_jwt_secret.path;
-        };
+        # # OIDC configuration
+        # oauth2 = {
+        #   ENABLED = true;
+        #   JWT_SECRET = config.sops.secrets.forgejo_jwt_secret.path;
+        # };
+        
+
         
         # User configuration
         user = {
@@ -464,11 +468,74 @@ in {
       allowedTCPPorts = [ cfg.server.http_port ];
     };
     
+    # OIDC setup service
+    systemd.services.forgejo-oidc-setup = {
+      description = "Configure Forgejo OIDC provider via CLI";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "forgejo.service" "run-secrets.d.mount" ];
+      requires = [ "forgejo.service" ];
+      
+      serviceConfig = {
+        Type = "oneshot";
+        User = "forgejo";
+        Group = "forgejo";
+        WorkingDirectory = "/var/lib/forgejo";
+        Environment = [
+          "FORGEJO_WORK_DIR=/var/lib/forgejo"
+          "FORGEJO_CUSTOM=/var/lib/forgejo/custom"
+        ];
+        
+        ExecStart = pkgs.writeShellScript "setup-oidc.sh" ''
+          #!/bin/sh
+          set -e
+          
+          echo "Setting up OIDC provider for Forgejo..."
+          
+          # Wait for Forgejo to be fully ready
+          echo "Waiting for Forgejo to be ready..."
+          for i in $(seq 1 30); do
+            if /run/current-system/sw/bin/curl -f -s http://localhost:3000/api/v1/version >/dev/null 2>&1; then
+              echo "Forgejo is ready"
+              break
+            fi
+            echo "Waiting for Forgejo... (attempt $i/30)"
+            sleep 2
+          done
+          
+          # Check if OIDC provider already exists
+          echo "Checking existing OIDC providers..."
+          if ${pkgs.forgejo}/bin/gitea admin auth list --config /var/lib/forgejo/custom/conf/app.ini | grep -q "authentik"; then
+            echo "OIDC provider 'authentik' already exists, skipping setup"
+            exit 0
+          fi
+          
+          # Read OIDC client secret from SOPS
+          echo "Reading OIDC client secret..."
+          CLIENT_SECRET=$(cat ${config.sops.secrets.forgejo_oidc_client_secret.path})
+          
+          # Configure OIDC provider using the correct CLI syntax from Authelia docs
+          echo "Configuring OIDC provider..."
+          ${pkgs.forgejo}/bin/gitea admin auth add-oauth \
+            --provider=openidConnect \
+            --name=authentik \
+            --key=${cfg.oidc.client_id} \
+            --secret="$CLIENT_SECRET" \
+            --auto-discover-url="https://auth.nixmox.lan/application/o/forgejo/.well-known/openid-configuration" \
+            --scopes='openid email profile'
+          
+          echo "OIDC provider setup completed successfully"
+        '';
+        
+        Restart = "on-failure";
+        RestartSec = "30s";
+      };
+    };
+    
     # Health check service
     systemd.services.forgejo-health = {
       description = "Forgejo health check";
       wantedBy = [ "multi-user.target" ];
-      after = [ "forgejo.service" ];
+      after = [ "forgejo.service" "forgejo-oidc-setup.service" ];
       
       serviceConfig = {
         Type = "oneshot";
