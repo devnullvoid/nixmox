@@ -395,9 +395,14 @@ in {
         log = {
           LEVEL = "Info";
           ROOT_PATH = "/var/log/forgejo";
-          XORM = "Info";
-          ACCESS = "Info";
-          ROUTER = "Info";
+          
+          # Logger configuration (new format for Forgejo 1.21+)
+          # Router logger - logs route handler operations
+          "logger.router.MODE" = "console";
+          # XORM logger - logs SQL operations (when LOG_SQL is enabled)
+          "logger.xorm.MODE" = "console";
+          # Access logger - logs HTTP access requests
+          "logger.access.MODE" = "console";
         };
         
         # Cache configuration
@@ -502,28 +507,52 @@ in {
             sleep 2
           done
           
-          # Check if OIDC provider already exists
-          echo "Checking existing OIDC providers..."
-          if ${pkgs.forgejo}/bin/gitea admin auth list --config /var/lib/forgejo/custom/conf/app.ini | grep -q "authentik"; then
-            echo "OIDC provider 'authentik' already exists, skipping setup"
-            exit 0
-          fi
+          # Build auto-discover URL using Nix variables (interpolated at build time)
+          AUTO_DISCOVER_URL="https://${forgejoConfig.interface.auth.domain or "auth.${baseDomain}"}/application/o/${forgejoConfig.interface.auth.oidc.app_name or "forgejo"}/.well-known/openid-configuration"
           
-          # Read OIDC client secret from SOPS
+          echo "Using auto-discover URL: $AUTO_DISCOVER_URL"
+          
+          # Read OIDC client secret from SOPS (only once)
           echo "Reading OIDC client secret..."
           CLIENT_SECRET=$(cat ${config.sops.secrets.forgejo_oidc_client_secret.path})
           
-          # Configure OIDC provider using the correct CLI syntax from Authelia docs
-          echo "Configuring OIDC provider..."
-          ${pkgs.forgejo}/bin/gitea admin auth add-oauth \
-            --provider=openidConnect \
-            --name=authentik \
-            --key=${cfg.oidc.client_id} \
-            --secret="$CLIENT_SECRET" \
-            --auto-discover-url="https://auth.nixmox.lan/application/o/forgejo/.well-known/openid-configuration" \
-            --scopes='openid email profile'
-          
-          echo "OIDC provider setup completed successfully"
+          # Check if OIDC provider already exists and get its ID
+          echo "Checking existing OIDC providers..."
+          AUTH_LIST_OUTPUT=$(${pkgs.forgejo}/bin/gitea admin auth list --config /var/lib/forgejo/custom/conf/app.ini)
+          if echo "$AUTH_LIST_OUTPUT" | grep -q "authentik"; then
+            echo "OIDC provider 'authentik' already exists, updating configuration..."
+            
+            # Extract the ID for the authentik provider (first column, handle tabs and spaces)
+            AUTH_ID=$(echo "$AUTH_LIST_OUTPUT" | grep "authentik" | sed 's/^\([0-9]*\).*/\1/')
+            echo "Found existing provider with ID: $AUTH_ID"
+            
+            # Update existing OIDC provider
+            echo "Updating OIDC provider configuration..."
+            ${pkgs.forgejo}/bin/gitea admin auth update-oauth \
+              --id="$AUTH_ID" \
+              --name=authentik \
+              --provider=openidConnect \
+              --key=${cfg.oidc.client_id} \
+              --secret="$CLIENT_SECRET" \
+              --auto-discover-url="$AUTO_DISCOVER_URL" \
+              --scopes='openid email profile'
+            
+            echo "OIDC provider updated successfully"
+          else
+            echo "OIDC provider 'authentik' does not exist, creating new one..."
+            
+            # Configure new OIDC provider using the correct CLI syntax
+            echo "Configuring new OIDC provider..."
+            ${pkgs.forgejo}/bin/gitea admin auth add-oauth \
+              --provider=openidConnect \
+              --name=authentik \
+              --key=${cfg.oidc.client_id} \
+              --secret="$CLIENT_SECRET" \
+              --auto-discover-url="$AUTO_DISCOVER_URL" \
+              --scopes='openid email profile'
+            
+            echo "OIDC provider setup completed successfully"
+          fi
         '';
         
         Restart = "on-failure";
