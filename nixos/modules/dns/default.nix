@@ -129,7 +129,7 @@ in {
           use-caps-for-id = "yes";
           auto-trust-anchor-file = "/var/lib/unbound/root.key";
           
-          private-domain: "${cfg.primaryDomain}";
+          private-domain = "${cfg.primaryDomain}";
           
           # Local zone for our primary domain  
           local-zone = [ "${cfg.primaryDomain} static" ];

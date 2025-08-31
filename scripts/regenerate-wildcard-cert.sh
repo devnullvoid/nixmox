@@ -8,6 +8,7 @@ CA_NAME="nixmox-internal-ca"
 WILDCARD_NAME="wildcard-nixmox-lan"
 
 echo "Regenerating wildcard certificate with SANs (keeping existing CA)..."
+echo "This will fix JWT signing issues for OIDC/OAuth2 services."
 echo ""
 
 # Check if CA exists
@@ -52,8 +53,8 @@ O = NixMox
 CN = *.nixmox.lan
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
-extendedKeyUsage = serverAuth
+keyUsage = digitalSignature, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
@@ -90,6 +91,7 @@ chmod 644 "$CA_DIR/$WILDCARD_NAME.crt"
 
 echo ""
 echo "✅ Wildcard certificate with SANs regenerated successfully!"
+echo "   This fixes JWT signing issues for OIDC/OAuth2 services."
 echo ""
 echo "Files updated:"
 echo "  - $CA_DIR/$WILDCARD_NAME.crt (New wildcard certificate with SANs)"
@@ -108,6 +110,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Copy the new wildcard certificate to your services"
 echo "  2. Restart services using the certificate (Caddy, etc.)"
-echo "  3. Test the OIDC setup in Forgejo"
+echo "  3. Test the OIDC setup in Guacamole"
 echo ""
 echo "Note: Your existing CA ($CA_DIR/$CA_NAME.crt) was preserved and reused."
