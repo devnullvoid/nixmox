@@ -54,14 +54,6 @@
       onboot = true;
       start = true;
       interface = {
-        terraform = {
-          modules = [ "./terraform/dns" ];
-          variables = {
-            domain = "nixmox.lan";
-            network_cidr = "192.168.99.0/24";
-          };
-        };
-
         health = {
           startup = "systemctl is-active --quiet unbound";
           liveness = "systemctl is-active --quiet unbound";
@@ -86,14 +78,6 @@
       onboot = true;
       start = true;
       interface = {
-        terraform = {
-          modules = [ "./terraform/postgresql" ];
-          variables = {
-            domain = "nixmox.lan";
-            network_cidr = "192.168.99.0/24";
-          };
-        };
-
         proxy = {
           domain = "postgresql.nixmox.lan";
           path = "/";
@@ -125,14 +109,6 @@
       onboot = true;
       start = true;
       interface = {
-        terraform = {
-          modules = [ "./terraform/caddy" ];
-          variables = {
-            domain = "nixmox.lan";
-            network_cidr = "192.168.99.0/24";
-          };
-        };
-
         health = {
           startup = "systemctl is-active --quiet caddy";
           liveness = "systemctl is-active --quiet caddy";
@@ -157,13 +133,6 @@
       onboot = true;
       start = true;
       interface = {
-        terraform = {
-          modules = [ "./terraform/authentik" ];
-          variables = {
-            domain = "nixmox.lan";
-            network_cidr = "192.168.99.0/24";
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "authentik";
@@ -207,15 +176,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8080 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/vaultwarden" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "vaultwarden-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "vaultwarden";
@@ -266,15 +226,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8280 4822 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/guacamole" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "guacamole-client";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "guacamole";
@@ -285,6 +236,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_id = "guacamole-oidc";
             client_type = "public";
             redirect_uris = [ "https://guac.nixmox.lan/guacamole/*" ];
             scopes = [ "openid" "email" "profile" ];
@@ -325,15 +277,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 9090 3000 9093 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/monitoring" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "monitoring-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "monitoring";
@@ -384,15 +327,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8080 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/nextcloud" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "nextcloud-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "nextcloud";
@@ -443,15 +377,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 8096 8097 8098 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/media" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "media-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         auth = {
           type = "oidc";
           provider = "authentik";
@@ -496,15 +421,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 25 587 465 993 995 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/mail" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "mail-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         auth = {
           type = "oidc";
           provider = "authentik";
@@ -549,10 +465,6 @@
       depends_on = [ "caddy" "authentik" ];
       ports = [ 8200 ];
       interface = {
-        terraform = {
-          # Infrastructure created automatically from manifest
-          # Authentik OIDC setup handled by authentik-manifest module
-        };
         auth = {
           type = "oidc";
           provider = "authentik";
@@ -598,15 +510,6 @@
       depends_on = [ "postgresql" "caddy" "authentik" ];
       ports = [ 3000 ];
       interface = {
-        terraform = {
-          modules = [ "./terraform/forgejo" ];
-          targets = [ "authentik_app" "authentik_provider" "authentik_outpost" ];
-          variables = {
-            domain = "nixmox.lan";
-            oidc_client_id = "forgejo-oidc";
-            oidc_scopes = [ "openid" "email" "profile" ];
-          };
-        };
         db = {
           host = "192.168.99.11";
           name = "forgejo";
