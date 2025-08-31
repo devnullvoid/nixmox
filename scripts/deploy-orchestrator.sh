@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
-# NixMox Orchestrator Deployment Script
-# This script uses the orchestrator library to deploy services based on the manifest
+# NixMox Streamlined Deployment Orchestrator
+# This script handles the four core deployment steps:
+# 1. Terraform infrastructure
+# 2. NixOS Core Services
+# 3. Terraform Authentik Applications
+# 4. Additional NixOS services as needed
 
 set -euo pipefail
 
@@ -16,57 +20,16 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MANIFEST_PATH="$PROJECT_ROOT/nixos/service-manifest.nix"
-LIB_PATH="$PROJECT_ROOT"
+INFRASTRUCTURE_DIR="$PROJECT_ROOT/terraform/infrastructure"
+AUTHENTIK_DIR="$PROJECT_ROOT/terraform/authentik"
 
 # Global variables
 DRY_RUN=false
 TARGET_SERVICE=""
-TARGET_PHASE=""
-INCREMENTAL_MODE=false
-ONLY_SERVICES=""
-SKIP_SERVICES=""
-FORCE_REDEPLOY=""
-TERRAFORM_ONLY=false
-
-# Manifest reading functions
-get_service_ip() {
-    local service="$1"
-    
-    # Try to get IP from core_services first, then from services
-    local ip=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.ip" --raw 2>/dev/null || \
-                nix eval -f "$MANIFEST_PATH" "services.$service.ip" --raw 2>/dev/null)
-    
-    if [[ -z "$ip" ]]; then
-        log_error "Could not find IP address for service: $service"
-        return 1
-    fi
-    
-    echo "$ip"
-}
-
-get_service_hostname() {
-    local service="$1"
-    
-    # Try to get hostname from core_services first, then from services
-    local hostname=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.hostname" --raw 2>/dev/null || \
-                     nix eval -f "$MANIFEST_PATH" "services.$service.hostname" --raw 2>/dev/null)
-    
-    if [[ -z "$hostname" ]]; then
-        log_error "Could not find hostname for service: $service"
-        return 1
-    fi
-    
-    echo "$hostname"
-}
-
-get_service_dependencies() {
-    local service="$1"
-    
-    # Try to get dependencies from services (core_services don't have dependencies)
-    local deps=$(nix eval -f "$MANIFEST_PATH" "services.$service.depends_on" --json 2>/dev/null || echo "[]")
-    
-    echo "$deps"
-}
+SKIP_TERRAFORM=false
+SKIP_NIXOS=false
+AUTHENTIK_MODE="simple"  # "simple" or "full"
+SECRETS_FILE="$PROJECT_ROOT/secrets/default.yaml"
 
 # Logging functions
 log_info() {
@@ -94,12 +57,17 @@ check_prerequisites() {
         exit 1
     fi
     
-    if ! command -v colmena &> /dev/null; then
-        log_warning "Colmena is not installed. Some features may not work."
-    fi
-    
     if ! command -v terraform &> /dev/null; then
         log_warning "Terraform is not installed. Terraform phases will be skipped."
+        SKIP_TERRAFORM=true
+    fi
+    
+    if ! command -v sops &> /dev/null; then
+        log_warning "SOPS is not installed. Secret management may not work properly."
+    fi
+    
+    if ! command -v jq &> /dev/null; then
+        log_warning "jq is not installed. Some manifest parsing may not work properly."
     fi
     
     log_success "Prerequisites check completed"
@@ -117,235 +85,45 @@ validate_manifest() {
     log_success "Manifest validation passed"
 }
 
-# Generate deployment plan
-generate_plan() {
-    log_info "Generating deployment plan..."
-
-    # Show the phase structure
-    log_info "Deployment phases:"
-    log_info "  1. tf:infra + nix:core - Core infrastructure (postgresql, dns, caddy, authentik)"
-    log_info "  2. tf:authentik - Authentik resources (outposts, OIDC apps, LDAP/RADIUS apps)"
-    log_info "  3. services - Application services (vaultwarden, guacamole, etc.)"
-
-    # Show available deployment modes
-    if [[ -n "${TARGET_PHASE:-}" ]]; then
-        log_info "Deploying only Phase $TARGET_PHASE"
-    elif [[ -n "${TARGET_SERVICE:-}" ]]; then
-        log_info "Deploying only service: $TARGET_SERVICE"
-    else
-        log_info "Full deployment: All phases (1-3)"
-    fi
-
-    log_success "Deployment plan generated"
-}
-
-# Deploy core infrastructure
-deploy_core_infrastructure() {
-    log_info "Deploying core infrastructure..."
-    
-    # Deploy core services in order
-    local core_services=("postgresql" "dns" "caddy" "authentik")
-    
-    for service in "${core_services[@]}"; do
-        log_info "Deploying $service..."
-        
-        # Check if service is already running
-        if is_service_healthy "$service"; then
-            log_success "$service is already healthy, skipping"
-            continue
-        fi
-        
-        # Deploy the service
-        deploy_core_service "$service"
-        
-        # Wait for service to be healthy
-        wait_for_service_health "$service"
-        
-        log_success "$service deployment completed"
-    done
-    
-    log_success "Core infrastructure deployment completed"
-}
-
-# Deploy a core service
-deploy_core_service() {
+# Get service IP from manifest
+get_service_ip() {
     local service="$1"
     
-    log_info "Deploying core service: $service"
+    # Try to get IP from core_services first, then from services
+    local ip=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.ip" --raw 2>/dev/null || \
+                nix eval -f "$MANIFEST_PATH" "services.$service.ip" --raw 2>/dev/null)
     
-    # Get the IP address for the service from manifest
-    local service_ip
-    if ! service_ip=$(get_service_ip "$service"); then
-        log_error "Failed to get IP address for core service $service"
+    if [[ -z "$ip" ]]; then
+        log_error "Could not find IP address for service: $service"
         return 1
     fi
     
-    # Deploy via SSH for core services
-    deploy_via_ssh "$service" "$service_ip"
+    echo "$ip"
 }
 
-# Deploy application services
-deploy_application_services() {
-    log_info "Deploying application services..."
-    
-    # Get services from manifest (this would be parsed from the manifest)
-    local app_services=("vaultwarden" "guacamole" "monitoring" "nextcloud" "media" "mail")
-    
-    for service in "${app_services[@]}"; do
-        log_info "Deploying $service..."
-        
-        # Check dependencies
-        if ! check_service_dependencies "$service"; then
-            log_error "$service dependencies not met, skipping"
-            continue
-        fi
-        
-        # Deploy the service
-        deploy_service "$service"
-        
-        # Wait for service to be healthy
-        wait_for_service_health "$service"
-        
-        log_success "$service deployment completed"
-    done
-    
-    log_success "Application services deployment completed"
-}
-
-# Check if a service is healthy
-is_service_healthy() {
+# Get service hostname from manifest
+get_service_hostname() {
     local service="$1"
     
-    # Skip health checks during dry runs
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Skipping health check for $service"
-        return 0  # Assume healthy during dry run
-    fi
+    # Try to get hostname from core_services first, then from services
+    local hostname=$(nix eval -f "$MANIFEST_PATH" "core_services.$service.hostname" --raw 2>/dev/null || \
+                     nix eval -f "$MANIFEST_PATH" "services.$service.hostname" --raw 2>/dev/null)
     
-    # Get the IP address for the service from manifest
-    local service_ip
-    if ! service_ip=$(get_service_ip "$service"); then
-        log_warning "Unknown service: $service"
+    if [[ -z "$hostname" ]]; then
+        log_error "Could not find hostname for service: $service"
         return 1
     fi
     
-    # SSH to the target host and run the health check
-    case "$service" in
-        "postgresql")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet postgresql" 2>/dev/null
-            ;;
-        "dns")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet unbound" 2>/dev/null
-            ;;
-        "caddy")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet caddy" 2>/dev/null
-            ;;
-        "authentik")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet authentik" 2>/dev/null
-            ;;
-        "vaultwarden")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "curl -f -s http://localhost:8080/alive > /dev/null" 2>/dev/null
-            ;;
-        "guacamole")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet tomcat && systemctl is-active --quiet guacamole-server" 2>/dev/null
-            ;;
-        "monitoring")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet prometheus && systemctl is-active --quiet grafana" 2>/dev/null
-            ;;
-        "nextcloud")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet nextcloud" 2>/dev/null
-            ;;
-        "media")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet transmission" 2>/dev/null
-            ;;
-        "mail")
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "root@$service_ip" "systemctl is-active --quiet postfix && systemctl is-active --quiet dovecot" 2>/dev/null
-            ;;
-        *)
-            log_warning "Unknown service: $service"
-            return 1
-            ;;
-    esac
+    echo "$hostname"
 }
 
-# Wait for a service to be healthy
-wait_for_service_health() {
-    local service="$1"
-    local max_attempts=5
-    local attempt=1
-    
-    # Skip waiting during dry runs
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Skipping health wait for $service"
-        return 0
-    fi
-    
-    log_info "Waiting for $service to be healthy..."
-    
-    while [ $attempt -le $max_attempts ]; do
-        if is_service_healthy "$service"; then
-            log_success "$service is now healthy"
-            return 0
-        fi
-        
-        log_info "Attempt $attempt/$max_attempts: $service not yet healthy, waiting..."
-        sleep 10
-        ((attempt++))
-    done
-    
-    log_error "$service failed to become healthy after $max_attempts attempts"
-    return 1
-}
-
-# Check service dependencies
-check_service_dependencies() {
-    local service="$1"
-    
-    # This would parse the manifest to check dependencies
-    # For now, hardcode the known dependencies
-    case "$service" in
-        "vaultwarden"|"guacamole"|"monitoring"|"nextcloud"|"media"|"mail")
-            # These services depend on core services
-            is_service_healthy "postgresql" && \
-            is_service_healthy "caddy" && \
-            is_service_healthy "authentik"
-            ;;
-        *)
-            return 0
-            ;;
-    esac
-}
-
-# Deploy a single service
-deploy_service() {
-    local service="$1"
-    
-    log_info "Deploying $service using NixOS..."
-    
-    # Get the IP address for the service from manifest
-    local service_ip
-    if ! service_ip=$(get_service_ip "$service"); then
-        log_error "Failed to get IP address for $service"
-        return 1
-    fi
-    
-    # Use SSH deployment (Colmena requires a colmena.nix configuration file)
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would deploy $service via SSH to $service_ip"
-        return 0
-    fi
-    
-    log_info "Using SSH deployment for $service to $service_ip"
-    deploy_via_ssh "$service" "$service_ip"
-}
-
-# Check if target host has age key and bootstrap if needed
+# Bootstrap age key on target host
 bootstrap_age_key() {
     local service="$1"
     local service_ip="$2"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would check and bootstrap age key for $service at $service_ip"
+        log_info "[DRY-RUN] Would bootstrap age key for $service at $service_ip"
         return 0
     fi
 
@@ -369,7 +147,7 @@ bootstrap_age_key() {
     local temp_age_file=$(mktemp)
 
     # Decrypt the full secrets file and extract just the age_key section
-    if ! sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 10 "age_key:" | grep "AGE-SECRET-KEY" > "$temp_age_file"; then
+    if ! sops decrypt "$SECRETS_FILE" | grep -A 10 "age_key:" | grep "AGE-SECRET-KEY" > "$temp_age_file"; then
         log_error "Failed to extract age key from secrets"
         rm -f "$temp_age_file"
         return 1
@@ -401,8 +179,8 @@ bootstrap_age_key() {
     return 1
 }
 
-# Deploy via SSH using nixos-rebuild
-deploy_via_ssh() {
+# Deploy service via SSH using nixos-rebuild
+deploy_service_via_ssh() {
     local service="$1"
     local service_ip="$2"
 
@@ -418,20 +196,7 @@ deploy_via_ssh() {
         return 1
     fi
 
-    log_info "Using SSH deployment for $service to $service_ip"
-    deploy_via_ssh_unchecked "$service" "$service_ip"
-}
-
-# Deploy via SSH using nixos-rebuild (without age key bootstrap)
-deploy_via_ssh_unchecked() {
-    local service="$1"
-    local service_ip="$2"
-
     log_info "Deploying $service to $service_ip via remote nixos-rebuild..."
-
-    # Use nix run nixpkgs#nixos-rebuild with remote target host
-    # This builds locally and deploys remotely without copying the entire flake
-    log_info "Building and deploying $service configuration..."
 
     # Configure SSH options to prevent host key confirmation
     local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
@@ -444,240 +209,153 @@ deploy_via_ssh_unchecked() {
     fi
 }
 
-# Check if Terraform infrastructure is already deployed
-check_terraform_state() {
-    local phase="$1"
-    
-    if ! command -v terraform &> /dev/null; then
-        log_warning "Terraform not available, assuming infrastructure not deployed"
-        return 1
-    fi
-    
-    # Check if we're in the right directory
-    if [[ ! -d "$PROJECT_ROOT/terraform" ]]; then
-        log_warning "Terraform directory not found, assuming infrastructure not deployed"
-        return 1
-    fi
-    
-    # Change to Terraform directory
-    cd "$PROJECT_ROOT/terraform" || {
-        log_warning "Failed to change to Terraform directory, assuming infrastructure not deployed"
-        return 1
-    }
-    
-    # Check if state file exists
-    if [[ ! -f "terraform.tfstate" ]]; then
-        log_info "No Terraform state file found, infrastructure not deployed"
-        return 1
-    fi
-    
-    # Check if the required resources exist in state
-    log_info "Checking Terraform state for existing infrastructure..."
-    if terraform state list | grep -q "proxmox_lxc"; then
-        log_info "Proxmox LXC containers found in state, infrastructure appears deployed"
+# Step 1: Deploy Terraform infrastructure
+deploy_terraform_infrastructure() {
+    if [[ "$SKIP_TERRAFORM" == "true" ]]; then
+        log_warning "Skipping Terraform infrastructure deployment"
         return 0
-    else
-        log_info "No Proxmox LXC containers found in state, infrastructure not deployed"
-        return 1
     fi
-}
 
-# Deploy Terraform infrastructure
-deploy_terraform() {
-    local phase="$1"
+    log_info "Step 1: Deploying Terraform infrastructure..."
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would execute Terraform for phase: $phase"
-        log_info "[DRY-RUN] Would run: cd terraform/environments/dev && terraform plan && terraform apply"
+        log_info "[DRY-RUN] Would deploy Terraform infrastructure from $INFRASTRUCTURE_DIR"
         return 0
     fi
 
-    if ! command -v terraform &> /dev/null; then
-        log_error "Terraform not available, skipping $phase phase"
-        return 1
-    fi
-
-    log_info "Executing Terraform for phase: $phase"
-
-    # Change to Terraform directory
-    cd "$PROJECT_ROOT/terraform/environments/dev" || {
-        log_error "Failed to change to Terraform directory"
+    cd "$INFRASTRUCTURE_DIR" || {
+        log_error "Failed to change to infrastructure Terraform directory"
         return 1
     }
-
-    # Build Terraform variables
-    local tf_vars=""
-    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
-        tf_vars="$tf_vars -var=\"incremental_mode=true\""
-    fi
-    if [[ -n "$ONLY_SERVICES" ]]; then
-        tf_vars="$tf_vars -var=\"only_services=$ONLY_SERVICES\""
-    fi
-    if [[ -n "$SKIP_SERVICES" ]]; then
-        tf_vars="$tf_vars -var=\"skip_services=$SKIP_SERVICES\""
-    fi
-    if [[ -n "$FORCE_REDEPLOY" ]]; then
-        tf_vars="$tf_vars -var=\"force_redeploy=$FORCE_REDEPLOY\""
-    fi
 
     # Initialize Terraform if needed
     if [[ ! -d ".terraform" ]]; then
-        log_info "Initializing Terraform..."
+        log_info "Initializing Terraform infrastructure..."
         if ! terraform init; then
-            log_error "Terraform initialization failed"
+            log_error "Terraform infrastructure initialization failed"
             return 1
         fi
     fi
 
-    # Plan and apply
-    log_info "Planning Terraform changes..."
-    if ! terraform plan $tf_vars -out=tfplan; then
-        log_error "Terraform plan failed"
+    # Plan and apply infrastructure
+    log_info "Planning Terraform infrastructure changes..."
+    if ! terraform plan -var="secrets_file=$SECRETS_FILE" -out=tfplan; then
+        log_error "Terraform infrastructure plan failed"
         return 1
     fi
 
-    log_info "Applying Terraform changes..."
+    log_info "Applying Terraform infrastructure changes..."
     if ! terraform apply tfplan; then
-        log_error "Terraform apply failed"
+        log_error "Terraform infrastructure apply failed"
         return 1
     fi
 
     # Clean up plan file
     rm -f tfplan
 
-    log_success "Terraform deployment completed for phase: $phase"
+    log_success "Terraform infrastructure deployment completed"
 }
 
-# Deploy Phase 2: Authentik Resources (tf:authentik)
-deploy_phase2_authentik() {
-    log_info "Deploying Phase 2: Authentik Resources (tf:authentik)..."
-
-    # Ensure core services are deployed and healthy first
-    if ! check_core_services_healthy; then
-        log_info "Core services not healthy, deploying core infrastructure first..."
-        deploy_core_infrastructure
+# Step 2: Deploy NixOS Core Services
+deploy_nixos_core_services() {
+    if [[ "$SKIP_NIXOS" == "true" ]]; then
+        log_warning "Skipping NixOS core services deployment"
+        return 0
     fi
 
-    # Check if Phase 2 Terraform resources are already deployed
-    if check_phase2_terraform_deployed; then
-        log_info "Phase 2 Terraform resources already deployed, skipping Terraform deployment"
-    else
-        # Deploy Terraform Phase 2 resources
-        log_info "Deploying Terraform Phase 2 resources..."
-        if ! deploy_terraform_phase2; then
-            log_error "Failed to deploy Terraform Phase 2 resources"
+    log_info "Step 2: Deploying NixOS Core Services..."
+
+    # Core services in deployment order
+    local core_services=("postgresql" "dns" "caddy" "authentik")
+    
+    for service in "${core_services[@]}"; do
+        log_info "Deploying core service: $service"
+        
+        # Get service IP from manifest
+        local service_ip
+        if ! service_ip=$(get_service_ip "$service"); then
+            log_error "Failed to get IP address for core service $service"
+            return 1
+        fi
+        
+        # Deploy the service
+        if ! deploy_service_via_ssh "$service" "$service_ip"; then
+            log_error "Failed to deploy core service $service"
+            return 1
+        fi
+        
+        log_success "Core service $service deployment completed"
+    done
+    
+    log_success "NixOS Core Services deployment completed"
+}
+
+# Step 3: Deploy Terraform Authentik Applications
+deploy_terraform_authentik() {
+    if [[ "$SKIP_TERRAFORM" == "true" ]]; then
+        log_warning "Skipping Terraform Authentik applications deployment"
+        return 0
+    fi
+
+    log_info "Step 3: Deploying Terraform Authentik Applications..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would deploy Terraform Authentik applications from $AUTHENTIK_DIR"
+        if [[ "$AUTHENTIK_MODE" == "full" ]]; then
+            log_info "[DRY-RUN] Would also update outpost tokens and re-deploy authentik"
+        fi
+        return 0
+    fi
+
+    cd "$AUTHENTIK_DIR" || {
+        log_error "Failed to change to Authentik Terraform directory"
+        return 1
+    }
+
+    # Initialize Terraform if needed
+    if [[ ! -d ".terraform" ]]; then
+        log_info "Initializing Terraform Authentik..."
+        if ! terraform init; then
+            log_error "Terraform Authentik initialization failed"
             return 1
         fi
     fi
 
-    # Update outpost tokens and secrets
-    log_info "Updating outpost tokens and secrets..."
-    if ! update_outpost_tokens; then
-        log_error "Failed to update outpost tokens"
+    # Deploy Authentik resources
+    log_info "Deploying Authentik applications and outposts..."
+    if ! terraform apply -var="secrets_file=$SECRETS_FILE" --auto-approve; then
+        log_error "Terraform Authentik deployment failed"
         return 1
     fi
 
-    # Re-deploy authentik service with updated secrets
-    log_info "Re-deploying authentik service with updated outpost tokens..."
-    if ! redeploy_authentik_service; then
-        log_error "Failed to re-deploy authentik service"
-        return 1
-    fi
+    log_success "Terraform Authentik Applications deployment completed"
 
-    log_success "Phase 2 (tf:authentik) deployment completed successfully!"
-}
-
-# Check if core services are healthy
-check_core_services_healthy() {
-    local core_services=("postgresql" "dns" "caddy" "authentik")
-    local all_healthy=true
-
-    for service in "${core_services[@]}"; do
-        if ! is_service_healthy "$service"; then
-            log_info "Core service $service is not healthy"
-            all_healthy=false
-            break
+    # If this is a full deployment, handle outpost tokens and re-deploy authentik
+    if [[ "$AUTHENTIK_MODE" == "full" ]]; then
+        log_info "Full Authentik mode: Updating outpost tokens and re-deploying authentik..."
+        
+        if ! update_outpost_tokens_and_redeploy; then
+            log_error "Failed to update outpost tokens and re-deploy authentik"
+            return 1
         fi
-    done
-
-    $all_healthy
-}
-
-# Check if Phase 2 Terraform resources are deployed
-check_phase2_terraform_deployed() {
-    if ! command -v terraform &> /dev/null; then
-        log_warning "Terraform not available, assuming Phase 2 not deployed"
-        return 1
-    fi
-
-    cd "$PROJECT_ROOT/terraform" || {
-        log_warning "Failed to change to Terraform directory"
-        return 1
-    }
-
-    # Check for Phase 2 resources in Terraform state
-    if terraform state list | grep -q "authentik_application.ldap_app\|authentik_application.radius_app"; then
-        log_info "Phase 2 resources found in Terraform state"
-        return 0
-    else
-        log_info "Phase 2 resources not found in Terraform state"
-        return 1
     fi
 }
 
-# Deploy Terraform Phase 2 resources
-deploy_terraform_phase2() {
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would deploy Terraform Phase 2 resources"
-        return 0
-    fi
-
-    if ! command -v terraform &> /dev/null; then
-        log_error "Terraform not available, cannot deploy Phase 2 resources"
-        return 1
-    fi
-
-    cd "$PROJECT_ROOT/terraform" || {
-        log_error "Failed to change to Terraform directory"
-        return 1
-    }
-
-    # Plan Phase 2 deployment
-    log_info "Planning Terraform Phase 2 deployment..."
-    if ! terraform plan -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml"; then
-        log_error "Terraform plan failed for Phase 2"
-        return 1
-    fi
-
-    # Apply Phase 2 deployment
-    log_info "Applying Terraform Phase 2 deployment..."
-    if ! terraform apply -var="deployment_phase=2" -var="secrets_file=environments/dev/secrets.sops.yaml" --auto-approve; then
-        log_error "Terraform apply failed for Phase 2"
-        return 1
-    fi
-
-    log_success "Terraform Phase 2 deployment completed"
-    return 0
-}
-
-# Update outpost tokens using the update script
-update_outpost_tokens() {
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would update outpost tokens"
-        return 0
-    fi
+# Update outpost tokens and re-deploy authentik (full mode only)
+update_outpost_tokens_and_redeploy() {
+    log_info "Updating outpost tokens and re-deploying authentik..."
 
     # Get outpost IDs from Terraform output
     local ldap_outpost_id
     local radius_outpost_id
 
-    cd "$PROJECT_ROOT/terraform" || {
-        log_error "Failed to change to Terraform directory"
+    cd "$AUTHENTIK_DIR" || {
+        log_error "Failed to change to Authentik Terraform directory"
         return 1
     }
 
-    ldap_outpost_id=$(terraform output authentik_ldap_outpost_id 2>/dev/null | tr -d '"' || echo "")
-    radius_outpost_id=$(terraform output authentik_radius_outpost_id 2>/dev/null | tr -d '"' || echo "")
+    ldap_outpost_id=$(terraform output -raw authentik_ldap_outpost_id 2>/dev/null || echo "")
+    radius_outpost_id=$(terraform output -raw authentik_radius_outpost_id 2>/dev/null || echo "")
 
     if [[ -z "$ldap_outpost_id" && -z "$radius_outpost_id" ]]; then
         log_error "No outpost IDs found in Terraform output"
@@ -686,15 +364,15 @@ update_outpost_tokens() {
 
     # Get authentik admin token from secrets
     local admin_token
-    admin_token=$(sops decrypt "$PROJECT_ROOT/secrets/default.yaml" | grep -A 20 "authentik:" | grep "AUTHENTIK_BOOTSTRAP_TOKEN=" | cut -d'=' -f2 | tr -d '\n' || echo "")
+    admin_token=$(sops decrypt "$SECRETS_FILE" | grep -A 20 "authentik:" | grep "AUTHENTIK_BOOTSTRAP_TOKEN=" | cut -d'=' -f2 | tr -d '\n' || echo "")
 
     if [[ -z "$admin_token" ]]; then
         log_error "Could not retrieve authentik admin token from secrets"
         return 1
     fi
 
-    # Build command arguments
-    local cmd_args=("-t" "$admin_token")
+    # Build command arguments for the outpost token update script
+    local cmd_args=("-t" "$admin_token" "-s" "$SECRETS_FILE")
     [[ -n "$ldap_outpost_id" ]] && cmd_args+=("-l" "$ldap_outpost_id")
     [[ -n "$radius_outpost_id" ]] && cmd_args+=("-r" "$radius_outpost_id")
 
@@ -706,195 +384,89 @@ update_outpost_tokens() {
     fi
 
     log_success "Outpost tokens updated successfully"
-    return 0
-}
 
-# Re-deploy authentik service with updated secrets
-redeploy_authentik_service() {
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would re-deploy authentik service"
-        return 0
-    fi
-
-    log_info "Re-deploying authentik service..."
-    # Use unchecked deployment since age key should already be bootstrapped
+    # Re-deploy authentik service with updated secrets
+    log_info "Re-deploying authentik service with updated outpost tokens..."
     local authentik_ip
     if ! authentik_ip=$(get_service_ip "authentik"); then
         log_error "Failed to get authentik IP address"
         return 1
     fi
 
-    if ! deploy_via_ssh_unchecked "authentik" "$authentik_ip"; then
+    if ! deploy_service_via_ssh "authentik" "$authentik_ip"; then
         log_error "Failed to re-deploy authentik service"
         return 1
     fi
 
-    # Wait for authentik to be healthy
-    if ! wait_for_service_health "authentik"; then
-        log_error "Authentik service failed to become healthy"
-        return 1
-    fi
-
-    log_success "Authentik service re-deployed successfully"
+    log_success "Authentik service re-deployed successfully with updated tokens"
     return 0
 }
 
-# Deploy a single service and its dependencies
-deploy_single_service() {
-    local service="$1"
-
-    log_info "Deploying $service and its dependencies..."
-
-    # In incremental mode, be smarter about dependencies
-    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
-        log_info "🔍 Incremental mode: analyzing dependencies for $service"
-
-        # Get service dependencies
-        local deps
-        deps=$(get_service_dependencies "$service")
-
-        if [[ -n "$deps" && "$deps" != "[]" ]]; then
-            log_info "Dependencies for $service: $deps"
-
-            # Check each dependency
-            local dep_array
-            IFS=',' read -ra dep_array <<< "$deps"
-
-            for dep in "${dep_array[@]}"; do
-                # Remove quotes and brackets
-                dep=$(echo "$dep" | sed 's/["\[\]]//g')
-
-                if [[ -n "$dep" ]]; then
-                    log_info "Checking dependency: $dep"
-
-                    # Check if dependency service is healthy
-                    if is_service_healthy "$dep"; then
-                        log_info "✅ Dependency $dep is already healthy"
-                    else
-                        log_info "⚠️  Dependency $dep is not healthy, deploying it first..."
-
-                        # Recursively deploy the dependency
-                        if ! deploy_single_service "$dep"; then
-                            log_error "Failed to deploy dependency $dep"
-                            return 1
-                        fi
-                    fi
-                fi
-            done
-        else
-            log_info "No dependencies found for $service"
-        fi
-    fi
-
-    # Check if this service requires Terraform infrastructure
-    case "$service" in
-        "postgresql"|"dns"|"caddy"|"authentik")
-            log_info "$service requires infrastructure deployment, checking if already deployed..."
-            if ! check_terraform_state "infra"; then
-                log_info "Infrastructure not deployed, running Terraform first..."
-                deploy_terraform "infra"
-            else
-                log_info "Infrastructure already deployed, skipping Terraform phase"
-            fi
-            ;;
-    esac
-
-    # In incremental mode, check if core services are needed
-    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
-        # Only deploy core infrastructure if it's actually needed
-        local needs_core=false
-
-        if ! is_service_healthy "postgresql"; then
-            log_info "PostgreSQL not healthy, will deploy core infrastructure..."
-            needs_core=true
-        fi
-
-        if ! is_service_healthy "caddy"; then
-            log_info "Caddy not healthy, will deploy core infrastructure..."
-            needs_core=true
-        fi
-
-        if ! is_service_healthy "authentik"; then
-            log_info "Authentik not healthy, will deploy core infrastructure..."
-            needs_core=true
-        fi
-
-        if [[ "$needs_core" == "true" ]]; then
-            log_info "Deploying required core infrastructure..."
-            deploy_core_infrastructure
-        else
-            log_info "Core infrastructure is healthy, skipping core deployment"
-        fi
-    else
-        # Original behavior for non-incremental mode
-        if ! is_service_healthy "postgresql"; then
-            log_info "PostgreSQL not healthy, deploying core infrastructure first..."
-            deploy_core_infrastructure
-        fi
-
-        if ! is_service_healthy "caddy"; then
-            log_info "Caddy not healthy, deploying core infrastructure first..."
-            deploy_core_infrastructure
-        fi
-
-        if ! is_service_healthy "authentik"; then
-            log_info "Authentik not healthy, deploying core infrastructure first..."
-            deploy_core_infrastructure
-        fi
-    fi
-
-    # Now deploy the target service
-    log_info "Deploying target service: $service"
-    deploy_service "$service"
-
-    # Wait for service to be healthy
-    wait_for_service_health "$service"
-
-    log_success "$service deployment completed"
-}
-
-# Show incremental deployment plan
-show_incremental_plan() {
-    log_info "🔍 Analyzing current deployment state..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would analyze deployment state and show incremental plan"
+# Step 4: Deploy Additional NixOS Services
+deploy_additional_nixos_services() {
+    if [[ "$SKIP_NIXOS" == "true" ]]; then
+        log_warning "Skipping additional NixOS services deployment"
         return 0
     fi
 
-    # Run terraform plan with incremental mode to see what would be deployed
-    if command -v terraform &> /dev/null; then
-        log_info "Checking Terraform incremental plan..."
-        cd "$PROJECT_ROOT/terraform/environments/dev" || {
-            log_warning "Failed to change to Terraform directory"
-            return 1
-        }
+    log_info "Step 4: Deploying Additional NixOS Services..."
 
-        # Build Terraform variables for incremental mode
-        local tf_vars="-var=\"incremental_mode=true\""
-        if [[ -n "$ONLY_SERVICES" ]]; then
-            tf_vars="$tf_vars -var=\"only_services=$ONLY_SERVICES\""
-        fi
-        if [[ -n "$SKIP_SERVICES" ]]; then
-            tf_vars="$tf_vars -var=\"skip_services=$SKIP_SERVICES\""
-        fi
-        if [[ -n "$FORCE_REDEPLOY" ]]; then
-            tf_vars="$tf_vars -var=\"force_redeploy=$FORCE_REDEPLOY\""
-        fi
-
-        if terraform plan $tf_vars; then
-            log_success "Incremental deployment plan generated successfully"
-        else
-            log_warning "Failed to generate incremental deployment plan"
-        fi
-    else
-        log_warning "Terraform not available, cannot show incremental plan"
+    # Get application services from manifest
+    local app_services=$(nix eval -f "$MANIFEST_PATH" "builtins.attrNames services" --json 2>/dev/null | jq -r '.[]' 2>/dev/null || echo "")
+    
+    if [[ -z "$app_services" ]]; then
+        log_info "No additional services found in manifest"
+        return 0
     fi
+
+    # Deploy each application service
+    for service in $app_services; do
+        log_info "Deploying application service: $service"
+        
+        # Get service IP from manifest
+        local service_ip
+        if ! service_ip=$(get_service_ip "$service"); then
+            log_error "Failed to get IP address for service $service"
+            continue
+        fi
+        
+        # Deploy the service
+        if ! deploy_service_via_ssh "$service" "$service_ip"; then
+            log_error "Failed to deploy service $service"
+            continue
+        fi
+        
+        log_success "Service $service deployment completed"
+    done
+    
+    log_success "Additional NixOS Services deployment completed"
+}
+
+# Deploy a single service
+deploy_single_service() {
+    local service="$1"
+    
+    log_info "Deploying single service: $service"
+    
+    # Get service IP from manifest
+    local service_ip
+    if ! service_ip=$(get_service_ip "$service"); then
+        log_error "Failed to get IP address for service $service"
+        return 1
+    fi
+    
+    # Deploy the service
+    if ! deploy_service_via_ssh "$service" "$service_ip"; then
+        log_error "Failed to deploy service $service"
+        return 1
+    fi
+    
+    log_success "Service $service deployment completed"
 }
 
 # Main deployment function
 main() {
-    log_info "Starting NixMox orchestrator deployment..."
+    log_info "Starting NixMox streamlined deployment orchestrator..."
 
     # Change to project root
     cd "$PROJECT_ROOT"
@@ -905,94 +477,30 @@ main() {
     # Validate manifest
     validate_manifest
 
-    # Show incremental deployment plan if enabled
-    if [[ "$INCREMENTAL_MODE" == "true" ]]; then
-        log_info "🚀 Incremental deployment mode enabled"
-        if [[ -n "$ONLY_SERVICES" ]]; then
-            log_info "📋 Only deploying services: $ONLY_SERVICES"
-        fi
-        if [[ -n "$SKIP_SERVICES" ]]; then
-            log_info "🚫 Skipping services: $SKIP_SERVICES"
-        fi
-        if [[ -n "$FORCE_REDEPLOY" ]]; then
-            log_info "🔄 Force redeploying services: $FORCE_REDEPLOY"
-        fi
-
-        if [[ "$DRY_RUN" == "true" ]]; then
-            show_incremental_plan
-            log_success "Dry run completed - no changes made"
-            exit 0
-        fi
-    fi
-
-    # Generate deployment plan
-    generate_plan
-    
     # Check deployment mode
-    if [[ -n "${TARGET_PHASE:-}" ]]; then
-        # Phase-specific deployment
-        case "$TARGET_PHASE" in
-            "1"|"infra")
-                log_info "Deploying Phase 1: Core Infrastructure"
-                # Check if infrastructure is already deployed
-                if ! check_terraform_state "infra"; then
-                    log_info "Infrastructure not deployed, running Terraform first..."
-                    deploy_terraform "infra"
-                else
-                    log_info "Infrastructure already deployed, skipping Terraform phase"
-                fi
-                # Deploy core infrastructure
-                deploy_core_infrastructure
-                ;;
-            "2"|"authentik"|"auth")
-                if [[ "$TERRAFORM_ONLY" == "true" ]]; then
-                    log_info "Deploying Phase 2: Authentik Resources (Terraform only)"
-                    # Check if Authentik resources are already deployed
-                    if ! check_terraform_authentik; then
-                        log_info "Authentik resources not deployed, running Terraform first..."
-                        deploy_terraform_authentik
-                    else
-                        log_info "Authentik resources already deployed, skipping Terraform phase"
-                    fi
-                else
-                    log_info "Deploying Phase 2: Authentik Resources (full deployment)"
-                    deploy_phase2_authentik
-                fi
-                ;;
-            *)
-                log_error "Unknown phase: $TARGET_PHASE"
-                log_error "Valid phases: 1/infra, 2/authentik/auth"
-                exit 1
-                ;;
-        esac
-    elif [[ -n "${TARGET_SERVICE:-}" ]]; then
-        # Service-specific deployment
-        log_info "Deploying only service: $TARGET_SERVICE"
+    if [[ -n "${TARGET_SERVICE:-}" ]]; then
+        # Single service deployment
+        log_info "Deploying single service: $TARGET_SERVICE"
         deploy_single_service "$TARGET_SERVICE"
     else
-        # Full deployment (all phases)
-        log_info "Deploying all phases (1-2) and services"
+        # Full deployment (all steps)
+        log_info "Deploying all phases (1-4)"
+        log_info "Authentik mode: $AUTHENTIK_MODE"
 
-        # Phase 1: Core Infrastructure
-        log_info "Phase 1: Core Infrastructure"
-        if ! check_terraform_state "infra"; then
-            log_info "Infrastructure not deployed, running Terraform first..."
-            deploy_terraform "infra"
-        else
-            log_info "Infrastructure already deployed, skipping Terraform phase"
-        fi
-        deploy_core_infrastructure
+        # Step 1: Terraform infrastructure
+        deploy_terraform_infrastructure
 
-        # Phase 2: Authentik Resources
-        log_info "Phase 2: Authentik Resources"
-        deploy_phase2_authentik
+        # Step 2: NixOS Core Services
+        deploy_nixos_core_services
 
-        # Phase 3: Application Services
-        log_info "Phase 3: Application Services"
-        deploy_application_services
+        # Step 3: Terraform Authentik Applications
+        deploy_terraform_authentik
+
+        # Step 4: Additional NixOS Services
+        deploy_additional_nixos_services
     fi
     
-    log_success "NixMox orchestrator deployment completed successfully!"
+    log_success "NixMox deployment completed successfully!"
 }
 
 # Show usage
@@ -1004,29 +512,28 @@ Options:
     -h, --help          Show this help message
     -v, --verbose       Enable verbose output
     --dry-run          Show what would be deployed without actually deploying
-    --phase PHASE       Deploy only the specified phase (1/infra, 2/authentik/auth)
-    --service SERVICE   Deploy only the specified service and its dependencies
+    --service SERVICE   Deploy only the specified service
+    --skip-terraform   Skip Terraform phases (infrastructure and Authentik)
+    --skip-nixos       Skip NixOS deployment phases
+    --authentik-mode MODE  Authentik deployment mode: "simple" (default) or "full"
+    --secrets-file FILE Path to SOPS encrypted secrets file
 
-Incremental Deployment Options:
-    --incremental       Enable incremental deployment mode (only deploy missing/changed components)
-    --only SERVICES      Deploy only specific services (comma-separated list)
-    --skip SERVICES      Skip specific services (comma-separated list)
-    --force SERVICES     Force redeploy specific services (comma-separated list)
-    --terraform-only     For Phase 2, run only Terraform without outpost token updates
+Authentik Modes:
+    simple              Deploy Authentik resources only (for updates/repeated deployments)
+    full                Full deployment: deploy resources, update outpost tokens, re-deploy authentik
 
 Examples:
-    $0                           # Deploy all phases (1-2) and services
-    $0 --phase 1                 # Deploy only Phase 1 (core infrastructure)
-    $0 --phase 2                 # Deploy only Phase 2 (authentik resources + outpost tokens)
-    $0 --phase 2 --terraform-only # Deploy only Phase 2 Terraform (no outpost tokens)
-    $0 --service vaultwarden     # Deploy only vaultwarden and dependencies
-    $0 --dry-run                 # Show deployment plan without executing
+    $0                           # Deploy all phases (1-4) with simple Authentik mode
+    $0 --authentik-mode full    # Deploy all phases with full Authentik mode
+    $0 --service vaultwarden    # Deploy only vaultwarden service
+    $0 --dry-run                # Show deployment plan without executing
+    $0 --skip-terraform         # Skip Terraform, only deploy NixOS services
 
-Incremental Examples:
-    $0 --incremental             # Deploy only missing/changed components
-    $0 --only openbao            # Deploy only OpenBao service
-    $0 --skip monitoring,mail    # Deploy all except monitoring and mail
-    $0 --force vaultwarden       # Force redeploy vaultwarden even if unchanged
+Deployment Steps:
+    1. Terraform infrastructure (Proxmox LXC containers from terraform/infrastructure/)
+    2. NixOS Core Services (postgresql, dns, caddy, authentik)
+    3. Terraform Authentik Applications (outposts, OIDC apps from terraform/authentik/)
+    4. Additional NixOS services (vaultwarden, guacamole, etc.)
 
 EOF
 }
@@ -1046,33 +553,29 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        --phase)
-            TARGET_PHASE="$2"
-            shift 2
-            ;;
         --service)
             TARGET_SERVICE="$2"
             shift 2
             ;;
-        --incremental)
-            INCREMENTAL_MODE=true
+        --skip-terraform)
+            SKIP_TERRAFORM=true
             shift
             ;;
-        --only)
-            ONLY_SERVICES="$2"
-            shift 2
-            ;;
-        --skip)
-            SKIP_SERVICES="$2"
-            shift 2
-            ;;
-        --force)
-            FORCE_REDEPLOY="$2"
-            shift 2
-            ;;
-        --terraform-only)
-            TERRAFORM_ONLY=true
+        --skip-nixos)
+            SKIP_NIXOS=true
             shift
+            ;;
+        --authentik-mode)
+            AUTHENTIK_MODE="$2"
+            if [[ "$AUTHENTIK_MODE" != "simple" && "$AUTHENTIK_MODE" != "full" ]]; then
+                log_error "Invalid Authentik mode: $AUTHENTIK_MODE. Must be 'simple' or 'full'"
+                exit 1
+            fi
+            shift 2
+            ;;
+        --secrets-file)
+            SECRETS_FILE="$2"
+            shift 2
             ;;
         *)
             log_error "Unknown option: $1"

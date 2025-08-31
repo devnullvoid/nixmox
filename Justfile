@@ -58,35 +58,45 @@ tf-auth-destroy:
 # Orchestrator Deployment Commands
 # =============================================================================
 
-# Deploy Phase 1: Infrastructure Foundation (DNS, PostgreSQL, Caddy, Authentik)
-deploy-phase1:
-	@echo "Deploying Phase 1: Infrastructure Foundation"
-	./scripts/deploy-orchestrator.sh --phase 1
+# Deploy all phases (1-4) with simple Authentik mode (default)
+deploy-all:
+	@echo "Deploying all phases (1-4) with simple Authentik mode"
+	./scripts/deploy-orchestrator.sh
 
-# Deploy Phase 2: Authentik Resources (Terraform + outpost tokens)
-deploy-phase2:
-	@echo "Deploying Phase 2: Authentik Resources (full deployment)"
-	./scripts/deploy-orchestrator.sh --phase 2
+# Deploy all phases (1-4) with full Authentik mode (includes outpost token updates)
+deploy-all-full:
+	@echo "Deploying all phases (1-4) with full Authentik mode"
+	./scripts/deploy-orchestrator.sh --authentik-mode full
 
-# Deploy Phase 2: Authentik Resources (Terraform only)
-deploy-phase2-tf:
-	@echo "Deploying Phase 2: Authentik Resources (Terraform only)"
-	./scripts/deploy-orchestrator.sh --phase 2 --terraform-only
+# Deploy only Terraform infrastructure (Phase 1)
+deploy-infra:
+	@echo "Deploying Terraform infrastructure only"
+	./scripts/deploy-orchestrator.sh --skip-nixos
+
+# Deploy only NixOS services (Phases 2-4, skipping Terraform)
+deploy-nixos:
+	@echo "Deploying NixOS services only (skipping Terraform)"
+	./scripts/deploy-orchestrator.sh --skip-terraform
 
 # Deploy specific service
 deploy-service service:
 	@echo "Deploying service: {{service}}"
 	./scripts/deploy-orchestrator.sh --service {{service}}
 
-# Deploy everything
-deploy-all:
-	@echo "Deploying all phases and services"
-	./scripts/deploy-orchestrator.sh
-
 # Dry run to see what would be deployed
 deploy-dry-run:
 	@echo "Dry run - showing what would be deployed"
 	./scripts/deploy-orchestrator.sh --dry-run
+
+# Deploy with custom secrets file
+deploy-with-secrets secrets_file:
+	@echo "Deploying with custom secrets file: {{secrets_file}}"
+	./scripts/deploy-orchestrator.sh --secrets-file {{secrets_file}}
+
+# Deploy with custom secrets file and full Authentik mode
+deploy-with-secrets-full secrets_file:
+	@echo "Deploying with custom secrets file: {{secrets_file}} and full Authentik mode"
+	./scripts/deploy-orchestrator.sh --secrets-file {{secrets_file}} --authentik-mode full
 
 # =============================================================================
 # NixOS Image Building
@@ -147,8 +157,10 @@ deployment-status:
 	fi
 	@echo ""
 	@echo "Next steps:"
-	@echo "  just deploy-phase1                    # Deploy infrastructure"
-	@echo "  just deploy-phase2                    # Deploy Authentik resources"
+	@echo "  just deploy-all                       # Deploy everything (simple Authentik mode)"
+	@echo "  just deploy-all-full                  # Deploy everything (full Authentik mode)"
+	@echo "  just deploy-infra                     # Deploy infrastructure only"
+	@echo "  just deploy-nixos                     # Deploy NixOS services only"
 
 # =============================================================================
 # Utility Commands
@@ -169,12 +181,14 @@ show-help:
 	@echo "NixMox Deployment Commands:"
 	@echo ""
 	@echo "Orchestrator Deployment:"
-	@echo "  just deploy-phase1                    # Deploy infrastructure"
-	@echo "  just deploy-phase2                    # Deploy Authentik resources (full)"
-	@echo "  just deploy-phase2-tf                 # Deploy Authentik resources (Terraform only)"
+	@echo "  just deploy-all                       # Deploy all phases (1-4) with simple Authentik mode"
+	@echo "  just deploy-all-full                  # Deploy all phases (1-4) with full Authentik mode"
+	@echo "  just deploy-infra                     # Deploy Terraform infrastructure only"
+	@echo "  just deploy-nixos                     # Deploy NixOS services only (skip Terraform)"
 	@echo "  just deploy-service caddy             # Deploy specific service"
-	@echo "  just deploy-all                       # Deploy everything"
 	@echo "  just deploy-dry-run                   # Show deployment plan"
+	@echo "  just deploy-with-secrets file.yaml    # Deploy with custom secrets file"
+	@echo "  just deploy-with-secrets-full file.yaml # Deploy with custom secrets and full Authentik mode"
 	@echo ""
 	@echo "Terraform Infrastructure:"
 	@echo "  just tf-infra-init                    # Initialize infrastructure Terraform"
@@ -199,8 +213,11 @@ show-help:
 	@echo "  just deployment-status                # Show deployment status"
 	@echo ""
 	@echo "Examples:"
-	@echo "  just deploy-phase1                    # Deploy infrastructure"
-	@echo "  just deploy-phase2-tf                 # Deploy Authentik Terraform only"
+	@echo "  just deploy-all                       # Deploy everything with simple Authentik mode"
+	@echo "  just deploy-all-full                  # Deploy everything with full Authentik mode"
+	@echo "  just deploy-infra                     # Deploy infrastructure only"
+	@echo "  just deploy-nixos                     # Deploy NixOS services only"
+	@echo "  just deploy-service vaultwarden       # Deploy specific service"
 	@echo "  just tf-infra-plan                    # Plan infrastructure changes"
 	@echo "  just tf-auth-apply-auto               # Apply Authentik changes automatically"
 
@@ -219,9 +236,17 @@ auth-tf: tf-auth-init tf-auth-plan tf-auth-apply-auto
 # Quick Authentik deployment (full)
 auth: tf-auth-init tf-auth-plan tf-auth-apply-auto
 	@echo "✓ Authentik Terraform deployment completed"
-	@echo "Note: Run 'just deploy-phase2' for full deployment with outpost tokens"
+	@echo "Note: Run 'just deploy-all-full' for complete deployment with outpost tokens"
 
 # Quick full deployment
 full: infra auth
 	@echo "✓ Full deployment completed"
 	@echo "Note: Run 'just deploy-all' for complete orchestrator deployment"
+
+# Quick orchestrator deployment (simple mode)
+deploy: deploy-all
+	@echo "✓ Quick orchestrator deployment completed (simple Authentik mode)"
+
+# Quick orchestrator deployment (full mode)
+deploy-full: deploy-all-full
+	@echo "✓ Quick orchestrator deployment completed (full Authentik mode)"
