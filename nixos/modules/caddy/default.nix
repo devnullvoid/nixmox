@@ -16,7 +16,6 @@ let
 in {
   imports = [
     ./services.nix
-    ../localtls
     ../shared/internal-ca.nix
   ];
 
@@ -65,14 +64,7 @@ in {
       };
     };
 
-    # Enable localtls for development/testing
-    # localtls = {
-    #   enable = mkOption {
-    #     type = types.bool;
-    #     default = true;
-    #     description = "Enable localtls for development/testing";
-    #   };
-    # };
+
 
     # Authentik configuration
     # authentikDomain = mkOption {
@@ -200,9 +192,6 @@ in {
       enableWildcardKey = cfg.internalCa.enableWildcardKey;
     };
 
-    # # Enable localtls for development/testing
-    # services.nixmox.localtls = mkIf cfg.localtls.enable {
-    #   enable = true;
-    # };
+
   };
 }

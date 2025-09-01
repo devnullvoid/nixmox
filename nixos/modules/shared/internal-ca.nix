@@ -28,13 +28,10 @@ in {
       (builtins.readFile ../../../certs/nixmox-internal-ca.crt)
     ];
     
-    # SOPS secrets for wildcard certificate (only when explicitly enabled)
-    sops.secrets."internal_ca/wildcard_cert" = mkIf cfg.enableWildcardKey {
-      sopsFile = ../../../secrets/default.yaml;
-      path = "/var/lib/shared-certs/wildcard-nixmox-lan.crt";
+    # Copy wildcard certificate (not sensitive, so not in SOPS)
+    environment.etc."var/lib/shared-certs/wildcard-nixmox-lan.crt" = mkIf cfg.enableWildcardKey {
+      source = ../../../certs/wildcard-nixmox-lan.crt;
       mode = "0644";
-      owner = "root";
-      group = "root";
     };
 
     # SOPS secrets for wildcard private key (only when explicitly enabled)

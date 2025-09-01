@@ -377,7 +377,6 @@ in {
   imports = [
     ../modules/core.nix
     ../modules/caddy
-    ../modules/localtls
     ../modules/shared/internal-ca.nix
   ];
 
@@ -405,7 +404,7 @@ in {
     enableWildcardKey = true;
   };
 
-  services.nixmox.localtls.enable = true;
+
 
   # Firewall rules for Caddy
   networking.firewall = {
