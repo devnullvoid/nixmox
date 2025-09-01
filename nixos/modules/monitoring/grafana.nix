@@ -164,17 +164,22 @@ in {
         };
       };
       
-      # Note: OAuth configuration will need to be done through the Grafana UI
-      # The NixOS Grafana module doesn't support the nested [auth.generic_oauth] structure
-      # that Grafana expects. After deployment, configure OAuth at:
-      # Administration > Authentication > Generic OAuth
-      
-      # Provision Prometheus datasource automatically
+      # Provision Prometheus and Loki datasources automatically
       provision = {
         datasources = {
           settings = {
             apiVersion = 1;
             datasources = [
+              {
+                name = "Loki";
+                type = "loki";
+                access = "proxy";
+                url = "http://127.0.0.1:3100";
+                editable = true;
+                jsonData = {
+                  maxLines = 1000;
+                };
+              }
               {
                 name = "Prometheus";
                 type = "prometheus";

@@ -66,7 +66,7 @@ in {
     # services.nixmox.monitoring.alertmanager.enable = true;
     
     # Step 4: Add Loki when monitoring is stable
-    # services.nixmox.monitoring.loki.enable = true;
+    services.nixmox.monitoring.loki.enable = true;
     
     # Step 5: Add Promtail when Loki is working
     # services.nixmox.monitoring.promtail.enable = true;
