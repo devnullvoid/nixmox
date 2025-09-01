@@ -12,6 +12,10 @@ let
   # Get all services from manifest (core + application services)
   allServices = (manifest.core_services or {}) // (manifest.services or {});
   
+  # Get DNS service configuration from manifest
+  dnsService = manifest.core_services.dns or {};
+  dnsInterface = dnsService.interface or {};
+  
   # Generate DNS records from manifest services
   # Create both hostname A records and service CNAME records
   manifestServices = builtins.mapAttrs (serviceName: serviceConfig:
@@ -98,17 +102,45 @@ in {
           };
           aliases = mkOption {
             type = types.listOf types.str;
-            default = [];
-            description = "Additional aliases for this service";
+            description = "DNS aliases for this service";
+          };
+          hostname = mkOption {
+            type = types.str;
+            description = "Hostname for this service";
           };
           domain = mkOption {
             type = types.str;
-            description = "Full domain name for this service";
+            description = "Domain for this service";
           };
         };
       });
       default = {};
-      description = "Internal service DNS records (can override manifest values)";
+      description = "Manual service records (overrides manifest values)";
+    };
+
+    # Prometheus exporter configuration
+    prometheusExporter = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = "Enable Prometheus exporter for Unbound (auto-enabled if prometheus interface defined in manifest)";
+          };
+          port = mkOption {
+            type = types.port;
+            default = 9167;
+            description = "Port for the Prometheus exporter";
+          };
+          listenAddress = mkOption {
+            type = types.str;
+            default = "0.0.0.0";
+            description = "Listen address for the Prometheus exporter";
+          };
+        };
+      };
+      default = {};
+      description = "Prometheus exporter configuration";
     };
   };
 
@@ -120,11 +152,13 @@ in {
     # Unbound DNS server configuration - minimal for debugging
     services.unbound = {
       enable = true;
-      
+      localControlSocketPath = mkIf cfg.prometheusExporter.enable "/run/unbound/unbound.ctl";
+
       # Use settings to directly configure Unbound
       settings = {
         # Server configuration
-        server = {
+        {
+          server = {
           interface = [ "0.0.0.0" "::" ];
           port = "53";
           access-control = [
@@ -165,7 +199,7 @@ in {
           ) finalServices) ++ (concatLists (mapAttrsToList (name: service:
             # Get Caddy IP from manifest
             let
-              caddyIP = (manifest.core_services.caddy or {}).ip;
+              caddyIP = (manifest.core_services.caddy or {}).ip or "192.168.99.10";
             in
             # Create A records pointing to the service host
             # Since CNAME records are not supported in Unbound, we need to create A records for each alias
@@ -191,7 +225,17 @@ in {
     # Firewall rules for DNS
     networking.firewall = {
       allowedUDPPorts = [ 53 ];
-      allowedTCPPorts = [ 53 ];
+      allowedTCPPorts = [ 53 ] ++ (lib.optional cfg.prometheusExporter.enable cfg.prometheusExporter.port);
+    };
+
+    # Prometheus exporter for Unbound
+    services.prometheus.exporters.unbound = mkIf cfg.prometheusExporter.enable {
+      enable = true;
+      port = cfg.prometheusExporter.port;
+      listenAddress = cfg.prometheusExporter.listenAddress;
+      unbound.host = "unix:///run/unbound/unbound.ctl";
+      user = "unbound";
+      group = "unbound";
     };
     
     # Systemd service configuration

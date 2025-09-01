@@ -60,7 +60,7 @@ in {
     services.nixmox.monitoring.prometheus.enable = true;
     
     # Step 2: Add Grafana when Prometheus is working
-    # services.nixmox.monitoring.grafana.enable = true;
+    services.nixmox.monitoring.grafana.enable = true;
     
     # Step 3: Add Alertmanager when basic monitoring is working
     # services.nixmox.monitoring.alertmanager.enable = true;

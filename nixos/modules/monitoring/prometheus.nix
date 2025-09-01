@@ -125,6 +125,20 @@ in {
             }
           ];
         }
+        # Unbound exporter (runs on dns.nixmox.lan)
+        {
+          job_name = "unbound";
+          static_configs = [
+            {
+              targets = [
+                "${allServices.dns.hostname or "dns.nixmox.lan"}:9167"
+              ];
+              labels = {
+                job = "unbound";
+              };
+            }
+          ];
+        }
       ];
 
       # Retention
