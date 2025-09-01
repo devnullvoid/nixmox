@@ -170,8 +170,19 @@ in {
         80   # HTTP
         443  # HTTPS
         9090 # Caddy metrics
+        2019 # Caddy exporter
       ];
     };
+
+    # Caddy Exporter for monitoring
+    services.prometheus.exporters.caddy = {
+      enable = true;
+      port = 2019;
+      # Caddy metrics endpoint (from globalConfig above)
+      caddyConfigPath = "/etc/caddy/caddy_config";
+    };
+
+
 
     # Systemd service configuration
     systemd.services.caddy = {

@@ -508,9 +508,6 @@ in {
       '';
     };
 
-    # Enable internal CA for certificate trust
-    services.nixmox.internalCa.enable = true;
-    
     # Also enable wildcard key for HTTPS serving
     services.nixmox.internalCa.enableWildcardKey = true;
   });
