@@ -82,8 +82,6 @@
           domain = "postgresql.nixmox.lan";
           path = "/";
           upstream = "192.168.99.11:5432";
-          tls = true;
-          authz = false;
         };
         health = {
           startup = "systemctl is-active --quiet postgresql";
@@ -144,8 +142,6 @@
           domain = "auth.nixmox.lan";
           path = "/";
           upstream = "192.168.99.12:9000";
-          tls = true;
-          authz = false;
         };
         health = {
           startup = "systemctl is-active --quiet authentik";
@@ -197,8 +193,6 @@
           domain = "vault.nixmox.lan";
           path = "/";
           upstream = "192.168.99.14:8080";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet vaultwarden";
@@ -248,8 +242,6 @@
           domain = "guac.nixmox.lan";
           path = "/guacamole";
           upstream = "192.168.99.16:8280";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet tomcat && systemctl is-active --quiet guacamole-server";
@@ -294,12 +286,28 @@
             groups_claim = "groups";
           };
         };
+        # Multi-proxy configuration for monitoring services
         proxy = {
-          domain = "monitoring.nixmox.lan";
-          path = "/";
-          upstream = "192.168.99.18:9090";
-          tls = true;
-          authz = true;
+          prometheus = {
+            domain = "prometheus.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.18:9090";
+          };
+          grafana = {
+            domain = "grafana.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.18:3000";
+          };
+          alertmanager = {
+            domain = "alertmanager.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.18:9093";
+          };
+          loki = {
+            domain = "loki.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.18:3100";
+          };
         };
         health = {
           startup = "systemctl is-active --quiet prometheus && systemctl is-active --quiet grafana";
@@ -348,8 +356,6 @@
           domain = "nextcloud.nixmox.lan";
           path = "/";
           upstream = "192.168.99.15:8080";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet nextcloud";
@@ -392,8 +398,6 @@
           domain = "media.nixmox.lan";
           path = "/";
           upstream = "192.168.99.17:8096";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet jellyfin && systemctl is-active --quiet sonarr && systemctl is-active --quiet radarr";
@@ -436,8 +440,6 @@
           domain = "mail.nixmox.lan";
           path = "/";
           upstream = "192.168.99.19:8080";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet postfix && systemctl is-active --quiet dovecot";
@@ -481,8 +483,6 @@
           domain = "bao.nixmox.lan";
           path = "/";
           upstream = "192.168.99.20:8200";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet openbao";
@@ -531,8 +531,6 @@
           domain = "git.nixmox.lan";
           path = "/";
           upstream = "192.168.99.21:3000";
-          tls = true;
-          authz = true;
         };
         health = {
           startup = "systemctl is-active --quiet forgejo";

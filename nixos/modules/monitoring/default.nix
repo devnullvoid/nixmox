@@ -41,26 +41,12 @@ in {
       description = "Public host name for monitoring services (from manifest proxy config)";
     };
 
-    # Component enablement options
-    prometheus = {
-      enable = mkEnableOption "Prometheus metrics collection and alerting";
-    };
-
-    grafana = {
-      enable = mkEnableOption "Grafana visualization and dashboards";
-    };
-
-    alertmanager = {
-      enable = mkEnableOption "Alertmanager for alert routing";
-    };
-
-    loki = {
-      enable = mkEnableOption "Loki log aggregation";
-    };
-
-    promtail = {
-      enable = mkEnableOption "Promtail log collection";
-    };
+    # Component enablement options are defined in their respective files
+    # prometheus = { ... } - defined in prometheus.nix
+    # grafana = { ... } - defined in grafana.nix  
+    # alertmanager = { ... } - defined in alertmanager.nix
+    # loki = { ... } - defined in loki.nix
+    # promtail = { ... } - defined in promtail.nix
   };
 
   config = mkIf cfg.enable {

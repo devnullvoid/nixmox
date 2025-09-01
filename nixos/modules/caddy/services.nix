@@ -24,9 +24,135 @@ let
       # Get health configuration from manifest
       health = serviceConfig.interface.health or {};
       
-      # Determine auth modes based on manifest
-      useForwardAuth = (auth.type or "") == "forward_auth";
-      useOidc = (auth.type or "") == "oidc" && (auth.provider or "") == "authentik";
+      # Check if this is a multi-proxy service (proxy is an attrset with multiple entries)
+      isMultiProxy = proxy != {} && builtins.isAttrs proxy && !(proxy ? domain);
+      
+      # For multi-proxy services, we'll handle them separately
+      # For now, return null to indicate this should be handled by multiProxyServices
+      multiProxyResult = if isMultiProxy then null else null;
+      
+      # For single-proxy services, use the existing logic
+      singleProxyResult = if !isMultiProxy then
+        let
+          # Determine auth modes based on manifest
+          useForwardAuth = (auth.type or "") == "forward_auth";
+          useOidc = (auth.type or "") == "oidc" && (auth.provider or "") == "authentik";
+          
+          # Parse upstream field to extract host and port
+          parseUpstream = upstream:
+            if upstream == "" then
+              { host = serviceConfig.hostname; port = 80; }
+            else
+              let
+                parts = lib.splitString ":" upstream;
+                host = lib.head parts;
+                port = if lib.length parts > 1 then lib.toInt (lib.elemAt parts 1) else 80;
+              in
+              { host = host; port = port; };
+          
+          upstreamInfo = parseUpstream (proxy.upstream or "");
+          
+          # Get backend from manifest (prefer proxy.upstream, fallback to hostname:port)
+          backend = upstreamInfo.host;
+          
+          # Get domain from manifest
+          domain = proxy.domain or "${serviceName}.${baseDomain}";
+          
+          # Get port from manifest (prefer parsed upstream port, fallback to proxy.port, then default to 80)
+          port = upstreamInfo.port;
+          
+          # Determine if we should skip default proxy based on manifest path configuration
+          skipDefaultProxy = (proxy.path or "/") != "/";
+          
+          # Resolve forward_auth upstream (defaults to authentik IP:9000 from manifest if available)
+          authentikCore = manifest.core_services.authentik or {};
+          forwardAuthUpstream = (auth.forward_auth_upstream or "${(authentikCore.ip or "")}${lib.optionalString (authentikCore ? ip) ":9000"}");
+          
+          # Generate extra config based on auth requirements
+          extraConfig = if useForwardAuth then ''
+            # Forward auth via Authentik
+            header {
+              # Security headers
+              X-Content-Type-Options nosniff
+              X-Frame-Options SAMEORIGIN
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy strict-origin-when-cross-origin
+              # Remove server header
+              -Server
+            }
+            
+            forward_auth ${forwardAuthUpstream} {
+              except /health /metrics /alive
+            }
+          '' else if useOidc then ''
+            # OIDC authentication - let the backend service handle OIDC
+            header {
+              # Security headers
+              X-Content-Type-Options nosniff
+              X-Frame-Options SAMEORIGIN
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy strict-origin-when-cross-origin
+              # Remove server header
+              -Server
+            }
+          '' else ''
+            # Service without authentication
+            header {
+              # Security headers
+              X-Content-Type-Options nosniff
+              X-Frame-Options SAMEORIGIN
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy strict-origin-when-cross-origin
+              # Remove server header
+              -Server
+            }
+          '';
+          
+          # Add path-based routing for services that need it
+          pathBasedRouting = if skipDefaultProxy && (proxy.path or "/") != "/" then ''
+            # Handle path-based routing with redirect and proxy
+            # Redirect root and non-service paths to the service path
+            @notService {
+              not path ${proxy.path}*
+            }
+            redir @notService ${proxy.path}
+            
+            # Proxy everything to upstream
+            reverse_proxy ${backend}:${toString port} {
+              flush_interval -1
+            }
+          '' else "";
+          
+          # Combine extra config with path-based routing
+          finalExtraConfig = extraConfig + pathBasedRouting;
+        in {
+          domain = domain;
+          backend = backend;
+          port = port;
+          enableAuth = useOidc || useForwardAuth;
+          skipDefaultProxy = skipDefaultProxy;
+          extraConfig = finalExtraConfig;
+        }
+      else null;
+    in singleProxyResult;
+  
+  # Generate services configuration from manifest
+  servicesConfig = builtins.mapAttrs mkServiceConfig (
+    # Combine core services and application services
+    (manifest.core_services or {}) // (manifest.services or {})
+  );
+  
+  # Filter out null results (multi-proxy services)
+  filteredServicesConfig = lib.filterAttrs (name: value: value != null) servicesConfig;
+  
+  # Generate multi-proxy services configuration
+  multiProxyServicesConfig = builtins.mapAttrs (serviceName: serviceConfig:
+    let
+      proxy = serviceConfig.interface.proxy or {};
+      auth = serviceConfig.interface.auth or {};
+      
+      # Check if this is a multi-proxy service
+      isMultiProxy = proxy != {} && builtins.isAttrs proxy && !(proxy ? domain);
       
       # Parse upstream field to extract host and port
       parseUpstream = upstream:
@@ -40,99 +166,51 @@ let
           in
           { host = host; port = port; };
       
-      upstreamInfo = parseUpstream (proxy.upstream or "");
-      
-      # Get backend from manifest (prefer proxy.upstream, fallback to hostname:port)
-      backend = upstreamInfo.host;
-      
-      # Get domain from manifest
-      domain = proxy.domain or "${serviceName}.${baseDomain}";
-      
-      # Get port from manifest (prefer parsed upstream port, fallback to proxy.port, then default to 80)
-      port = upstreamInfo.port;
-      
-      # Determine if we should skip default proxy based on manifest path configuration
-      skipDefaultProxy = (proxy.path or "/") != "/";
-      
-      # Resolve forward_auth upstream (defaults to authentik IP:9000 from manifest if available)
-      authentikCore = manifest.core_services.authentik or {};
-      forwardAuthUpstream = (auth.forward_auth_upstream or "${(authentikCore.ip or "")}${lib.optionalString (authentikCore ? ip) ":9000"}");
-      
-      # Generate extra config based on auth requirements
-      extraConfig = if useForwardAuth then ''
-        # Forward auth via Authentik
-        header {
-          # Security headers
-          X-Content-Type-Options nosniff
-          X-Frame-Options SAMEORIGIN
-          X-XSS-Protection "1; mode=block"
-          Referrer-Policy strict-origin-when-cross-origin
-          # Remove server header
-          -Server
-        }
-        
-        forward_auth ${forwardAuthUpstream} {
-          except /health /metrics /alive
-        }
-      '' else if useOidc then ''
-        # OIDC authentication - let the backend service handle OIDC
-        header {
-          # Security headers
-          X-Content-Type-Options nosniff
-          X-Frame-Options SAMEORIGIN
-          X-XSS-Protection "1; mode=block"
-          Referrer-Policy strict-origin-when-cross-origin
-          # Remove server header
-          -Server
-        }
-      '' else ''
-        # Service without authentication
-        header {
-          # Security headers
-          X-Content-Type-Options nosniff
-          X-Frame-Options SAMEORIGIN
-          X-XSS-Protection "1; mode=block"
-          Referrer-Policy strict-origin-when-cross-origin
-          # Remove server header
-          -Server
-        }
-      '';
-      
-      # Add path-based routing for services that need it
-      pathBasedRouting = if skipDefaultProxy && (proxy.path or "/") != "/" then ''
-        # Handle path-based routing with redirect and proxy
-        # Redirect root and non-service paths to the service path
-        @notService {
-          not path ${proxy.path}*
-        }
-        redir @notService ${proxy.path}
-        
-        # Proxy everything to upstream
-        reverse_proxy ${backend}:${toString port} {
-          flush_interval -1
-        }
-      '' else "";
-      
-      # Combine extra config with path-based routing
-      finalExtraConfig = extraConfig + pathBasedRouting;
+      # Generate proxy configurations for each entry
+      proxyConfigs = if isMultiProxy then
+        builtins.mapAttrs (proxyName: proxyEntry:
+          let
+            upstreamInfo = parseUpstream (proxyEntry.upstream or "");
+            
+            # Generate extra config based on auth requirements
+            extraConfig = ''
+              # Service without authentication (monitoring services)
+              header {
+                # Security headers
+                X-Content-Type-Options nosniff
+                X-Frame-Options SAMEORIGIN
+                X-XSS-Protection "1; mode=block"
+                Referrer-Policy strict-origin-when-cross-origin
+                # Remove server header
+                -Server
+              }
+            '';
+          in {
+            domain = proxyEntry.domain;
+            path = proxyEntry.path or "/";
+            upstream = proxyEntry.upstream;
+            extraConfig = extraConfig;
+            skipDefaultProxy = false;
+          }
+        ) proxy
+      else {};
     in {
-      domain = domain;
-      backend = backend;
-      port = port;
-      enableAuth = useOidc || useForwardAuth;
-      skipDefaultProxy = skipDefaultProxy;
-      extraConfig = finalExtraConfig;
-    };
-  
-  # Generate services configuration from manifest
-  servicesConfig = builtins.mapAttrs mkServiceConfig (
-    # Combine core services and application services
-    (manifest.core_services or {}) // (manifest.services or {})
+      proxies = proxyConfigs;
+    }
+  ) (
+    # Only process services that have multi-proxy configurations
+    lib.filterAttrs (serviceName: serviceConfig:
+      let proxy = serviceConfig.interface.proxy or {};
+      in proxy != {} && builtins.isAttrs proxy && !(proxy ? domain)
+    ) (manifest.core_services or {}) // (manifest.services or {})
   );
 in {
   config = mkIf cfg.enable {
     # Configure all services to be proxied through Caddy
     # Services are now generated from the manifest instead of hard-coded
-    services.nixmox.caddy.services = servicesConfig;
+    services.nixmox.caddy.services = filteredServicesConfig;
+    
+    # Configure multi-proxy services
+    services.nixmox.caddy.multiProxyServices = multiProxyServicesConfig;
   };
 }

@@ -130,8 +130,8 @@ in {
       # Retention
       retentionTime = cfg.retention;
 
-      # Listen on loopback only (behind Caddy)
-      listenAddress = "127.0.0.1";
+      # Listen on all interfaces so Caddy can reach us
+      listenAddress = "0.0.0.0";
       port = 9090;
     };
 

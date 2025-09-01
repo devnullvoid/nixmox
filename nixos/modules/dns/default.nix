@@ -21,19 +21,36 @@ let
       hostname = serviceConfig.hostname or serviceName;
       ip = serviceConfig.ip or "127.0.0.1";
 
-      # Extract service domain from proxy.domain for CNAME record (e.g., "vault.nixmox.lan")
-      serviceDomain = serviceConfig.interface.proxy.domain or null;
-
-      # Create aliases list - if service domain exists and differs from hostname, add CNAME
-      # Store just the subdomain part (e.g., "vault" from "vault.nixmox.lan")
-      aliases = if serviceDomain != null && serviceDomain != hostname then
-        let
-          # Extract subdomain (remove domain suffix)
-          subdomain = builtins.head (builtins.split "\\." serviceDomain);
-        in
-        [ subdomain ]
-      else
-        [];
+      # Extract service domains from proxy configuration
+      proxy = serviceConfig.interface.proxy or {};
+      
+      # Check if this is a multi-proxy service (proxy is an attrset with multiple entries)
+      isMultiProxy = proxy != {} && builtins.isAttrs proxy && !(proxy ? domain);
+      
+      # For single-proxy services, extract the domain
+      singleProxyDomain = if !isMultiProxy then proxy.domain or null else null;
+      
+      # For multi-proxy services, extract all domains
+      multiProxyDomains = if isMultiProxy then
+        builtins.attrValues (builtins.mapAttrs (proxyName: proxyEntry:
+          proxyEntry.domain or null
+        ) proxy)
+      else [];
+      
+      # Combine all domains
+      allServiceDomains = if isMultiProxy then multiProxyDomains else [ singleProxyDomain ];
+      
+      # Create aliases list - extract subdomains from all service domains
+      aliases = builtins.concatLists (builtins.map (domain:
+        if domain != null && domain != hostname then
+          let
+            # Extract subdomain (remove domain suffix)
+            subdomain = builtins.head (builtins.split "\\." domain);
+          in
+          [ subdomain ]
+        else
+          []
+      ) allServiceDomains);
     in
     {
       inherit ip aliases hostname;
@@ -113,7 +130,7 @@ in {
           access-control = [
             "0.0.0.0/0 refuse"
             "127.0.0.0/8 allow"
-            "192.168.99.0/24 allow"
+            "192.168.0.0/16 allow"
             "10.0.0.0/8 allow"
             "172.16.0.0/12 allow"
           ];
@@ -146,12 +163,14 @@ in {
             in
             "\"${fullHostname}. A ${service.ip}\""
           ) finalServices) ++ (concatLists (mapAttrsToList (name: service:
-            # For auth service, return A record directly to avoid CNAME resolution issues
+            # Get Caddy IP from manifest
+            let
+              caddyIP = (manifest.core_services.caddy or {}).ip;
+            in
+            # Create A records pointing to the service host
+            # Since CNAME records are not supported in Unbound, we need to create A records for each alias
             map (alias:
-              if alias == "auth" then
-                "\"${alias}.${cfg.primaryDomain}. A 192.168.99.10\""
-              else
-                "\"${alias}.${cfg.primaryDomain}. CNAME caddy.${cfg.primaryDomain}.\""
+                "\"${alias}.${cfg.primaryDomain}. A ${caddyIP}\""
             ) service.aliases
           ) finalServices));
         };

@@ -79,7 +79,7 @@ in {
     #   description = "Authentik upstream for forward auth";
     # };
 
-    # Service definitions
+    # Service definitions (legacy single-proxy format)
     services = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
@@ -114,7 +114,47 @@ in {
         };
       });
       default = {};
-      description = "Services to proxy through Caddy";
+      description = "Services to proxy through Caddy (legacy format)";
+    };
+
+    # Multi-proxy service definitions (new format)
+    multiProxyServices = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          proxies = mkOption {
+            type = types.attrsOf (types.submodule {
+              options = {
+                domain = mkOption {
+                  type = types.str;
+                  description = "Domain for this proxy entry";
+                };
+                path = mkOption {
+                  type = types.str;
+                  default = "/";
+                  description = "Path for this proxy entry";
+                };
+                upstream = mkOption {
+                  type = types.str;
+                  description = "Upstream backend (host:port)";
+                };
+                extraConfig = mkOption {
+                  type = types.str;
+                  default = "";
+                  description = "Extra Caddy configuration for this proxy entry";
+                };
+                skipDefaultProxy = mkOption {
+                  type = types.bool;
+                  default = false;
+                  description = "Skip the automatic reverse proxy configuration";
+                };
+              };
+            });
+            description = "Multiple proxy configurations for this service";
+          };
+        };
+      });
+      default = {};
+      description = "Services with multiple proxy configurations";
     };
   };
 
@@ -123,27 +163,20 @@ in {
     services.caddy = {
       enable = true;
       
-      # Global settings
-      globalConfig = ''
-        {
-          admin off
-          servers {
-            metrics 127.0.0.1:9090
-          }
-        }
-      '';
-      
       # Use a custom Caddyfile instead of virtualHosts to avoid conflicts
       configFile = pkgs.writeText "Caddyfile" ''
         {
-          admin off
-          metrics 127.0.0.1:9090
+          admin 0.0.0.0:2019
+          metrics {
+            per_host
+          }
           # Use our pre-generated wildcard certificate from SOPS secrets
           ${lib.optionalString cfg.useInternalCa ''
             # Note: Using SOPS-managed certificates
           ''}
         }
         
+        # Legacy single-proxy services
         ${builtins.concatStringsSep "\n\n" (
           builtins.attrValues (builtins.mapAttrs (name: service: ''
             ${service.domain} {
@@ -159,6 +192,27 @@ in {
             }
           '') cfg.services)
         )}
+        
+        # Multi-proxy services
+        ${builtins.concatStringsSep "\n\n" (
+          builtins.attrValues (builtins.mapAttrs (serviceName: serviceConfig:
+            builtins.concatStringsSep "\n\n" (
+              builtins.attrValues (builtins.mapAttrs (proxyName: proxy: ''
+                ${proxy.domain} {
+                  # Use our wildcard certificate for all services
+                  ${lib.optionalString cfg.useInternalCa 
+                    "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
+                  
+                  ${lib.optionalString (proxy.extraConfig != "") 
+                    proxy.extraConfig}
+                  
+                  # Basic reverse proxy configuration
+                  ${lib.optionalString (!(proxy.skipDefaultProxy or false)) "reverse_proxy ${proxy.upstream}"}
+                }
+              '') serviceConfig.proxies)
+            )
+          ) cfg.multiProxyServices)
+        )}
       '';
       
 
@@ -169,18 +223,17 @@ in {
       allowedTCPPorts = [
         80   # HTTP
         443  # HTTPS
-        9090 # Caddy metrics
-        2019 # Caddy exporter
+        2019 # Caddy admin API (for metrics)
       ];
     };
 
-    # Caddy Exporter for monitoring
-    services.prometheus.exporters.caddy = {
-      enable = true;
-      port = 2019;
-      # Caddy metrics endpoint (from globalConfig above)
-      caddyConfigPath = "/etc/caddy/caddy_config";
-    };
+    # Caddy Exporter for monitoring (commented out - not available in current NixOS)
+    # services.prometheus.exporters.caddy = {
+    #   enable = true;
+    #   port = 2019;
+    #   # Caddy metrics endpoint (from globalConfig above)
+    #   caddyConfigPath = "/etc/caddy/caddy_config";
+    # };
 
 
 
