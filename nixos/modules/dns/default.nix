@@ -157,8 +157,7 @@ in {
       # Use settings to directly configure Unbound
       settings = {
         # Server configuration
-        {
-          server = {
+        server = {
           interface = [ "0.0.0.0" "::" ];
           port = "53";
           access-control = [

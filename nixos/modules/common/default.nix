@@ -1,9 +1,17 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, manifest, ... }:
 
 with lib;
 
 let
   cfg = config.services.nixmox;
+  
+  # Get monitoring service configuration from manifest
+  monitoringService = manifest.services.monitoring or {};
+  monitoringIP = monitoringService.ip or "192.168.99.18"; # Fallback IP
+  
+  # Get network configuration from manifest
+  network = manifest.network or {};
+  baseDomain = network.domain or "nixmox.lan";
 in {
   options.services.nixmox = {
     enable = mkEnableOption "NixMox common services";
@@ -18,6 +26,15 @@ in {
       type = types.str;
       default = "192.168.99.1";
       description = "Gateway IP address";
+    };
+    
+    # Grafana Agent (Alloy) configuration
+    alloy = {
+      enable = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Enable Grafana Agent (Alloy) for log collection to Loki";
+      };
     };
 
     # SSH key configuration
@@ -96,8 +113,8 @@ environment.systemPackages = with pkgs; [
       
       # Firewall common rules
       firewall = {
-        # Allow SSH
-        allowedTCPPorts = [ 22 ];
+        # Allow SSH and Grafana Agent (Alloy) HTTP port for metrics (if enabled)
+        allowedTCPPorts = [ 22 ] ++ lib.optional cfg.alloy.enable 12345;
         
         # Allow ICMP for ping
         allowedUDPPorts = [ ];
@@ -160,6 +177,56 @@ environment.systemPackages = with pkgs; [
       ];
     };
     
+        # Grafana Agent (Alloy) for log collection to Loki
+    # IP addresses are derived from manifest.services.monitoring.ip
+    services.alloy = mkIf cfg.alloy.enable {
+      enable = true;
+      extraFlags = [ "--server.http.listen-addr=0.0.0.0:12345" ];
+    };
+    
+    # Alloy configuration file - logs collection only
+    environment.etc."alloy/config.alloy" = mkIf cfg.alloy.enable {
+      source = pkgs.writeText "alloy-config.alloy" ''
+        // Alloy configuration for log collection only
+        
+        // Loki client for log forwarding
+        loki.write "loki" {
+          endpoint {
+            url = "http://${monitoringIP}:3100/loki/api/v1/push"
+          }
+        }
+        
+        // Relabel rules for journal logs
+        loki.relabel "journal" {
+          forward_to = []
+          
+          rule {
+            source_labels = ["__journal__systemd_unit"]
+            target_label = "systemd_unit"
+          }
+          rule {
+            source_labels = ["__journal__hostname"]
+            target_label = "nodename"
+          }
+          rule {
+            source_labels = ["__journal__syslog_identifier"]
+            target_label = "syslog_identifier"
+          }
+        }
+        
+        // Systemd journal log collection
+        loki.source.journal "journal" {
+          forward_to = [loki.write.loki.receiver]
+          max_age = "12h"
+          labels = {
+            job = "systemd-journal",
+          }
+          relabel_rules = loki.relabel.journal.rules
+        }
+      '';
+      mode = "0644";
+    };
+    
     # Common users and groups
     users.users.nixmox = {
       isNormalUser = true;
@@ -170,6 +237,8 @@ environment.systemPackages = with pkgs; [
       # hashedPassword = "$6$rounds=5000$nixmox$changeme";
       initialPassword = "nixmox";
     };
+    
+
 
     # Root user configuration for deployment
     users.users.root = {
@@ -213,6 +282,8 @@ environment.systemPackages = with pkgs; [
       };
     };
     
+
+    
     # Systemd services
     systemd = {
       # Global settings
@@ -222,6 +293,8 @@ environment.systemPackages = with pkgs; [
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
         };
+        
+
       };
       
       # Global targets

@@ -63,7 +63,7 @@ in {
     services.nixmox.monitoring.grafana.enable = true;
     
     # Step 3: Add Alertmanager when basic monitoring is working
-    # services.nixmox.monitoring.alertmanager.enable = true;
+    services.nixmox.monitoring.alertmanager.enable = true;
     
     # Step 4: Add Loki when monitoring is stable
     services.nixmox.monitoring.loki.enable = true;
