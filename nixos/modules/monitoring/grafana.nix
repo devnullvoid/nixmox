@@ -147,8 +147,9 @@ in {
           auth_url = "https://${authentikDomain}/application/o/authorize/";
           token_url = "https://${authentikDomain}/application/o/token/";
           api_url = "https://${authentikDomain}/application/o/userinfo/";
-          # Map Authentik groups to Grafana roles using the groups claim from manifest
-          role_attribute_path = "contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'";
+          # Map Authentik groups to Grafana roles
+          # Authentik Admins group = Grafana Admin, Authentik Read-only group = Grafana Viewer
+          role_attribute_path = "contains(groups, 'authentik Admins') && 'Admin' || contains(groups, 'authentik Read-only') && 'Viewer' || 'Viewer'";
         };
 
         # Database configuration (manifest-driven)
