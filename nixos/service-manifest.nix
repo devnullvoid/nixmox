@@ -281,7 +281,7 @@
           oidc = {
             client_id = "monitoring-oidc";
             client_type = "confidential";
-            redirect_uris = [ "https://monitoring.nixmox.lan/oidc/callback" ];
+            redirect_uris = [ "https://grafana.nixmox.lan/login/generic_oauth" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";

@@ -346,10 +346,8 @@ in {
     services.prometheus.exporters.postgres = {
       enable = true;
       port = 9187;
-      # Generate data source names for all databases from manifest
-      dataSourceNames = builtins.mapAttrsToList (serviceName: dbConfig:
-        "postgresql://${dbConfig.owner or serviceName}:password@localhost:${toString cfg.port}/${dbConfig.name or serviceName}?sslmode=disable"
-      ) databaseRequirements;
+      # Generate data source name for PostgreSQL exporter
+      dataSourceName = "postgresql://postgres@localhost:${toString cfg.port}/postgres?sslmode=disable";
     };
 
 

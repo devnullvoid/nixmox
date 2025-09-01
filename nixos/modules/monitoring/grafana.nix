@@ -14,6 +14,9 @@ let
   # Get proxy configuration from manifest
   proxyConfig = serviceConfig.interface.proxy or {};
   
+  # Get Grafana-specific proxy configuration from manifest
+  grafanaProxyConfig = proxyConfig.grafana or {};
+  
   # Get OIDC configuration from manifest
   oidcConfig = serviceConfig.interface.auth.oidc or {};
   
@@ -113,8 +116,8 @@ in {
       settings = {
         server = {
           http_port = cfg.port;
-          domain = hostNameEffective;
-          root_url = "https://${hostNameEffective}/";
+          domain = grafanaProxyConfig.domain or hostNameEffective;
+          root_url = "https://${grafanaProxyConfig.domain or hostNameEffective}/";
           # Listen on loopback only (behind Caddy)
           http_addr = "0.0.0.0";
         };
@@ -133,10 +136,9 @@ in {
         # OAuth2/OpenID Connect with Authentik
         auth = {
           signout_redirect_url = "https://${authentikDomain}/application/o/grafana/end-session/";
-          oauth_auto_login = true;
         };
         
-        auth_generic_oauth = {
+        "auth.generic_oauth" = {
           name = "authentik";
           enabled = true;
           client_id = oidcConfig.client_id or "monitoring-oidc";
@@ -159,14 +161,36 @@ in {
           password = "$__file{${config.sops.secrets."monitoring/database_password".path}}";
           ssl_mode = "disable";
         };
-
-
       };
-
-      # Basic settings - let NixOS handle defaults
-      # Database will default to SQLite3
-      # Security settings will use defaults
-      # Server settings will use defaults
+      
+      # Note: OAuth configuration will need to be done through the Grafana UI
+      # The NixOS Grafana module doesn't support the nested [auth.generic_oauth] structure
+      # that Grafana expects. After deployment, configure OAuth at:
+      # Administration > Authentication > Generic OAuth
+      
+      # Provision Prometheus datasource automatically
+      provision = {
+        datasources = {
+          settings = {
+            apiVersion = 1;
+            datasources = [
+              {
+                name = "Prometheus";
+                type = "prometheus";
+                access = "proxy";
+                url = "http://127.0.0.1:9090";
+                isDefault = true;
+                editable = true;
+                jsonData = {
+                  timeInterval = "5s";
+                  queryTimeout = "60s";
+                  httpMethod = "POST";
+                };
+              }
+            ];
+          };
+        };
+      };
     };
 
     # Firewall rules
