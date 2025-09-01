@@ -14,15 +14,27 @@ let
   # Get proxy configuration from manifest
   proxyConfig = serviceConfig.interface.proxy or {};
   
+  # Get OIDC configuration from manifest
+  oidcConfig = serviceConfig.interface.auth.oidc or {};
+  
   # Get network configuration from manifest
   network = manifest.network or {};
   baseDomain = network.domain or "nixmox.lan";
   
+  # Get core services from manifest for Authentik domain
+  coreServices = manifest.core_services or {};
+  
+  # Construct Authentik domain from manifest (similar to other modules)
+  authentikDomain = (coreServices.authentik.interface.proxy.domain or "auth.${baseDomain}");
+  
   # Get all services from manifest
   allServices = (manifest.core_services or {}) // (manifest.services or {});
   
+  # Get parent monitoring configuration
+  monitoringCfg = config.services.nixmox.monitoring;
+
   # Determine effective hostname
-  hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${baseDomain}";
+  hostNameEffective = if monitoringCfg.hostName != "" then monitoringCfg.hostName else "${monitoringCfg.subdomain}.${baseDomain}";
 in {
   options.services.nixmox.monitoring.grafana = {
     enable = mkEnableOption "Grafana visualization and dashboards";
@@ -74,6 +86,25 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # SOPS secrets for Grafana
+    sops.secrets."monitoring/database_password" = {
+      owner = "grafana";
+      group = "grafana";
+      mode = "0400";
+    };
+    
+    sops.secrets."monitoring/grafana_admin_password" = {
+      owner = "grafana";
+      group = "grafana";
+      mode = "0400";
+    };
+    
+    sops.secrets."monitoring/oidc_client_secret" = {
+      owner = "grafana";
+      group = "grafana";
+      mode = "0400";
+    };
+
     # Grafana configuration
     services.grafana = {
       enable = true;
@@ -85,15 +116,37 @@ in {
           domain = hostNameEffective;
           root_url = "https://${hostNameEffective}/";
           # Listen on loopback only (behind Caddy)
-          http_addr = "127.0.0.1";
+          http_addr = "0.0.0.0";
         };
 
         security = {
-          admin_password = cfg.adminPassword;
+          # Read admin password from SOPS secret file at runtime
+          admin_password = "$__file{${config.sops.secrets."monitoring/grafana_admin_password".path}}";
         };
 
         users = {
           allow_sign_up = false;
+          auto_assign_org = true;
+          auto_assign_org_id = 1;
+        };
+        
+        # OAuth2/OpenID Connect with Authentik
+        auth = {
+          signout_redirect_url = "https://${authentikDomain}/application/o/grafana/end-session/";
+          oauth_auto_login = true;
+        };
+        
+        auth_generic_oauth = {
+          name = "authentik";
+          enabled = true;
+          client_id = oidcConfig.client_id or "monitoring-oidc";
+          client_secret = "$__file{${config.sops.secrets."monitoring/oidc_client_secret".path}}";
+          scopes = builtins.concatStringsSep " " (oidcConfig.scopes or [ "openid" "email" "profile" ]);
+          auth_url = "https://${authentikDomain}/application/o/authorize/";
+          token_url = "https://${authentikDomain}/application/o/token/";
+          api_url = "https://${authentikDomain}/application/o/userinfo/";
+          # Map Authentik groups to Grafana roles using the groups claim from manifest
+          role_attribute_path = "contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'";
         };
 
         # Database configuration (manifest-driven)
@@ -102,53 +155,18 @@ in {
           host = "${dbConfig.host or "postgresql.nixmox.lan"}:${toString (dbConfig.port or 5432)}";
           name = dbConfig.name or "grafana";
           user = dbConfig.owner or "grafana";
-          password = cfg.dbPassword;
+          # Read password from SOPS secret file at runtime to avoid Nix store secrets
+          password = "$__file{${config.sops.secrets."monitoring/database_password".path}}";
           ssl_mode = "disable";
         };
 
-        # Datasources (auto-configured)
-        "datasources.datasources.yaml" = {
-          apiVersion = 1;
-          datasources = [
-            {
-              name = "Prometheus";
-              type = "prometheus";
-              url = "http://127.0.0.1:9090";
-              access = "proxy";
-              isDefault = true;
-            }
-          ] ++ (lib.optional cfg.loki.enable {
-            name = "Loki";
-            type = "loki";
-            url = "http://127.0.0.1:${toString cfg.loki.port}";
-            access = "proxy";
-          });
-        };
+
       };
 
-      # Provisioning
-      provision = {
-        enable = true;
-        datasources = {
-          settings = {
-            apiVersion = 1;
-            datasources = [
-              {
-                name = "Prometheus";
-                type = "prometheus";
-                url = "http://127.0.0.1:9090";
-                access = "proxy";
-                isDefault = true;
-              }
-            ] ++ (lib.optional cfg.loki.enable {
-              name = "Loki";
-              type = "loki";
-              url = "http://127.0.0.1:${toString cfg.loki.port}";
-              access = "proxy";
-            });
-          };
-        };
-      };
+      # Basic settings - let NixOS handle defaults
+      # Database will default to SQLite3
+      # Security settings will use defaults
+      # Server settings will use defaults
     };
 
     # Firewall rules

@@ -37,7 +37,7 @@ in {
 
     hostName = mkOption {
       type = types.str;
-      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      default = proxyConfig.domain or "monitoring.nixmox.lan";
       description = "Public host name for monitoring services (from manifest proxy config)";
     };
 

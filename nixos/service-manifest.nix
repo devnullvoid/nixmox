@@ -279,6 +279,7 @@
           type = "oidc";
           provider = "authentik";
           oidc = {
+            client_id = "monitoring-oidc";
             client_type = "confidential";
             redirect_uris = [ "https://monitoring.nixmox.lan/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
