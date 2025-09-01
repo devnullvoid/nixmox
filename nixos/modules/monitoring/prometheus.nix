@@ -75,6 +75,17 @@ in {
         evaluation_interval = cfg.evaluationInterval;
       };
 
+      # Alertmanager configuration
+      alertmanagers = [
+        {
+          static_configs = [
+            {
+              targets = [ "127.0.0.1:9093" ];
+            }
+          ];
+        }
+      ];
+
       # Scrape configuration (manifest-driven)
       scrapeConfigs = [
         {
