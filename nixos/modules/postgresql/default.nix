@@ -346,8 +346,11 @@ in {
     services.prometheus.exporters.postgres = {
       enable = true;
       port = 9187;
-      # Generate data source name for PostgreSQL exporter
-      dataSourceName = "postgresql://postgres@localhost:${toString cfg.port}/postgres?sslmode=disable";
+      # Use Unix socket connection with peer authentication (no password needed)
+      dataSourceName = "postgresql:///postgres?host=/run/postgresql";
+      # Run as postgres user to use peer authentication
+      user = "postgres";
+      group = "postgres";
     };
 
 

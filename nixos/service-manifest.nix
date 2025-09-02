@@ -474,7 +474,7 @@
           oidc = {
             client_id = "openbao-oidc";
             client_type = "confidential";
-            redirect_uris = [ "https://bao.nixmox.lan/oidc/callback" ];
+            redirect_uris = [ "https://bao.nixmox.lan/oidc/callback" "https://bao.nixmox.lan/ui/vault/auth/oidc/oidc/callback" "http://localhost:8200/oidc/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";
