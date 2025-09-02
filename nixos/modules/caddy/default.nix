@@ -207,7 +207,14 @@ in {
                     proxy.extraConfig}
                   
                   # Basic reverse proxy configuration
-                  ${lib.optionalString (!(proxy.skipDefaultProxy or false)) "reverse_proxy ${proxy.upstream}"}
+                  ${lib.optionalString (!(proxy.skipDefaultProxy or false)) ''
+                    reverse_proxy ${proxy.upstream} {
+                      header_up Host {host}
+                      header_up X-Forwarded-Proto https
+                      header_up X-Forwarded-Host {host}
+                      header_up X-Forwarded-For {remote}
+                    }
+                  ''}
                 }
               '') serviceConfig.proxies)
             )
@@ -215,8 +222,16 @@ in {
         )}
       '';
       
+      # Ensure reloads that expect /etc/caddy/Caddyfile succeed by providing a symlink
+      # to the generated config in the Nix store.
+      # Some tooling or manual `systemctl reload caddy` may trigger Caddy to read
+      # from /etc/caddy/Caddyfile.
+      # This keeps both start and reload paths consistent.
 
     };
+
+    # Provide /etc/caddy/Caddyfile pointing at the generated config
+    environment.etc."caddy/Caddyfile".source = config.services.caddy.configFile;
 
     # Basic firewall rules
     networking.firewall = {
@@ -246,7 +261,7 @@ in {
         Restart = mkForce "always";
         RestartSec = mkForce "10s";
         # Since admin is off, we need to restart instead of reload
-        ExecReload = mkForce "/bin/systemctl restart caddy.service";
+        ExecReload = mkForce "${pkgs.systemd}/bin/systemctl restart caddy.service";
       };
     };
 

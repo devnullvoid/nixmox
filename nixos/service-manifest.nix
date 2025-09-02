@@ -79,13 +79,13 @@
       start = true;
       interface = {
         proxy = {
-          domain = "postgresql.nixmox.lan";
+          domain = "pgadmin.nixmox.lan";
           path = "/";
-          upstream = "192.168.99.11:5432";
+          upstream = "192.168.99.11:5050";
         };
         health = {
-          startup = "systemctl is-active --quiet postgresql";
-          liveness = "systemctl is-active --quiet postgresql";
+          startup = "systemctl is-active --quiet postgresql && systemctl is-active --quiet pgadmin";
+          liveness = "systemctl is-active --quiet postgresql && systemctl is-active --quiet pgadmin";
           interval = 30;
           timeout = 60;
           retries = 3;

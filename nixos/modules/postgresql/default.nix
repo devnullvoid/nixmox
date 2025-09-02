@@ -130,8 +130,17 @@ in {
         };
       }) dbServices;
 
+      # Add pgAdmin password secret
+      pgAdminSecret = {
+        "postgresql/pgadmin_password" = {
+          owner = "pgadmin";
+          group = "pgadmin";
+          mode = "0400";
+        };
+      };
+
     in
-      dbSecrets;
+      dbSecrets // pgAdminSecret;
     
     # PostgreSQL configuration
     services.postgresql = {
@@ -242,6 +251,7 @@ in {
       allowedTCPPorts = [
         cfg.port  # PostgreSQL
         9187      # PostgreSQL exporter
+        # pgAdmin port 5050 is handled by services.pgadmin.openFirewall
       ];
     };
 
@@ -351,6 +361,27 @@ in {
       # Run as postgres user to use peer authentication
       user = "postgres";
       group = "postgres";
+    };
+
+    # pgAdmin web interface using official NixOS module
+    services.pgadmin = {
+      enable = true;
+      port = 5050;
+      openFirewall = true;
+      initialEmail = "admin@nixmox.lan";
+      initialPasswordFile = config.sops.secrets."postgresql/pgadmin_password".path;
+      settings = {
+        DEFAULT_SERVER = "0.0.0.0";
+        DEFAULT_SERVER_PORT = 5050;
+        SERVER_MODE = true;
+        MASTER_PASSWORD_REQUIRED = false;
+        WTF_CSRF_ENABLED = false;
+        SESSION_COOKIE_SECURE = false;
+        SESSION_COOKIE_HTTPONLY = true;
+        SESSION_COOKIE_SAMESITE = "Lax";
+        SECURE_PROXY_SSL_HEADER = ["X-Forwarded-Proto" "https"];
+        PREFERRED_URL_SCHEME = "https";
+      };
     };
 
 
