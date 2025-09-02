@@ -72,14 +72,8 @@
               (import ./nixos/hosts/nixmox-host.nix { inherit manifest; inherit serviceName; })
             ];
             
-            # Special case for vaultwarden (needs OCI module)
-            extraModules = if serviceName == "vaultwarden" then [
-              ./nixos/modules/vaultwarden/oci.nix
-              {
-                # Enable OCI version instead of native service
-                services.nixmox.vaultwarden.oci.enable = true;
-              }
-            ] else [];
+            # No special cases needed - OCI is now the default
+            extraModules = [];
             
             # Combine base and extra modules
             allModules = baseModules ++ extraModules;

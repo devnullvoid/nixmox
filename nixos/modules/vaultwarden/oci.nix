@@ -94,8 +94,7 @@ in {
     networking.firewall.allowedTCPPorts = [ cfg.listenPort ];
     # Construct DOMAIN by default from base domain
     services.nixmox.vaultwarden.oci.domain = mkDefault ("https://" + cfg.subdomain + "." + config.services.nixmox.domain);
-    # Ensure native service is off when using container
-    services.nixmox.vaultwarden.enable = lib.mkForce false;
+    # Native service is handled by the main module
 
     # Ensure local resolution works even before DNS is in place
     networking.hosts."127.0.0.1" = [ "${cfg.subdomain}.${config.services.nixmox.domain}" ];
