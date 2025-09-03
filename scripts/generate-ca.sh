@@ -16,8 +16,47 @@ mkdir -p "$CA_DIR"
 # Generate CA private key and certificate
 echo "Generating CA private key and certificate..."
 openssl genrsa -out "$CA_DIR/$CA_NAME.key" 4096
+
+# Create CA configuration file with proper extensions
+cat > "$CA_DIR/ca-extensions.cnf" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_ca
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = State
+L = City
+O = NixMox
+CN = NixMox Internal CA
+
+[v3_ca]
+# Basic constraints - this is a CA
+basicConstraints = critical,CA:TRUE
+
+# Key usage - what the CA key can be used for
+keyUsage = critical,keyCertSign,cRLSign
+
+# Subject key identifier - for CA chaining
+subjectKeyIdentifier = hash
+
+# Authority key identifier - for CA chaining
+authorityKeyIdentifier = keyid:always,issuer
+
+# Certificate policies - custom OID for NixMox internal CA
+certificatePolicies = 1.3.6.1.4.1.99999.1.1.1
+
+# CRL distribution points (optional - can be enabled later)
+# crlDistributionPoints = URI:http://crl.nixmox.lan/ca.crl
+
+# Authority Information Access (optional - for OCSP)
+# authorityInfoAccess = OCSP;URI:http://ocsp.nixmox.lan
+EOF
+
+# Generate CA certificate with proper extensions
 openssl req -new -x509 -days 3650 -key "$CA_DIR/$CA_NAME.key" \
-  -out "$CA_DIR/$CA_NAME.crt" -subj "$CA_SUBJECT"
+  -out "$CA_DIR/$CA_NAME.crt" -config "$CA_DIR/ca-extensions.cnf"
 
 # Generate wildcard certificate for all services
 echo "Generating wildcard certificate for *.nixmox.lan..."
@@ -38,9 +77,20 @@ O = NixMox
 CN = *.nixmox.lan
 
 [v3_req]
-keyUsage = digitalSignature, keyEncipherment, dataEncipherment
-extendedKeyUsage = serverAuth, clientAuth
+# Key usage for server certificates
+keyUsage = critical,digitalSignature,keyEncipherment,dataEncipherment
+
+# Extended key usage for TLS server and client authentication
+extendedKeyUsage = serverAuth,clientAuth
+
+# Subject Alternative Names
 subjectAltName = @alt_names
+
+# Basic constraints - not a CA
+basicConstraints = CA:FALSE
+
+# Subject key identifier
+subjectKeyIdentifier = hash
 
 [alt_names]
 DNS.1 = *.nixmox.lan
@@ -69,9 +119,19 @@ openssl x509 -req -days 365 -in "$CA_DIR/wildcard-nixmox-lan.csr" \
 echo "Creating CA bundle for containers..."
 cat "$CA_DIR/$CA_NAME.crt" > "$CA_DIR/ca-bundle.crt"
 
+# Verify CA certificate extensions
+echo "Verifying CA certificate extensions..."
+echo "CA Certificate Extensions:"
+openssl x509 -in "$CA_DIR/$CA_NAME.crt" -text -noout | grep -A 10 "X509v3 extensions" || echo "No extensions found"
+
+echo ""
+echo "Wildcard Certificate Extensions:"
+openssl x509 -in "$CA_DIR/wildcard-nixmox-lan.crt" -text -noout | grep -A 10 "X509v3 extensions" || echo "No extensions found"
+
 # Clean up temporary files
 rm "$CA_DIR/wildcard-nixmox-lan.csr"
 rm "$CA_DIR/openssl-san.cnf"
+rm "$CA_DIR/ca-extensions.cnf"
 
 # Set proper permissions
 chmod 600 "$CA_DIR/$CA_NAME.key"
@@ -81,13 +141,13 @@ chmod 644 "$CA_DIR/wildcard-nixmox-lan.crt"
 chmod 644 "$CA_DIR/ca-bundle.crt"
 
 echo ""
-echo "✅ CA and wildcard certificate with SANs generated successfully in $CA_DIR/"
+echo "✅ CA and wildcard certificate with proper extensions generated successfully in $CA_DIR/"
 echo ""
 echo "Files created:"
 echo "  - $CA_DIR/$CA_NAME.key (CA private key - keep secure!)"
-echo "  - $CA_DIR/$CA_NAME.crt (CA certificate - distribute to all hosts)"
+echo "  - $CA_DIR/$CA_NAME.crt (CA certificate with proper key usage extensions - distribute to all hosts)"
 echo "  - $CA_DIR/wildcard-nixmox-lan.key (Wildcard private key)"
-echo "  - $CA_DIR/wildcard-nixmox-lan.crt (Wildcard certificate with SANs for *.nixmox.lan)"
+echo "  - $CA_DIR/wildcard-nixmox-lan.crt (Wildcard certificate with SANs and proper extensions for *.nixmox.lan)"
 echo "  - $CA_DIR/ca-bundle.crt (CA bundle for containers)"
 echo ""
 echo "SANs included:"
@@ -99,6 +159,13 @@ echo "  - authentik.nixmox.lan"
 echo "  - *.auth.nixmox.lan"
 echo "  - *.git.nixmox.lan"
 echo "  - *.authentik.nixmox.lan"
+echo ""
+echo "CA Extensions included:"
+echo "  - basicConstraints: CA:TRUE"
+echo "  - keyUsage: keyCertSign, cRLSign"
+echo "  - subjectKeyIdentifier: hash"
+echo "  - authorityKeyIdentifier: keyid:always,issuer"
+echo "  - certificatePolicies: 1.3.6.1.4.1.99999.1.1.1"
 echo ""
 echo "Next steps:"
 echo "  1. Add $CA_DIR/ to .gitignore (contains private keys)"

@@ -51,21 +51,27 @@ let
   # Generate OIDC application configurations from manifest
   generateOIDCApps = builtins.toJSON (builtins.listToAttrs (map (name: {
     name = name;
-    value = let config = appServices.${name}; in {
+    value = let 
+      config = allServices.${name};
+      # Determine the correct domain for this service
+      serviceDomain = if config.interface.proxy ? domain then config.interface.proxy.domain
+                     else if config.interface.proxy ? grafana then config.interface.proxy.grafana.domain
+                     else config.hostname or "${name}.nixmox.lan";
+    in {
       name = name;
-      domain = config.interface.proxy.domain;
+      domain = serviceDomain;
       oidc_client_id = config.interface.auth.oidc.client_id or "${name}-oidc";
       oidc_client_type = config.interface.auth.oidc.client_type or "confidential";
       oidc_scopes = config.interface.auth.oidc.scopes or ["openid" "email" "profile"];
-      redirect_uris = config.interface.auth.oidc.redirect_uris or ["https://${config.interface.proxy.domain}/oidc/callback"];
-      launch_url = "https://${config.interface.proxy.domain}";
+      redirect_uris = config.interface.auth.oidc.redirect_uris or ["https://${serviceDomain}/oidc/callback"];
+      launch_url = "https://${serviceDomain}";
       open_in_new_tab = true;
     };
   }) (builtins.filter (name:
-    let config = appServices.${name} or {}; in
+    let config = allServices.${name} or {}; in
     (config.interface.auth or null) != null &&
     (config.interface.auth.type or "") == "oidc"
-  ) (builtins.attrNames appServices))));
+  ) (builtins.attrNames allServices))));
 
   # Generate outpost configuration from manifest
   generateOutpostConfig = builtins.toJSON {

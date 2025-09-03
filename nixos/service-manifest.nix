@@ -78,6 +78,18 @@
       onboot = true;
       start = true;
       interface = {
+        auth = {
+          type = "oidc";
+          provider = "authentik";
+          oidc = {
+            client_id = "pgadmin-oidc";
+            client_type = "confidential";
+            redirect_uris = [ "https://pgadmin.nixmox.lan/oauth2/authorize" ];
+            scopes = [ "openid" "email" "profile" ];
+            username_claim = "preferred_username";
+            groups_claim = "groups";
+          };
+        };
         proxy = {
           domain = "pgadmin.nixmox.lan";
           path = "/";
@@ -232,7 +244,7 @@
           oidc = {
             client_id = "guacamole-oidc";
             client_type = "public";
-            redirect_uris = [ "https://guac.nixmox.lan/guacamole/*" ];
+            redirect_uris = [ "https://guac.nixmox.lan/guacamole/" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";

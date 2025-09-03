@@ -130,17 +130,22 @@ in {
         };
       }) dbServices;
 
-      # Add pgAdmin password secret
-      pgAdminSecret = {
-        "postgresql/pgadmin_password" = {
-          owner = "pgadmin";
-          group = "pgadmin";
-          mode = "0400";
+              # Add pgAdmin password and OIDC client secret
+        pgAdminSecrets = {
+          "postgresql/pgadmin_password" = {
+            owner = "pgadmin";
+            group = "pgadmin";
+            mode = "0400";
+          };
+          "postgresql/oidc_client_secret" = {
+            owner = "pgadmin";
+            group = "pgadmin";
+            mode = "0400";
+          };
         };
-      };
 
     in
-      dbSecrets // pgAdminSecret;
+      dbSecrets // pgAdminSecrets;
     
     # PostgreSQL configuration
     services.postgresql = {
@@ -381,6 +386,37 @@ in {
         SESSION_COOKIE_SAMESITE = "Lax";
         SECURE_PROXY_SSL_HEADER = ["X-Forwarded-Proto" "https"];
         PREFERRED_URL_SCHEME = "https";
+        
+        # OIDC/OAuth2 Configuration with Authentik
+        AUTHENTICATION_SOURCES = [ "oauth2" "internal" ];
+        OAUTH2_AUTO_CREATE_USER = true;
+        OAUTH2_CONFIG = [ {
+          OAUTH2_NAME = "authentik";
+          OAUTH2_DISPLAY_NAME = "Login with Authentik";
+          OAUTH2_CLIENT_ID = manifest.core_services.postgresql.interface.auth.oidc.client_id;
+          OAUTH2_CLIENT_SECRET = "$__file{${config.sops.secrets."postgresql/oidc_client_secret".path}}";
+          OAUTH2_TOKEN_URL = "https://${manifest.core_services.authentik.interface.proxy.domain}/application/o/token/";
+          OAUTH2_AUTHORIZATION_URL = "https://${manifest.core_services.authentik.interface.proxy.domain}/application/o/authorize/";
+          OAUTH2_API_BASE_URL = "https://${manifest.core_services.authentik.interface.proxy.domain}/";
+          OAUTH2_USERINFO_ENDPOINT = "https://${manifest.core_services.authentik.interface.proxy.domain}/application/o/userinfo/";
+          OAUTH2_SERVER_METADATA_URL = "https://${manifest.core_services.authentik.interface.proxy.domain}/application/o/postgresql/.well-known/openid-configuration";
+          OAUTH2_SCOPE = builtins.concatStringsSep " " manifest.core_services.postgresql.interface.auth.oidc.scopes;
+          OAUTH2_ICON = "fa-key";
+          OAUTH2_BUTTON_COLOR = "#1f2937";
+          OAUTH2_SSL_CERT_VERIFICATION = false;
+        } ];
+      };
+    };
+
+    # Override pgAdmin systemd service to set SSL environment variables
+    systemd.services.pgadmin = {
+      environment = {
+        # Disable SSL verification for OIDC requests (temporary workaround)
+        PYTHONHTTPSVERIFY = "0";
+        REQUESTS_CA_BUNDLE = "";
+        SSL_CERT_FILE = "";
+        # Additional SSL bypass variables
+        CURL_INSECURE = "1";
       };
     };
 
