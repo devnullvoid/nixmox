@@ -21,23 +21,45 @@ let
   # Get authentication configuration from manifest
   authConfig = serviceConfig.interface.auth or {};
 
+  # Get core services for dependencies
+  coreServices = manifest.core_services or {};
+
+  # Generate configuration from manifest
+  manifestConfig = {
+    # Use proxy.domain from manifest
+    hostName = proxyConfig.domain or "nextcloud.${baseDomain}";
+    
+    # Use authentik domain from manifest
+    authentikDomain = (coreServices.authentik.interface.proxy.domain or "auth.${baseDomain}");
+    
+    # Use OIDC provider path from manifest (default to service name)
+    oidcProviderPath = "nextcloud";
+    
+    # Use client ID from manifest
+    clientId = authConfig.oidc.client_id or "nextcloud-oidc";
+    
+    # Use database configuration from manifest
+    database = {
+      host = dbConfig.host or coreServices.postgresql.ip or "postgresql.${baseDomain}";
+      port = dbConfig.port or 5432;
+      name = dbConfig.name or "nextcloud";
+      user = dbConfig.owner or "nextcloud";
+      # Password will come from SOPS database_password secret
+    };
+  };
+
 in {
   options.services.nixmox.nextcloud = {
     enable = mkEnableOption "Nextcloud file sharing platform";
 
-    subdomain = mkOption {
-      type = types.str;
-      default = "nextcloud";
-      description = "Subdomain for Nextcloud; full host becomes <subdomain>.<domain>";
-    };
-
+    # Allow manual overrides of manifest values
     hostName = mkOption {
       type = types.str;
-      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      default = manifestConfig.hostName;
       description = "Public host name for Nextcloud (from manifest proxy config)";
     };
 
-    # Database configuration (manifest-driven)
+    # Database configuration (manifest-driven with overrides)
     database = {
       type = mkOption {
         type = types.enum [ "postgresql" "mysql" "sqlite" ];
@@ -47,36 +69,30 @@ in {
 
       host = mkOption {
         type = types.str;
-        default = dbConfig.host or "postgresql.nixmox.lan";
+        default = manifestConfig.database.host;
         description = "Database host (from manifest)";
       };
 
       port = mkOption {
         type = types.int;
-        default = dbConfig.port or 5432;
+        default = manifestConfig.database.port;
         description = "Database port (from manifest)";
       };
 
       name = mkOption {
         type = types.str;
-        default = dbConfig.name or "nextcloud";
+        default = manifestConfig.database.name;
         description = "Database name (from manifest)";
       };
 
       user = mkOption {
         type = types.str;
-        default = dbConfig.owner or "nextcloud";
+        default = manifestConfig.database.user;
         description = "Database user (from manifest)";
-      };
-
-      password = mkOption {
-        type = types.str;
-        default = "changeme";
-        description = "Database password (should be overridden via SOPS)";
       };
     };
 
-    # Redis configuration (manifest-driven)
+    # Redis configuration
     redis = {
       enable = mkOption {
         type = types.bool;
@@ -86,7 +102,7 @@ in {
 
       host = mkOption {
         type = types.str;
-        default = "localhost";  # Redis is local to Nextcloud container
+        default = "localhost";
         description = "Redis host";
       };
 
@@ -94,12 +110,6 @@ in {
         type = types.int;
         default = 6379;
         description = "Redis port";
-      };
-
-      password = mkOption {
-        type = types.str;
-        default = "changeme";
-        description = "Redis password (should be overridden via SOPS)";
       };
     };
 
@@ -126,12 +136,72 @@ in {
         description = "Nextcloud admin username";
       };
     };
+
+    # OIDC configuration (manifest-driven)
+    oidc = {
+      clientId = mkOption {
+        type = types.str;
+        default = manifestConfig.clientId;
+        description = "OIDC client ID (from manifest)";
+      };
+
+      authentikDomain = mkOption {
+        type = types.str;
+        default = manifestConfig.authentikDomain;
+        description = "Authentik domain (from manifest)";
+      };
+
+      providerPath = mkOption {
+        type = types.str;
+        default = manifestConfig.oidcProviderPath;
+        description = "OIDC provider path (from manifest)";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable (
     let
-      hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
+      hostNameEffective = cfg.hostName;
     in {
+      # SOPS secrets for Nextcloud
+      sops.secrets = {
+        nextcloud_admin_password = {
+          sopsFile = ../../../secrets/default.yaml;
+          key = "nextcloud/admin_password";
+          owner = "nextcloud";
+          group = "nextcloud";
+          mode = "0400";
+          restartUnits = [ "nextcloud-setup.service" ];
+        };
+
+        nextcloud_database_password = {
+          sopsFile = ../../../secrets/default.yaml;
+          key = "nextcloud/database_password";
+          owner = "nextcloud";
+          group = "nextcloud";
+          mode = "0400";
+          restartUnits = [ "nextcloud-setup.service" ];
+        };
+
+        nextcloud_redis_password = {
+          sopsFile = ../../../secrets/default.yaml;
+          key = "nextcloud/redis_password";
+          owner = "nextcloud";
+          group = "nextcloud";
+          mode = "0400";
+          restartUnits = [ "nextcloud-setup.service" ];
+        };
+
+        nextcloud_oidc_client_secret = {
+          sopsFile = ../../../secrets/default.yaml;
+          key = "nextcloud/oidc_client_secret";
+          owner = "nextcloud";
+          group = "nextcloud";
+          mode = "0400";
+          restartUnits = [ "nextcloud-setup.service" ];
+        };
+      };
+
       # Nextcloud configuration
       services.nextcloud = {
         enable = true;
@@ -145,8 +215,8 @@ in {
 
         # Admin configuration using files for security
         config = {
-          adminpassFile = "/run/secrets/nextcloud-admin-password";
-          dbpassFile = "/run/secrets/nextcloud-db-password";
+          adminpassFile = config.sops.secrets.nextcloud_admin_password.path;
+          dbpassFile = config.sops.secrets.nextcloud_database_password.path;
           
           # Database configuration
           dbtype = if cfg.database.type == "postgresql" then "pgsql" else cfg.database.type;
@@ -158,6 +228,7 @@ in {
         # HTTPS settings - disabled since we're behind Caddy
         https = false;
 
+
         # Auto-update
         autoUpdateApps = {
           enable = true;
@@ -167,7 +238,7 @@ in {
         # Extra settings
         settings = {
           # Trusted domains
-          trusted_domains = [ hostNameEffective "127.0.0.1" ];
+          trusted_domains = [ hostNameEffective "127.0.0.1" "cloud.nixmox.lan" ];
 
           # Performance and security settings
           "opcache.enable" = "1";
@@ -178,47 +249,103 @@ in {
           "opcache.revalidate_freq" = "2";
           "opcache.fast_shutdown" = "1";
 
-          # Authentik integration (will be configured later)
-          "auth_type" = "oauth2";
-          "oauth2_provider_url" = if config.services.nixmox ? authentik && config.services.nixmox.authentik.enable
-                                   then "https://${config.services.nixmox.authentik.domain}"
-                                   else "https://authentik.nixmox.lan";
-          "oauth2_client_id" = "nextcloud";
-          "oauth2_client_secret" = "changeme"; # Should be overridden via SOPS
+          # Disable App Store to avoid permission issues during setup
+          "appstoreenabled" = "false";
+
+          # Redis configuration (temporarily disabled for testing)
+          # "redis.host" = cfg.redis.host;
+          # "redis.port" = toString cfg.redis.port;
+          # "redis.password" = config.sops.placeholder.nextcloud_redis_password;
+
+          # OIDC/OAuth2 configuration for Authentik (temporarily disabled for testing)
+          # "auth_type" = "oauth2";
+          # "oauth2_provider_url" = "https://${cfg.oidc.authentikDomain}/application/o/${cfg.oidc.providerPath}/";
+          # "oauth2_client_id" = cfg.oidc.clientId;
+          # "oauth2_client_secret" = config.sops.placeholder.nextcloud_oidc_client_secret;
+          # "oauth2_authorization_url" = "https://${cfg.oidc.authentikDomain}/application/o/authorize/";
+          # "oauth2_token_url" = "https://${cfg.oidc.authentikDomain}/application/o/token/";
+          # "oauth2_userinfo_url" = "https://${cfg.oidc.authentikDomain}/application/o/userinfo/";
+          # "oauth2_logout_url" = "https://${cfg.oidc.authentikDomain}/application/o/end-session/";
+          # "oauth2_scope" = "openid email profile";
+          # "oauth2_auto_redirect" = "true";
+          # "oauth2_auto_redirect_url" = "https://${hostNameEffective}/";
+          # "oauth2_redirect_url" = "https://${hostNameEffective}/apps/user_oidc/code";
         };
+      };
+
+
+      # Redis configuration for Nextcloud caching
+      services.redis.servers."".enable = lib.mkIf cfg.redis.enable true;
+      services.redis.servers."".port = lib.mkIf cfg.redis.enable cfg.redis.port;
+      # services.redis.servers."".requirePassFile = lib.mkIf cfg.redis.enable config.sops.secrets.nextcloud_redis_password.path;
+      services.redis.servers."".settings = lib.mkIf cfg.redis.enable {
+        maxmemory = "256mb";
+        maxmemory-policy = "allkeys-lru";
+        save = lib.mkForce "900 1 300 10 60 10000";
+      };
+
+      # Provide Nextcloud-specific Caddy configuration via global option
+      # This will be collected by the Caddy module when it's enabled
+      services.nixmox.caddyServiceConfigs.nextcloud = {
+        extraConfig = ''
+          # Nextcloud-specific configuration
+          header {
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            X-XSS-Protection "1; mode=block"
+            Referrer-Policy strict-origin-when-cross-origin
+            # Remove server header
+            -Server
+          }
+          
+          # Nextcloud file upload size limits
+          request_body {
+            max_size 10GB
+          }
+          
+          # Timeout settings for large file uploads
+          timeouts {
+            read_body 10m
+            read_header 30s
+            write 10m
+            idle 5m
+          }
+        '';
+        
+        proxyConfig = ''
+          # Nextcloud-specific proxy settings
+          header_up X-Real-IP {remote}
+          header_up X-Forwarded-Ssl on
+          # Timeout settings for large file uploads
+          timeout 10m
+        '';
       };
 
       # Firewall rules - only allow local access since we're behind Caddy
       networking.firewall = {
         allowedTCPPorts = [
           cfg.nextcloud.port  # Nextcloud backend (behind Caddy)
-        ];
+        ] ++ lib.optional cfg.redis.enable cfg.redis.port;  # Redis if enabled
       };
 
       # Add host entries for external services
       networking.hosts = {
         "127.0.0.1" = [ hostNameEffective ];
-      } // mkIf (cfg.database.host != "localhost") {
+      } // lib.optionalAttrs (cfg.database.host != "localhost") {
         "${cfg.database.host}" = [ "postgresql.nixmox.lan" ];
-      } // mkIf (cfg.redis.host != "localhost") {
-        "${cfg.redis.host}" = [ "redis.nixmox.lan" ];
       };
 
-      # SOPS secrets for Nextcloud (temporarily disabled for testing)
-      # sops.secrets = {
-      #   "nextcloud-admin-password" = {
-      #     owner = "nextcloud";
-      #     group = "nextcloud";
-      #     mode = "0400";
-      #     restartUnits = [ "nextcloud-setup.service" ];
-      #   };
-      # 
-      #   "nextcloud-db-password" = {
-      #     owner = "nextcloud";
-      #     group = "nextcloud";
-      #     mode = "0400";
-      #     restartUnits = [ "nextcloud-setup.service" ];
-      #   };
-      # };
+      # Systemd service dependencies
+      systemd.services.nextcloud-setup = {
+        after = [ "run-secrets.d.mount" "network-online.target" ];
+        wants = [ "run-secrets.d.mount" "network-online.target" ];
+        # Add a simple delay to ensure network is ready
+        preStart = ''
+          echo "Waiting for network to be ready..."
+          sleep 5
+          echo "Starting Nextcloud setup..."
+        '';
+      };
     });
   } 

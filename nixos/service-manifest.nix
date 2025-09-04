@@ -359,20 +359,20 @@
           provider = "authentik";
           oidc = {
             client_type = "confidential";
-            redirect_uris = [ "https://nextcloud.nixmox.lan/callback" ];
+            redirect_uris = [ "https://cloud.nixmox.lan/callback" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";
           };
         };
         proxy = {
-          domain = "nextcloud.nixmox.lan";
+          domain = "cloud.nixmox.lan";
           path = "/";
-          upstream = "192.168.99.15:8080";
+          upstream = "192.168.99.15:80";
         };
         health = {
           startup = "systemctl is-active --quiet nextcloud";
-          liveness = "curl -f -s http://localhost:8080/status.php";
+          liveness = "curl -f -s http://localhost:80/status.php";
           interval = 30;
           timeout = 60;
           retries = 3;

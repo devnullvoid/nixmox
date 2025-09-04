@@ -156,6 +156,8 @@ in {
       default = {};
       description = "Services with multiple proxy configurations";
     };
+
+
   };
 
   config = mkIf cfg.enable {
@@ -188,7 +190,15 @@ in {
                 service.extraConfig}
               
               # Basic reverse proxy configuration
-              ${lib.optionalString (!(service.skipDefaultProxy or false)) "reverse_proxy ${service.backend}:${toString service.port}"}
+              ${lib.optionalString (!(service.skipDefaultProxy or false)) ''
+                reverse_proxy ${service.backend}:${toString service.port} {
+                  header_up Host {host}
+                  header_up X-Forwarded-Proto https
+                  header_up X-Forwarded-Host {host}
+                  header_up X-Forwarded-For {remote}
+                  ${config.services.nixmox.caddyServiceConfigs.${name}.proxyConfig or ""}
+                }
+              ''}
             }
           '') cfg.services)
         )}
@@ -213,6 +223,7 @@ in {
                       header_up X-Forwarded-Proto https
                       header_up X-Forwarded-Host {host}
                       header_up X-Forwarded-For {remote}
+                      ${config.services.nixmox.caddyServiceConfigs.${serviceName}.proxyConfig or ""}
                     }
                   ''}
                 }
