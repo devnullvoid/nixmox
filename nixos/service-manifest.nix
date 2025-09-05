@@ -359,7 +359,7 @@
           provider = "authentik";
           oidc = {
             client_type = "confidential";
-            redirect_uris = [ "https://cloud.nixmox.lan/callback" ];
+            redirect_uris = [ "https://cloud.nixmox.lan/apps/user_oidc/code" ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";

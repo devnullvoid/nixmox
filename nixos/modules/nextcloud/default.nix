@@ -164,42 +164,40 @@ in {
       hostNameEffective = cfg.hostName;
     in {
       # SOPS secrets for Nextcloud
-      sops.secrets = {
-        nextcloud_admin_password = {
-          sopsFile = ../../../secrets/default.yaml;
-          key = "nextcloud/admin_password";
-          owner = "nextcloud";
-          group = "nextcloud";
-          mode = "0400";
-          restartUnits = [ "nextcloud-setup.service" ];
-        };
+      sops.secrets.nextcloud_admin_password = {
+        sopsFile = ../../../secrets/default.yaml;
+        key = "nextcloud/admin_password";
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
+      };
 
-        nextcloud_database_password = {
-          sopsFile = ../../../secrets/default.yaml;
-          key = "nextcloud/database_password";
-          owner = "nextcloud";
-          group = "nextcloud";
-          mode = "0400";
-          restartUnits = [ "nextcloud-setup.service" ];
-        };
+      sops.secrets.nextcloud_database_password = {
+        sopsFile = ../../../secrets/default.yaml;
+        key = "nextcloud/database_password";
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
+      };
 
-        nextcloud_redis_password = {
-          sopsFile = ../../../secrets/default.yaml;
-          key = "nextcloud/redis_password";
-          owner = "nextcloud";
-          group = "nextcloud";
-          mode = "0400";
-          restartUnits = [ "nextcloud-setup.service" ];
-        };
+      sops.secrets.nextcloud_redis_password = {
+        sopsFile = ../../../secrets/default.yaml;
+        key = "nextcloud/redis_password";
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
+      };
 
-        nextcloud_oidc_client_secret = {
-          sopsFile = ../../../secrets/default.yaml;
-          key = "nextcloud/oidc_client_secret";
-          owner = "nextcloud";
-          group = "nextcloud";
-          mode = "0400";
-          restartUnits = [ "nextcloud-setup.service" ];
-        };
+      sops.secrets.nextcloud_oidc_client_secret = {
+        sopsFile = ../../../secrets/default.yaml;
+        key = "nextcloud/oidc_client_secret";
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0400";
+        restartUnits = [ "nextcloud-setup.service" ];
       };
 
       # Nextcloud configuration
@@ -215,6 +213,7 @@ in {
 
         # Admin configuration using files for security
         config = {
+          adminuser = "admin";
           adminpassFile = config.sops.secrets.nextcloud_admin_password.path;
           dbpassFile = config.sops.secrets.nextcloud_database_password.path;
           
@@ -235,10 +234,25 @@ in {
           startAt = "05:00:00";
         };
 
+        # Enable OIDC app
+        extraApps = {
+          user_oidc = pkgs.nextcloud31Packages.apps.user_oidc;
+        };
+        
+        # Enable the extra apps
+        extraAppsEnable = true;
+
         # Extra settings
         settings = {
           # Trusted domains
           trusted_domains = [ hostNameEffective "127.0.0.1" "cloud.nixmox.lan" ];
+          
+          # Reverse proxy configuration
+          overwriteprotocol = "https";
+          trusted_proxies = [ "192.168.99.14" ];  # Caddy proxy IP
+
+          # Allow calls to local/private addresses (needed for OIDC to Authentik on LAN)
+          allow_local_remote_servers = true;
 
           # Performance and security settings
           "opcache.enable" = "1";
@@ -257,20 +271,19 @@ in {
           # "redis.port" = toString cfg.redis.port;
           # "redis.password" = config.sops.placeholder.nextcloud_redis_password;
 
-          # OIDC/OAuth2 configuration for Authentik (temporarily disabled for testing)
-          # "auth_type" = "oauth2";
-          # "oauth2_provider_url" = "https://${cfg.oidc.authentikDomain}/application/o/${cfg.oidc.providerPath}/";
-          # "oauth2_client_id" = cfg.oidc.clientId;
-          # "oauth2_client_secret" = config.sops.placeholder.nextcloud_oidc_client_secret;
-          # "oauth2_authorization_url" = "https://${cfg.oidc.authentikDomain}/application/o/authorize/";
-          # "oauth2_token_url" = "https://${cfg.oidc.authentikDomain}/application/o/token/";
-          # "oauth2_userinfo_url" = "https://${cfg.oidc.authentikDomain}/application/o/userinfo/";
-          # "oauth2_logout_url" = "https://${cfg.oidc.authentikDomain}/application/o/end-session/";
-          # "oauth2_scope" = "openid email profile";
-          # "oauth2_auto_redirect" = "true";
-          # "oauth2_auto_redirect_url" = "https://${hostNameEffective}/";
-          # "oauth2_redirect_url" = "https://${hostNameEffective}/apps/user_oidc/code";
+          # OIDC configuration for Authentik (using user_oidc app)
+          
+          # Enable user_oidc app
+          "user_oidc" = {
+            "auto_provision" = true;
+            "soft_auto_provision" = true;
+            "httpclient.allowselfsigned" = true;
+          };
+          
+          # OIDC provider configuration is managed through the web UI
+          # The user_oidc app handles the provider configuration in the database
         };
+        
       };
 
 
@@ -282,6 +295,38 @@ in {
         maxmemory = "256mb";
         maxmemory-policy = "allkeys-lru";
         save = lib.mkForce "900 1 300 10 60 10000";
+      };
+
+      # Systemd service to configure OIDC provider (database-only approach)
+      systemd.services.nextcloud-oidc-setup = {
+        description = "Configure Nextcloud OIDC provider";
+        after = [ "nextcloud-setup.service" "sops-nix.service" ];
+        wants = [ "nextcloud-setup.service" "sops-nix.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          Group = "root";
+          WorkingDirectory = "/var/lib/nextcloud";
+          ExecStart = pkgs.writeShellScript "nextcloud-oidc-setup" ''
+            set -euo pipefail
+            
+            # Wait for Nextcloud to be ready
+            sleep 10
+            
+            # Install user_oidc app if not already installed
+            /run/current-system/sw/bin/nextcloud-occ app:install user_oidc || true
+            
+            # Configure OIDC provider (stores in database, not config.php)
+            /run/current-system/sw/bin/nextcloud-occ user_oidc:provider "Authentik" \
+              --clientid="${cfg.oidc.clientId}" \
+              --clientsecret="$(cat ${config.sops.secrets.nextcloud_oidc_client_secret.path})" \
+              --discoveryuri="https://${cfg.oidc.authentikDomain}/application/o/${cfg.oidc.providerPath}/.well-known/openid-configuration" \
+              --unique-uid=0 \
+              --no-interaction || true
+          '';
+          Restart = "on-failure";
+          RestartSec = "30s";
+        };
       };
 
       # Provide Nextcloud-specific Caddy configuration via global option
@@ -347,5 +392,6 @@ in {
           echo "Starting Nextcloud setup..."
         '';
       };
+
     });
   } 
