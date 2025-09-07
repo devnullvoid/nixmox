@@ -360,7 +360,7 @@
           oidc = {
             client_type = "confidential";
             redirect_uris = [ "https://cloud.nixmox.lan/apps/user_oidc/code" ];
-            scopes = [ "openid" "email" "profile" ];
+            scopes = [ "email" "profile" "nextcloud" "openid" ];
             username_claim = "preferred_username";
             groups_claim = "groups";
           };

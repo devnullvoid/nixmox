@@ -38,6 +38,15 @@ let
     # Use client ID from manifest
     clientId = authConfig.oidc.client_id or "nextcloud-oidc";
     
+    # Use OIDC configuration from manifest
+    auth = {
+      oidc = {
+        scopes = authConfig.oidc.scopes or [ "openid" "email" "profile" ];
+        username_claim = authConfig.oidc.username_claim or "preferred_username";
+        groups_claim = authConfig.oidc.groups_claim or "groups";
+      };
+    };
+    
     # Use database configuration from manifest
     database = {
       host = dbConfig.host or coreServices.postgresql.ip or "postgresql.${baseDomain}";
@@ -155,6 +164,24 @@ in {
         type = types.str;
         default = manifestConfig.oidcProviderPath;
         description = "OIDC provider path (from manifest)";
+      };
+
+      scopes = mkOption {
+        type = types.listOf types.str;
+        default = manifestConfig.auth.oidc.scopes or [ "openid" "email" "profile" ];
+        description = "OIDC scopes (from manifest)";
+      };
+
+      usernameClaim = mkOption {
+        type = types.str;
+        default = manifestConfig.auth.oidc.username_claim or "preferred_username";
+        description = "OIDC username claim (from manifest)";
+      };
+
+      groupsClaim = mkOption {
+        type = types.str;
+        default = manifestConfig.auth.oidc.groups_claim or "groups";
+        description = "OIDC groups claim (from manifest)";
       };
     };
   };
@@ -321,6 +348,9 @@ in {
               --clientid="${cfg.oidc.clientId}" \
               --clientsecret="$(cat ${config.sops.secrets.nextcloud_oidc_client_secret.path})" \
               --discoveryuri="https://${cfg.oidc.authentikDomain}/application/o/${cfg.oidc.providerPath}/.well-known/openid-configuration" \
+              --scope="${lib.concatStringsSep " " cfg.oidc.scopes}" \
+              --mapping-uid="${cfg.oidc.usernameClaim}" \
+              --mapping-groups="${cfg.oidc.groupsClaim}" \
               --unique-uid=0 \
               --no-interaction || true
           '';
