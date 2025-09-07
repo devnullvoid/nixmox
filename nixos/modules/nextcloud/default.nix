@@ -351,6 +351,7 @@ in {
               --scope="${lib.concatStringsSep " " cfg.oidc.scopes}" \
               --mapping-uid="${cfg.oidc.usernameClaim}" \
               --mapping-groups="${cfg.oidc.groupsClaim}" \
+              --group-provisioning=1 \
               --unique-uid=0 \
               --no-interaction || true
           '';
