@@ -168,6 +168,11 @@ in {
             "172.16.0.0/12 allow"
           ];
           extended-statistics = "yes";
+          log-replies = "yes";
+          log-tag-queryreply = "yes";
+          log-local-actions = "yes";
+          logfile = "/var/lib/unbound/logs/unbound.log";
+          verbosity = "0";
           num-threads = "2";
           msg-cache-size = "128k";
           rrset-cache-size = "256k";
@@ -266,9 +271,7 @@ in {
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         
-        # Logging
-        StandardOutput = "journal";
-        StandardError = "journal";
+        # Logging - let Unbound handle its own logging via config file
       };
     };
     
@@ -292,6 +295,61 @@ in {
       group = "unbound";
       home = "/var/lib/unbound";
       createHome = true;
+    };
+    
+    # Create log directory and set permissions
+    systemd.tmpfiles.rules = [
+      "d /var/lib/unbound 0755 unbound unbound"
+      "d /var/lib/unbound/logs 0755 unbound unbound"
+      "f /var/lib/unbound/logs/unbound.log 0644 unbound unbound"
+    ];
+    
+    # Log rotation for Unbound
+    services.logrotate.settings."/var/lib/unbound/logs/unbound.log" = {
+      frequency = "daily";
+      rotate = 7;
+      compress = true;
+      delaycompress = true;
+      missingok = true;
+      notifempty = true;
+      postrotate = "systemctl reload unbound";
+    };
+    
+    # Alloy configuration for Unbound log collection
+    environment.etc."alloy/unbound.alloy" = mkIf config.services.nixmox.alloy.enable {
+      source = pkgs.writeText "unbound-alloy.alloy" ''
+        // Unbound-specific Alloy configuration for log collection
+        loki.write "unbound_loki" {
+          endpoint {
+            url = "http://${manifest.services.monitoring.ip or "192.168.99.18"}:3100/loki/api/v1/push"
+          }
+        }
+        
+        local.file_match "unbound_logs" {
+          path_targets = [{"__path__" = "/var/lib/unbound/logs/unbound.log"}]
+          sync_period = "5s"
+        }
+        
+        loki.source.file "unbound" {
+          targets = local.file_match.unbound_logs.targets
+          forward_to = [loki.relabel.unbound.receiver]
+          tail_from_end = true
+        }
+        
+        loki.relabel "unbound" {
+          forward_to = [loki.write.unbound_loki.receiver]
+          
+          rule {
+            target_label = "job"
+            replacement = "unbound"
+          }
+          rule {
+            target_label = "service"
+            replacement = "unbound"
+          }
+        }
+      '';
+      mode = "0644";
     };
     
     users.groups.unbound = {};

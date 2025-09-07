@@ -171,7 +171,7 @@ in {
             apiVersion = 1;
             datasources = [
               {
-                name = "Loki";
+                name = "loki";
                 type = "loki";
                 access = "proxy";
                 url = "http://127.0.0.1:3100";
@@ -181,7 +181,7 @@ in {
                 };
               }
               {
-                name = "Prometheus";
+                name = "prometheus";
                 type = "prometheus";
                 access = "proxy";
                 url = "http://127.0.0.1:9090";
@@ -258,19 +258,19 @@ in {
     };
     
     # Add more dashboard files here as needed
-    # environment.etc."grafana-dashboards/node-exporter.json" = {
-    #   source = ../../../nixos/modules/monitoring/dashboards/node-exporter.json;
-    #   mode = "0644";
-    # };
+    environment.etc."grafana-dashboards/node_exporter.json" = {
+      source = ../../../nixos/modules/monitoring/dashboards/node_exporter.json;
+      mode = "0644";
+    };
     
-    # environment.etc."grafana-dashboards/postgresql.json" = {
-    #   source = ../../../nixos/modules/monitoring/dashboards/postgresql.json;
-    #   mode = "0644";
-    # };
+    environment.etc."grafana-dashboards/postgresql.json" = {
+      source = ../../../nixos/modules/monitoring/dashboards/postgresql.json;
+      mode = "0644";
+    };
     
-    # environment.etc."grafana-dashboards/unbound.json" = {
-    #   source = ../../../nixos/modules/monitoring/dashboards/unbound.json;
-    #   mode = "0644";
-    # };
+    environment.etc."grafana-dashboards/unbound.json" = {
+      source = ../../../nixos/modules/monitoring/dashboards/unbound.json;
+      mode = "0644";
+    };
   };
 }
