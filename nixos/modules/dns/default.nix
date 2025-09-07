@@ -347,6 +347,10 @@ in {
             target_label = "service"
             replacement = "unbound"
           }
+          rule {
+            target_label = "nodename"
+            replacement = constants.hostname
+          }
         }
       '';
       mode = "0644";

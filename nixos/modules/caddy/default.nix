@@ -351,8 +351,25 @@ in {
 
         loki.source.file "caddy" {
           targets = local.file_match.caddy_logs.targets
-          forward_to = [loki.write.caddy_loki.receiver]
+          forward_to = [loki.relabel.caddy.receiver]
           tail_from_end = true
+        }
+        
+        loki.relabel "caddy" {
+          forward_to = [loki.write.caddy_loki.receiver]
+          
+          rule {
+            target_label = "job"
+            replacement = "caddy"
+          }
+          rule {
+            target_label = "service"
+            replacement = "caddy"
+          }
+          rule {
+            target_label = "nodename"
+            replacement = constants.hostname
+          }
         }
       '';
       mode = "0644";

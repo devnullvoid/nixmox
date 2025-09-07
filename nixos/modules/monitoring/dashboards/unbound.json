@@ -1551,7 +1551,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "count by(client) (rate({dns=\"reply\"} | pattern `<_> <_> <_> <client> <_> <_> <_> <_> <_> <_> <_>` [$__interval]))",
+          "expr": "count by(client) (rate({job=\"unbound\"} |~ `reply:` | pattern `<_> <_> <_> <client> <_> <_> <_> <_> <_> <_> <_>` [$__interval]))",
           "legendFormat": "{{client}}",
           "queryType": "range",
           "refId": "A",
@@ -2269,7 +2269,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "sum by(dns) (count_over_time({dns=\"reply\"} [$__range]))",
+          "expr": "sum by(service) (count_over_time({job=\"unbound\"} |~ `reply:` [$__range]))",
           "legendFormat": "",
           "queryType": "instant",
           "refId": "A"
@@ -2280,7 +2280,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "sum by(dns) (count_over_time({dns=\"block\"} [$__range]))",
+          "expr": "sum by(service) (count_over_time({job=\"unbound\"} |~ `NXDOMAIN` [$__range]))",
           "hide": false,
           "legendFormat": "",
           "queryType": "instant",
@@ -2448,7 +2448,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "count_over_time({dns=\"reply\"} [$__interval])",
+          "expr": "count_over_time({job=\"unbound\"} |~ `reply:` [$__interval])",
           "legendFormat": "{{dns}}",
           "queryType": "range",
           "refId": "A",
@@ -2460,7 +2460,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "count_over_time({dns=\"block\"} [$__interval])",
+          "expr": "count_over_time({job=\"unbound\"} |~ `NXDOMAIN` [$__interval])",
           "hide": false,
           "legendFormat": "{{dns}}",
           "queryType": "range",
@@ -2620,7 +2620,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "count_over_time({dns=\"reply\"} | pattern `<_> <_> <_> <client> <_> <_> <_> <_> <_> <_> <_>` [$__interval])",
+          "expr": "count_over_time({job=\"unbound\"} |~ `reply:` | pattern `<_> <_> <_> <client> <_> <_> <_> <_> <_> <_> <_>` [$__interval])",
           "legendFormat": "{{client}}",
           "queryType": "range",
           "refId": "A",
@@ -2794,7 +2794,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "sum by(domain, client) (count_over_time({dns=\"reply\"} | pattern `<_> <_> <_> <client> <domain> <_> <_> <_> <_> <_> <_>` [$__range]))",
+          "expr": "sum by(domain, client) (count_over_time({job=\"unbound\"} |~ `reply:` | pattern `<_> <_> <_> <client> <domain> <_> <_> <_> <_> <_> <_>` [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -2945,7 +2945,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "sum by(domain) (count_over_time({dns=\"block\"} | pattern `<_> <_> <_> <domain> <_> <_> <_> <_> <_>` [$__range]))",
+          "expr": "sum by(domain) (count_over_time({job=\"unbound\"} |~ `NXDOMAIN` | pattern `<_> <_> <_> <domain> <_> <_> <_> <_> <_>` [$__range]))",
           "hide": false,
           "queryType": "instant",
           "refId": "A"
@@ -3159,7 +3159,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "{dns=\"reply\"} | pattern `<_> <_> <_> <client> <domain> <type> <_> <_> <lookup_time> <cache> <_>`",
+          "expr": "{job=\"unbound\"} |~ `reply:` | pattern `<_> <_> <_> <client> <domain> <type> <_> <_> <lookup_time> <cache> <_>`",
           "queryType": "range",
           "refId": "A"
         }
@@ -3338,7 +3338,7 @@
             "uid": "loki"
           },
           "editorMode": "builder",
-          "expr": "{dns=\"block\"} | pattern `<_> <_> <_> <domain> <_> <client>@<_> <_> <_> <_>`",
+          "expr": "{job=\"unbound\"} |~ `NXDOMAIN` | pattern `<_> <_> <_> <domain> <_> <client>@<_> <_> <_> <_>`",
           "queryType": "range",
           "refId": "A"
         }

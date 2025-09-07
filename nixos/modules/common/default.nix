@@ -65,6 +65,7 @@ environment.systemPackages = with pkgs; [
   curl
   htop
   tmux
+  jq
   
   # Development tools
   git
