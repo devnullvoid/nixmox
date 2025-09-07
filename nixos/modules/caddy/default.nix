@@ -172,6 +172,16 @@ in {
           metrics {
             per_host
           }
+          # Structured JSON logging for Alloy/Loki ingestion
+          log {
+            output file /var/log/caddy/caddy_main.log {
+              roll_size 100MiB
+              roll_keep 5
+              roll_keep_for 100d
+            }
+            format json
+            level INFO
+          }
           # Use our pre-generated wildcard certificate from SOPS secrets
           ${lib.optionalString cfg.useInternalCa ''
             # Note: Using SOPS-managed certificates
@@ -185,6 +195,17 @@ in {
               # Use our wildcard certificate for all services
               ${lib.optionalString cfg.useInternalCa 
                 "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
+              
+              # Per-domain structured JSON logging
+              log {
+                output file /var/log/caddy/${service.domain}.log {
+                  roll_size 100MiB
+                  roll_keep 5
+                  roll_keep_for 100d
+                }
+                format json
+                level INFO
+              }
               
               ${lib.optionalString (service.extraConfig != "") 
                 service.extraConfig}
@@ -212,6 +233,17 @@ in {
                   # Use our wildcard certificate for all services
                   ${lib.optionalString cfg.useInternalCa 
                     "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
+                  
+                  # Per-domain structured JSON logging
+                  log {
+                    output file /var/log/caddy/${proxy.domain}.log {
+                      roll_size 100MiB
+                      roll_keep 5
+                      roll_keep_for 100d
+                    }
+                    format json
+                    level INFO
+                  }
                   
                   ${lib.optionalString (proxy.extraConfig != "") 
                     proxy.extraConfig}
@@ -282,6 +314,48 @@ in {
       enableWildcardKey = cfg.internalCa.enableWildcardKey;
     };
 
+    # Create Caddy log directory and ensure log files have correct permissions
+    systemd.tmpfiles.rules = [
+      "d /var/log/caddy 0755 caddy caddy"
+      # Ensure log files are readable by Alloy (world read permission)
+      "f /var/log/caddy/*.log 0644 caddy caddy"
+    ];
 
+    # Ensure Caddy user exists and has proper permissions
+    users.users.caddy = {
+      isSystemUser = true;
+      group = "caddy";
+      home = "/var/lib/caddy";
+      createHome = true;
+    };
+
+    users.groups.caddy = {};
+
+    # Caddy-specific Alloy configuration for log collection
+    # This extends the common Alloy configuration without modifying it
+    environment.etc."alloy/caddy.alloy" = mkIf config.services.nixmox.alloy.enable {
+      source = pkgs.writeText "caddy-alloy.alloy" ''
+        // Caddy-specific Alloy configuration for log collection
+        
+        // Loki client for Caddy log forwarding
+        loki.write "caddy_loki" {
+          endpoint {
+            url = "http://${manifest.services.monitoring.ip or "192.168.99.18"}:3100/loki/api/v1/push"
+          }
+        }
+        
+        // Caddy log collection
+        local.file_match "caddy_logs" {
+          path_targets = [{"__path__" = "/var/log/caddy/*.log"}]
+        }
+
+        loki.source.file "caddy" {
+          targets = local.file_match.caddy_logs.targets
+          forward_to = [loki.write.caddy_loki.receiver]
+          tail_from_end = true
+        }
+      '';
+      mode = "0644";
+    };
   };
 }
