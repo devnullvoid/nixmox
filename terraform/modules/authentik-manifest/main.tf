@@ -107,6 +107,30 @@ data "authentik_property_mapping_provider_scope" "scopes" {
   managed  = each.value
 }
 
+# Custom scope mapping for Nextcloud
+resource "authentik_property_mapping_provider_scope" "nextcloud_profile" {
+  name       = "Nextcloud Profile"
+  scope_name = "nextcloud"
+  expression = <<-EOT
+# Extract all groups the user is a member of
+groups = [group.name for group in user.ak_groups.all()]
+
+# In Nextcloud, administrators must be members of a fixed group called "admin".
+# If a user is an admin in authentik, ensure that "admin" is appended to their group list.
+if user.is_superuser and "admin" not in groups:
+    groups.append("admin")
+
+return {
+    "name": request.user.name,
+    "groups": groups,
+    # Set a quota by using the "nextcloud_quota" property in the user's attributes
+    "quota": user.group_attributes().get("nextcloud_quota", None),
+    # To connect an existing Nextcloud user, set "nextcloud_user_id" to the Nextcloud username.
+    "user_id": user.attributes.get("nextcloud_user_id", str(user.uuid)),
+}
+EOT
+}
+
 # LDAP provider (for exposing Authentik users via LDAP)
 resource "authentik_provider_ldap" "ldap" {
   name       = "LDAP Provider"
@@ -223,9 +247,13 @@ resource "authentik_provider_oauth2" "oidc_apps" {
     }
   ]
 
-  property_mappings = [
-    for scope in local.default_scopes : data.authentik_property_mapping_provider_scope.scopes[scope].id
-  ]
+  property_mappings = concat(
+    [
+      for scope in local.default_scopes : data.authentik_property_mapping_provider_scope.scopes[scope].id
+    ],
+    # Add Nextcloud-specific scope mapping only for Nextcloud service
+    each.key == "nextcloud" ? [authentik_property_mapping_provider_scope.nextcloud_profile.id] : []
+  )
 
   lifecycle {
     prevent_destroy = true
