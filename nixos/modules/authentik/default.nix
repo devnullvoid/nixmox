@@ -283,7 +283,7 @@ in {
 
     # Firewall rules for Authentik services
     networking.firewall = {
-      allowedTCPPorts = [ 389 636 9000 9443 ];
+      allowedTCPPorts = [ 389 636 9000 9443 9300 ]; # 9300 for Prometheus metrics
       allowedUDPPorts = [ 1812 1813 ];
     };
   };

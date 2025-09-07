@@ -167,6 +167,7 @@ in {
             "10.0.0.0/8 allow"
             "172.16.0.0/12 allow"
           ];
+          extended-statistics = "yes";
           num-threads = "2";
           msg-cache-size = "128k";
           rrset-cache-size = "256k";

@@ -150,6 +150,20 @@ in {
             }
           ];
         }
+        # Authentik metrics (runs on authentik.nixmox.lan)
+        {
+          job_name = "authentik";
+          static_configs = [
+            {
+              targets = [
+                "${allServices.authentik.hostname or "authentik.nixmox.lan"}:9300"
+              ];
+              labels = {
+                job = "authentik";
+              };
+            }
+          ];
+        }
       ];
 
       # Retention

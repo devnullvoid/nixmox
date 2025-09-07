@@ -196,6 +196,25 @@ in {
             ];
           };
         };
+        
+        # Provision dashboards from JSON files
+        dashboards = {
+          settings = {
+            apiVersion = 1;
+            providers = [
+              {
+                name = "nixmox-dashboards";
+                type = "file";
+                disableDeletion = false;
+                updateIntervalSeconds = 10;
+                options = {
+                  path = "/etc/grafana-dashboards";
+                  foldersFromFilesStructure = true;
+                };
+              }
+            ];
+          };
+        };
       };
     };
 
@@ -214,6 +233,7 @@ in {
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0755 grafana grafana"
       "d ${cfg.logDir} 0755 grafana grafana"
+      "d /etc/grafana-dashboards 0755 grafana grafana"
     ];
 
     # Create users and groups
@@ -225,5 +245,32 @@ in {
     };
 
     users.groups.grafana = {};
+    
+    # Provision dashboard JSON files
+    environment.etc."grafana-dashboards/caddy.json" = {
+      source = ../../../nixos/modules/monitoring/dashboards/caddy.json;
+      mode = "0644";
+    };
+    
+    environment.etc."grafana-dashboards/authentik.json" = {
+      source = ../../../nixos/modules/monitoring/dashboards/authentik.json;
+      mode = "0644";
+    };
+    
+    # Add more dashboard files here as needed
+    # environment.etc."grafana-dashboards/node-exporter.json" = {
+    #   source = ../../../nixos/modules/monitoring/dashboards/node-exporter.json;
+    #   mode = "0644";
+    # };
+    
+    # environment.etc."grafana-dashboards/postgresql.json" = {
+    #   source = ../../../nixos/modules/monitoring/dashboards/postgresql.json;
+    #   mode = "0644";
+    # };
+    
+    # environment.etc."grafana-dashboards/unbound.json" = {
+    #   source = ../../../nixos/modules/monitoring/dashboards/unbound.json;
+    #   mode = "0644";
+    # };
   };
 }
