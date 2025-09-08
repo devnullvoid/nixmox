@@ -9,30 +9,61 @@ let
   allServices = (manifest.core_services or {}) // (manifest.services or {});
   
   # Extract database requirements from services that have interface.db
+  # Support both single db (interface.db) and multiple dbs (interface.dbs)
   databaseRequirements = builtins.mapAttrs (serviceName: serviceConfig:
-    serviceConfig.interface.db or {}
+    let
+      dbInterface = serviceConfig.interface.db or {};
+      dbsInterface = serviceConfig.interface.dbs or {};
+      
+      # Check if this service has multiple databases (dbs) or single database (db)
+      hasMultipleDbs = dbsInterface != {};
+      hasSingleDb = dbInterface != {};
+      
+      # For single db, convert to the new format
+      singleDbConfig = if hasSingleDb then {
+        "${serviceName}" = dbInterface;
+      } else {};
+      
+      # For multiple dbs, use as-is
+      multipleDbsConfig = if hasMultipleDbs then dbsInterface else {};
+      
+      # Merge both configurations
+      allDbConfigs = singleDbConfig // multipleDbsConfig;
+    in
+      allDbConfigs
   ) (lib.filterAttrs (name: config: 
-    builtins.hasAttr "db" (config.interface or {})
+    builtins.hasAttr "db" (config.interface or {}) || builtins.hasAttr "dbs" (config.interface or {})
   ) allServices);
   
+  # Flatten the nested database requirements into a single level
+  flattenedDbRequirements = lib.foldl' (acc: serviceName: 
+    let
+      serviceDbConfigs = databaseRequirements.${serviceName} or {};
+    in
+      acc // (lib.mapAttrs' (dbName: dbConfig: {
+        name = "${serviceName}-${dbName}";
+        value = dbConfig;
+      }) serviceDbConfigs)
+  ) {} (builtins.attrNames databaseRequirements);
+  
   # Generate database configurations from manifest
-  manifestDatabases = builtins.mapAttrs (serviceName: dbConfig:
+  manifestDatabases = builtins.mapAttrs (dbKey: dbConfig:
     {
-      name = dbConfig.name or serviceName;
-      owner = dbConfig.owner or serviceName;
+      name = dbConfig.name or dbKey;
+      owner = dbConfig.owner or dbKey;
       extensions = dbConfig.extensions or [];
     }
-  ) databaseRequirements;
+  ) flattenedDbRequirements;
   
   # Generate user configurations from manifest
-  manifestUsers = builtins.mapAttrs (serviceName: dbConfig:
+  manifestUsers = builtins.mapAttrs (dbKey: dbConfig:
     {
-      name = dbConfig.owner or serviceName;
+      name = dbConfig.owner or dbKey;
       # Password will come from SOPS secrets, not hardcoded
-      databases = [ (dbConfig.name or serviceName) ];
+      databases = [ (dbConfig.name or dbKey) ];
       superuser = dbConfig.superuser or false;
     }
-  ) databaseRequirements;
+  ) flattenedDbRequirements;
   
   # Merge manifest values with manual overrides (manual takes precedence)
   finalDatabases = manifestDatabases // cfg.databases;
@@ -116,19 +147,42 @@ in {
       # Include both core_services and services
       allServices = (manifest.core_services or {}) // (manifest.services or {});
       dbServices = lib.filterAttrs (name: service:
-        service ? interface && service.interface ? db
+        service ? interface && (service.interface ? db || service.interface ? dbs)
       ) allServices;
 
       # Generate SOPS secret config for each database service
-      dbSecrets = lib.mapAttrs' (name: service: {
-        name = "${name}/database_password";
-        value = {
-          owner = "postgres";
-          group = "postgres";
-          mode = "0400";
-          restartUnits = [ "postgresql-set-passwords.service" ];
-        };
-      }) dbServices;
+      # Handle both single db (interface.db) and multiple dbs (interface.dbs)
+      dbSecrets = lib.foldl' (acc: serviceName:
+        let
+          service = allServices.${serviceName};
+          dbInterface = service.interface.db or {};
+          dbsInterface = service.interface.dbs or {};
+          
+          # Generate secrets for single db
+          singleDbSecrets = if dbInterface != {} then {
+            "${serviceName}/database_password" = {
+              owner = "postgres";
+              group = "postgres";
+              mode = "0400";
+              restartUnits = [ "postgresql-set-passwords.service" ];
+            };
+          } else {};
+          
+          # Generate secrets for multiple dbs
+          multipleDbsSecrets = if dbsInterface != {} then
+            lib.mapAttrs' (dbName: dbConfig: {
+              name = "${serviceName}/${dbName}/database_password";
+              value = {
+                owner = "postgres";
+                group = "postgres";
+                mode = "0400";
+                restartUnits = [ "postgresql-set-passwords.service" ];
+              };
+            }) dbsInterface
+          else {};
+        in
+          acc // singleDbSecrets // multipleDbsSecrets
+      ) {} (builtins.attrNames dbServices);
 
               # Add pgAdmin password and OIDC client secret
         pgAdminSecrets = {
@@ -369,11 +423,11 @@ in {
             # Remove trailing slash
             SERVICE_NAME=''${SERVICE_NAME%/}
             
-            # Check if this service has a database password secret
-            SECRET_PATH="/run/secrets/$SERVICE_NAME/database_password"
-            if [ -f "$SECRET_PATH" ]; then
-              echo "Setting password for $SERVICE_NAME user..."
-              PASSWORD=$(tr -d '\n' < "$SECRET_PATH")
+            # Check if this service has a single database password secret
+            SINGLE_DB_SECRET_PATH="/run/secrets/$SERVICE_NAME/database_password"
+            if [ -f "$SINGLE_DB_SECRET_PATH" ]; then
+              echo "Setting password for $SERVICE_NAME user (single db)..."
+              PASSWORD=$(tr -d '\n' < "$SINGLE_DB_SECRET_PATH")
               echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
 
               echo "Executing: ALTER USER $SERVICE_NAME WITH PASSWORD '***';"
@@ -382,7 +436,22 @@ in {
 
               echo "Password set successfully for $SERVICE_NAME user"
             else
-              echo "Debug: No database password secret found for $SERVICE_NAME at $SECRET_PATH"
+              # Check for multiple database secrets (SERVICE_NAME/DB_NAME/database_password)
+              for DB_SECRET_PATH in /run/secrets/$SERVICE_NAME/*/database_password; do
+                if [ -f "$DB_SECRET_PATH" ]; then
+                  # Extract database name from path
+                  DB_NAME=$(basename $(dirname "$DB_SECRET_PATH"))
+                  echo "Setting password for $SERVICE_NAME-$DB_NAME user (multiple dbs)..."
+                  PASSWORD=$(tr -d '\n' < "$DB_SECRET_PATH")
+                  echo "Password length: $(printf %s "$PASSWORD" | wc -c)"
+
+                  echo "Executing: ALTER USER $SERVICE_NAME-$DB_NAME WITH PASSWORD '***';"
+                  SQL_CMD="ALTER USER $SERVICE_NAME-$DB_NAME WITH PASSWORD '$PASSWORD';"
+                  ${pkgs.postgresql_16}/bin/psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U postgres -d postgres -c "$SQL_CMD"
+
+                  echo "Password set successfully for $SERVICE_NAME-$DB_NAME user"
+                fi
+              done
             fi
           done
           

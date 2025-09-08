@@ -394,27 +394,87 @@
       onboot = true;
       start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
-      ports = [ 8096 8097 8098 ];
+      ports = [ 8096 8989 7878 9696 9091 ];
       interface = {
+        # Multiple database configuration for media services
+        dbs = {
+          jellyfin = {
+            host = "192.168.99.11";
+            name = "jellyfin";
+            owner = "jellyfin";
+            port = 5432;
+          };
+          sonarr = {
+            host = "192.168.99.11";
+            name = "sonarr";
+            owner = "sonarr";
+            port = 5432;
+          };
+          radarr = {
+            host = "192.168.99.11";
+            name = "radarr";
+            owner = "radarr";
+            port = 5432;
+          };
+          prowlarr = {
+            host = "192.168.99.11";
+            name = "prowlarr";
+            owner = "prowlarr";
+            port = 5432;
+          };
+          # transmission doesn't need a database
+        };
+        
+        # Authentication configuration for media services
         auth = {
           type = "oidc";
           provider = "authentik";
           oidc = {
             client_type = "confidential";
-            redirect_uris = [ "https://media.nixmox.lan/oidc/callback" ];
+            redirect_uris = [ 
+              "https://jellyfin.nixmox.lan/oidc/callback"
+              "https://sonarr.nixmox.lan/oidc/callback" 
+              "https://radarr.nixmox.lan/oidc/callback"
+              "https://prowlarr.nixmox.lan/oidc/callback"
+            ];
             scopes = [ "openid" "email" "profile" ];
             username_claim = "preferred_username";
             groups_claim = "groups";
           };
         };
+        
+        # Multi-proxy configuration for media services
         proxy = {
-          domain = "media.nixmox.lan";
-          path = "/";
-          upstream = "192.168.99.17:8096";
+          jellyfin = {
+            domain = "jellyfin.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.17:8096";
+          };
+          sonarr = {
+            domain = "sonarr.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.17:8989";
+          };
+          radarr = {
+            domain = "radarr.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.17:7878";
+          };
+          prowlarr = {
+            domain = "prowlarr.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.17:9696";
+          };
+          transmission = {
+            domain = "transmission.nixmox.lan";
+            path = "/";
+            upstream = "192.168.99.17:9091";
+          };
         };
+        
         health = {
-          startup = "systemctl is-active --quiet jellyfin && systemctl is-active --quiet sonarr && systemctl is-active --quiet radarr";
-          liveness = "systemctl is-active --quiet jellyfin && systemctl is-active --quiet sonarr && systemctl is-active --quiet radarr";
+          startup = "systemctl is-active --quiet jellyfin && systemctl is-active --quiet sonarr && systemctl is-active --quiet radarr && systemctl is-active --quiet prowlarr && systemctl is-active --quiet transmission";
+          liveness = "systemctl is-active --quiet jellyfin && systemctl is-active --quiet sonarr && systemctl is-active --quiet radarr && systemctl is-active --quiet prowlarr && systemctl is-active --quiet transmission";
           interval = 30;
           timeout = 60;
           retries = 3;

@@ -172,9 +172,13 @@ let
           let
             upstreamInfo = parseUpstream (proxyEntry.upstream or "");
             
-            # Generate extra config based on auth requirements
-            extraConfig = ''
-              # Service without authentication (monitoring services)
+            # Get service-specific Caddy configuration if available
+            serviceCaddyConfig = config.services.nixmox.caddyServiceConfigs.${proxyName} or {};
+            serviceExtraConfig = serviceCaddyConfig.extraConfig or "";
+            
+            # Fallback to default config if no service-specific config
+            defaultExtraConfig = ''
+              # Default security headers
               header {
                 # Security headers
                 X-Content-Type-Options nosniff
@@ -185,6 +189,9 @@ let
                 -Server
               }
             '';
+            
+            # Use service-specific config if available, otherwise use default
+            extraConfig = if serviceExtraConfig != "" then serviceExtraConfig else defaultExtraConfig;
           in {
             domain = proxyEntry.domain;
             path = proxyEntry.path or "/";

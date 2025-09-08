@@ -4,23 +4,31 @@ with lib;
 
 let
   cfg = config.services.nixmox.media;
-
+  
+  # Get service configurations from manifest
+  serviceConfig = manifest.services.media or {};
+  
+  # Get proxy configuration from manifest
+  proxyConfig = serviceConfig.interface.proxy or {};
+  
   # Get network configuration from manifest
   network = manifest.network or {};
   baseDomain = network.domain or "nixmox.lan";
-
-  # Get service configuration from manifest
-  serviceConfig = manifest.services.media or {};
-
-  # Get proxy configuration from manifest
-  proxyConfig = serviceConfig.interface.proxy or {};
-
-  # Get authentication configuration from manifest
-  authConfig = serviceConfig.interface.auth or {};
+  
+  # Determine effective hostname
+  hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${baseDomain}";
 in {
-  options.services.nixmox.media = {
-    enable = mkEnableOption "Media server stack";
+  imports = [
+    ./jellyfin.nix
+    ./sonarr.nix
+    ./radarr.nix
+    ./prowlarr.nix
+    ./transmission.nix
+  ];
 
+  options.services.nixmox.media = {
+    enable = mkEnableOption "Media stack (Jellyfin + Sonarr + Radarr + Prowlarr + Transmission)";
+    
     subdomain = mkOption {
       type = types.str;
       default = "media";
@@ -29,175 +37,218 @@ in {
 
     hostName = mkOption {
       type = types.str;
-      default = proxyConfig.domain or "${cfg.subdomain}.${baseDomain}";
+      default = proxyConfig.jellyfin.domain or "jellyfin.nixmox.lan";
       description = "Public host name for media services (from manifest proxy config)";
     };
 
-    # Jellyfin configuration
-    jellyfin = {
+    # Component enablement options are defined in their respective files
+    # jellyfin = { ... } - defined in jellyfin.nix
+    # sonarr = { ... } - defined in sonarr.nix
+    # radarr = { ... } - defined in radarr.nix
+    # prowlarr = { ... } - defined in prowlarr.nix
+    # transmission = { ... } - defined in transmission.nix
+
+    # Shared configuration options
+    dataDir = mkOption {
+      type = types.str;
+      default = "/var/lib/media";
+      description = "Base data directory for media services";
+    };
+
+    cacheDir = mkOption {
+      type = types.str;
+      default = "/var/cache/media";
+      description = "Base cache directory for media services";
+    };
+
+    logDir = mkOption {
+      type = types.str;
+      default = "/var/log/media";
+      description = "Base log directory for media services";
+    };
+
+    # Torrents directory
+    torrentsDir = mkOption {
+      type = types.str;
+      default = "/var/lib/media/torrents";
+      description = "Torrents directory";
+    };
+
+    # Database configuration for each service
+    databases = {
+      jellyfin = {
+        type = mkOption {
+          type = types.enum [ "postgresql" "sqlite" ];
+          default = "postgresql";
+          description = "Jellyfin database type";
+        };
+
+        host = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.jellyfin.host or "postgresql.nixmox.lan";
+          description = "Jellyfin database host (from manifest)";
+        };
+
+        port = mkOption {
+          type = types.int;
+          default = serviceConfig.interface.dbs.jellyfin.port or 5432;
+          description = "Jellyfin database port (from manifest)";
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.jellyfin.name or "jellyfin";
+          description = "Jellyfin database name (from manifest)";
+        };
+
+        user = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.jellyfin.owner or "jellyfin";
+          description = "Jellyfin database user (from manifest)";
+        };
+      };
+
+      sonarr = {
+        type = mkOption {
+          type = types.enum [ "postgresql" "sqlite" ];
+          default = "postgresql";
+          description = "Sonarr database type";
+        };
+
+        host = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.sonarr.host or "postgresql.nixmox.lan";
+          description = "Sonarr database host (from manifest)";
+        };
+
+        port = mkOption {
+          type = types.int;
+          default = serviceConfig.interface.dbs.sonarr.port or 5432;
+          description = "Sonarr database port (from manifest)";
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.sonarr.name or "sonarr";
+          description = "Sonarr database name (from manifest)";
+        };
+
+        user = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.sonarr.owner or "sonarr";
+          description = "Sonarr database user (from manifest)";
+        };
+      };
+
+      radarr = {
+        type = mkOption {
+          type = types.enum [ "postgresql" "sqlite" ];
+          default = "postgresql";
+          description = "Radarr database type";
+        };
+
+        host = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.radarr.host or "postgresql.nixmox.lan";
+          description = "Radarr database host (from manifest)";
+        };
+
+        port = mkOption {
+          type = types.int;
+          default = serviceConfig.interface.dbs.radarr.port or 5432;
+          description = "Radarr database port (from manifest)";
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.radarr.name or "radarr";
+          description = "Radarr database name (from manifest)";
+        };
+
+        user = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.radarr.owner or "radarr";
+          description = "Radarr database user (from manifest)";
+        };
+      };
+
+      prowlarr = {
+        type = mkOption {
+          type = types.enum [ "postgresql" "sqlite" ];
+          default = "postgresql";
+          description = "Prowlarr database type";
+        };
+
+        host = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.prowlarr.host or "postgresql.nixmox.lan";
+          description = "Prowlarr database host (from manifest)";
+        };
+
+        port = mkOption {
+          type = types.int;
+          default = serviceConfig.interface.dbs.prowlarr.port or 5432;
+          description = "Prowlarr database port (from manifest)";
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.prowlarr.name or "prowlarr";
+          description = "Prowlarr database name (from manifest)";
+        };
+
+        user = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.dbs.prowlarr.owner or "prowlarr";
+          description = "Prowlarr database user (from manifest)";
+        };
+      };
+    };
+
+    # Authentication configuration
+    auth = {
       enable = mkOption {
         type = types.bool;
         default = true;
-        description = "Enable Jellyfin media server";
+        description = "Enable OIDC authentication for media services";
       };
 
-      port = mkOption {
-        type = types.int;
-        default = 8096;
-        description = "Jellyfin web interface port";
-      };
-
-      dataDir = mkOption {
+      provider = mkOption {
         type = types.str;
-        default = "/var/lib/jellyfin";
-        description = "Jellyfin data directory";
+        default = serviceConfig.interface.auth.provider or "authentik";
+        description = "Authentication provider (from manifest)";
       };
 
-      cacheDir = mkOption {
-        type = types.str;
-        default = "/var/cache/jellyfin";
-        description = "Jellyfin cache directory";
-      };
+      oidc = {
+        clientType = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.auth.oidc.client_type or "confidential";
+          description = "OIDC client type (from manifest)";
+        };
 
-      logDir = mkOption {
-        type = types.str;
-        default = "/var/log/jellyfin";
-        description = "Jellyfin log directory";
-      };
-    };
+        redirectUris = mkOption {
+          type = types.listOf types.str;
+          default = serviceConfig.interface.auth.oidc.redirect_uris or [];
+          description = "OIDC redirect URIs (from manifest)";
+        };
 
-    # Sonarr configuration
-    sonarr = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable Sonarr TV show manager";
-      };
+        scopes = mkOption {
+          type = types.listOf types.str;
+          default = serviceConfig.interface.auth.oidc.scopes or [ "openid" "email" "profile" ];
+          description = "OIDC scopes (from manifest)";
+        };
 
-      port = mkOption {
-        type = types.int;
-        default = 8989;
-        description = "Sonarr web interface port";
-      };
+        usernameClaim = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.auth.oidc.username_claim or "preferred_username";
+          description = "OIDC username claim (from manifest)";
+        };
 
-      dataDir = mkOption {
-        type = types.str;
-        default = "/var/lib/sonarr";
-        description = "Sonarr data directory";
-      };
-    };
-
-    # Radarr configuration
-    radarr = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable Radarr movie manager";
-      };
-
-      port = mkOption {
-        type = types.int;
-        default = 7878;
-        description = "Radarr web interface port";
-      };
-
-      dataDir = mkOption {
-        type = types.str;
-        default = "/var/lib/radarr";
-        description = "Radarr data directory";
-      };
-    };
-
-    # Prowlarr configuration
-    prowlarr = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable Prowlarr indexer manager";
-      };
-
-      port = mkOption {
-        type = types.int;
-        default = 9696;
-        description = "Prowlarr web interface port";
-      };
-
-      dataDir = mkOption {
-        type = types.str;
-        default = "/var/lib/prowlarr";
-        description = "Prowlarr data directory";
-      };
-    };
-
-    # Media directories
-    mediaDirs = {
-      movies = mkOption {
-        type = types.str;
-        default = "/var/lib/media/movies";
-        description = "Movies directory";
-      };
-
-      tv = mkOption {
-        type = types.str;
-        default = "/var/lib/media/tv";
-        description = "TV shows directory";
-      };
-
-      music = mkOption {
-        type = types.str;
-        default = "/var/lib/media/music";
-        description = "Music directory";
-      };
-
-      downloads = mkOption {
-        type = types.str;
-        default = "/var/lib/media/downloads";
-        description = "Downloads directory";
-      };
-
-      torrents = mkOption {
-        type = types.str;
-        default = "/var/lib/media/torrents";
-        description = "Torrents directory";
-      };
-    };
-
-    # Database configuration
-    database = {
-      type = mkOption {
-        type = types.enum [ "postgresql" "sqlite" ];
-        default = "postgresql";
-        description = "Database type to use";
-      };
-
-      host = mkOption {
-        type = types.str;
-        default = "postgresql.nixmox.lan";
-        description = "Database host";
-      };
-
-      port = mkOption {
-        type = types.int;
-        default = 5432;
-        description = "Database port";
-      };
-
-      name = mkOption {
-        type = types.str;
-        default = "media";
-        description = "Base database name";
-      };
-
-      user = mkOption {
-        type = types.str;
-        default = "media";
-        description = "Database user";
-      };
-
-      password = mkOption {
-        type = types.str;
-        default = "changeme";
-        description = "Database password (should be overridden via SOPS)";
+        groupsClaim = mkOption {
+          type = types.str;
+          default = serviceConfig.interface.auth.oidc.groups_claim or "groups";
+          description = "OIDC groups claim (from manifest)";
+        };
       };
     };
   };
@@ -207,291 +258,109 @@ in {
       hostNameEffective = if cfg.hostName != "" then cfg.hostName else "${cfg.subdomain}.${config.services.nixmox.domain}";
     in {
       # Ensure local resolution works even before DNS is in place
-      networking.hosts = {
+      networking.hosts = let
+        # Collect unique database hosts
+        dbHosts = lib.unique [
+          cfg.databases.sonarr.host
+          cfg.databases.radarr.host
+          cfg.databases.prowlarr.host
+        ];
+        
+        # Create host entries for non-localhost database hosts
+        dbHostEntries = lib.foldl' (acc: host:
+          if host != "localhost" then
+            acc // { "${host}" = [ "postgresql.nixmox.lan" ]; }
+          else
+            acc
+        ) {} dbHosts;
+      in {
         "127.0.0.1" = [ hostNameEffective ];
-      } // mkIf (cfg.database.host != "localhost") {
-        "${cfg.database.host}" = [ "postgresql.nixmox.lan" ];
-      };
+      } // dbHostEntries;
 
-      # Jellyfin configuration
-      services.jellyfin = mkIf cfg.jellyfin.enable {
-        enable = true;
-        user = "jellyfin";
-        group = "jellyfin";
-        dataDir = cfg.jellyfin.dataDir;
-        cacheDir = cfg.jellyfin.cacheDir;
-        logDir = cfg.jellyfin.logDir;
-        openFirewall = false; # Let Caddy handle external access
-      };
-
-      # Sonarr configuration
-      services.sonarr = mkIf cfg.sonarr.enable {
-        enable = true;
-        dataDir = cfg.sonarr.dataDir;
-        openFirewall = false; # Let Caddy handle external access
-
-        # Use external PostgreSQL if configured
-        settings = mkIf (cfg.database.type == "postgresql") {
-          "Database:Provider" = "PostgreSQL";
-          "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name};Username=${cfg.database.user};Password=${cfg.database.password}";
+      # Provide media-specific Caddy configurations via global option
+      # This will be collected by the Caddy module when it's enabled
+      services.nixmox.caddyServiceConfigs = {
+        # Jellyfin configuration
+        jellyfin = {
+          extraConfig = ''
+            # Jellyfin-specific headers
+            header {
+              # Enable CORS
+              Access-Control-Allow-Origin "*"
+              Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+              Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+              
+              # Security headers
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+            }
+            
+            # Handle preflight requests
+            @options {
+              method OPTIONS
+            }
+            respond @options 200
+          '';
         };
-      };
-
-      # Radarr configuration
-      services.radarr = mkIf cfg.radarr.enable {
-        enable = true;
-        dataDir = cfg.radarr.dataDir;
-        openFirewall = false; # Let Caddy handle external access
-
-        # Use external PostgreSQL if configured
-        settings = mkIf (cfg.database.type == "postgresql") {
-          "Database:Provider" = "PostgreSQL";
-          "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name};Username=${cfg.database.user};Password=${cfg.database.password}";
+        
+        # Sonarr configuration
+        sonarr = {
+          extraConfig = ''
+            # Security headers
+            header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+            }
+          '';
         };
-      };
-
-      # Prowlarr configuration
-      services.prowlarr = mkIf cfg.prowlarr.enable {
-        enable = true;
-        dataDir = cfg.prowlarr.dataDir;
-        openFirewall = false; # Let Caddy handle external access
-
-        # Use external PostgreSQL if configured
-        settings = mkIf (cfg.database.type == "postgresql") {
-          "Database:Provider" = "PostgreSQL";
-          "Database:ConnectionString" = "Host=${cfg.database.host};Port=${toString cfg.database.port};Database=${cfg.database.name};Username=${cfg.database.user};Password=${cfg.database.password}";
+        
+        # Radarr configuration
+        radarr = {
+          extraConfig = ''
+            # Security headers
+            header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+            }
+          '';
         };
-      };
-
-      # Transmission for downloads
-      services.transmission = {
-        enable = true;
-
-        # Settings
-        settings = {
-          # Basic settings
-          download-dir = cfg.mediaDirs.downloads;
-          incomplete-dir = "${cfg.mediaDirs.downloads}/incomplete";
-          watch-dir = "${cfg.mediaDirs.downloads}/watch";
-
-          # Network settings
-          peer-port = 51413;
-          peer-port-random-on-start = true;
-
-          # Security
-          rpc-username = "transmission";
-          rpc-password = "changeme"; # Should be overridden via SOPS
-
-          # Performance
-          cache-size-mb = 4;
-          prefetch-enabled = true;
-
-          # Limits
-          speed-limit-down = 0;
-          speed-limit-up = 0;
-          ratio-limit = 2.0;
-          ratio-limit-enabled = true;
+        
+        # Prowlarr configuration
+        prowlarr = {
+          extraConfig = ''
+            # Security headers
+            header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+            }
+          '';
         };
-
-        # Open firewall
-        openFirewall = true;
-      };
-
-      # Firewall rules - only allow necessary ports since we're behind Caddy
-      networking.firewall = {
-        allowedTCPPorts = [
-          cfg.jellyfin.port    # Jellyfin
-          9091                  # Transmission web interface
-        ];
-        allowedUDPPorts = [
-          51413  # Transmission peer port
-        ];
-      };
-
-      # Create users and groups
-      users.users = {
-        # Jellyfin user
-        jellyfin = mkIf cfg.jellyfin.enable {
-          isSystemUser = true;
-          group = "jellyfin";
-          home = cfg.jellyfin.dataDir;
-          createHome = true;
-        };
-
-        # Sonarr user
-        sonarr = mkIf cfg.sonarr.enable {
-          isSystemUser = true;
-          group = "sonarr";
-          home = cfg.sonarr.dataDir;
-          createHome = true;
-        };
-
-        # Radarr user
-        radarr = mkIf cfg.radarr.enable {
-          isSystemUser = true;
-          group = "radarr";
-          home = cfg.radarr.dataDir;
-          createHome = true;
-        };
-
-        # Prowlarr user
-        prowlarr = mkIf cfg.prowlarr.enable {
-          isSystemUser = true;
-          group = "prowlarr";
-          home = cfg.prowlarr.dataDir;
-          createHome = true;
-        };
-
-        # Transmission user
+        
+        # Transmission configuration
         transmission = {
-          isSystemUser = true;
-          group = "transmission";
-          home = "/var/lib/transmission";
-          createHome = true;
+          extraConfig = ''
+            # Security headers
+            header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options DENY
+              X-XSS-Protection "1; mode=block"
+            }
+          '';
         };
       };
 
-      users.groups = {
-        # Jellyfin group
-        jellyfin = mkIf cfg.jellyfin.enable {};
-
-        # Sonarr group
-        sonarr = mkIf cfg.sonarr.enable {};
-
-        # Radarr group
-        radarr = mkIf cfg.radarr.enable {};
-
-        # Prowlarr group
-        prowlarr = mkIf cfg.prowlarr.enable {};
-
-        # Transmission group
-        transmission = {};
-
-        # Media group for shared access
-        media = {
-          members = mkMerge [
-            (mkIf cfg.jellyfin.enable [ "jellyfin" ])
-            (mkIf cfg.sonarr.enable [ "sonarr" ])
-            (mkIf cfg.radarr.enable [ "radarr" ])
-            (mkIf cfg.prowlarr.enable [ "prowlarr" ])
-            [ "transmission" ]
-          ];
-        };
-      };
-
-      # Create media directories
-      systemd.tmpfiles.rules = [
-        # Media directories
-        "d ${cfg.mediaDirs.movies} 0755 root media"
-        "d ${cfg.mediaDirs.tv} 0755 root media"
-        "d ${cfg.mediaDirs.music} 0755 root media"
-        "d ${cfg.mediaDirs.downloads} 0755 transmission media"
-        "d ${cfg.mediaDirs.torrents} 0755 transmission media"
-
-        # Service directories
-        "d ${cfg.jellyfin.dataDir} 0755 jellyfin jellyfin"
-        "d ${cfg.jellyfin.cacheDir} 0755 jellyfin jellyfin"
-        "d ${cfg.jellyfin.logDir} 0755 jellyfin jellyfin"
-      ] ++ (lib.optional cfg.sonarr.enable "d ${cfg.sonarr.dataDir} 0755 sonarr sonarr")
-          ++ (lib.optional cfg.radarr.enable "d ${cfg.radarr.dataDir} 0755 radarr radarr")
-          ++ (lib.optional cfg.prowlarr.enable "d ${cfg.prowlarr.dataDir} 0755 prowlarr prowlarr");
-
-      # Systemd services and health checks
-      systemd.services = {
-        # Jellyfin service
-        jellyfin = mkIf cfg.jellyfin.enable {
-          after = [ "network.target" ];
-          wantedBy = [ "multi-user.target" ];
-        };
-
-        # Sonarr service
-        sonarr = mkIf cfg.sonarr.enable {
-          after = [ "network.target" ];
-          wantedBy = [ "multi-user.target" ];
-        };
-
-        # Radarr service
-        radarr = mkIf cfg.radarr.enable {
-          after = [ "network.target" ];
-          wantedBy = [ "multi-user.target" ];
-        };
-
-        # Prowlarr service
-        prowlarr = mkIf cfg.prowlarr.enable {
-          after = [ "network.target" ];
-          wantedBy = [ "multi-user.target" ];
-        };
-
-        # Transmission service
-        transmission = {
-          after = [ "network.target" ];
-          wantedBy = [ "multi-user.target" ];
-        };
-
-        # Health checks
-        # Jellyfin health check
-        "jellyfin-health" = mkIf cfg.jellyfin.enable {
-          description = "Jellyfin health check";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "jellyfin.service" ];
-
-          serviceConfig = {
-            Type = "oneshot";
-            ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:${toString cfg.jellyfin.port}/health";
-            Restart = "on-failure";
-            RestartSec = "30s";
-          };
-        };
-
-        # Sonarr health check
-        "sonarr-health" = mkIf cfg.sonarr.enable {
-          description = "Sonarr health check";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "sonarr.service" ];
-
-          serviceConfig = {
-            Type = "oneshot";
-            ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:${toString cfg.sonarr.port}/health";
-            Restart = "on-failure";
-            RestartSec = "30s";
-          };
-        };
-
-        # Radarr health check
-        "radarr-health" = mkIf cfg.radarr.enable {
-          description = "Radarr health check";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "radarr.service" ];
-
-          serviceConfig = {
-            Type = "oneshot";
-            ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:${toString cfg.radarr.port}/health";
-            Restart = "on-failure";
-            RestartSec = "30s";
-          };
-        };
-
-        # Prowlarr health check
-        "prowlarr-health" = mkIf cfg.prowlarr.enable {
-          description = "Prowlarr health check";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "prowlarr.service" ];
-
-          serviceConfig = {
-            Type = "oneshot";
-            ExecStart = "${pkgs.curl}/bin/curl -f http://localhost:${toString cfg.prowlarr.port}/health";
-            Restart = "on-failure";
-            RestartSec = "30s";
-          };
-        };
-      };
-
-      # Default configuration
+      # Default configuration - enable all components
       services.nixmox.media = {
         jellyfin.enable = true;
-        sonarr.enable = false;  # Temporarily disabled due to database config issues
-        radarr.enable = false;  # Temporarily disabled due to database config issues
-        prowlarr.enable = false; # Temporarily disabled due to database config issues
+        sonarr.enable = true;
+        radarr.enable = true;
+        prowlarr.enable = true;
+        transmission.enable = true;
       };
-    });
-  } 
+    }
+  );
+}
