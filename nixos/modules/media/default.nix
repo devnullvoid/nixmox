@@ -355,10 +355,10 @@ in {
 
       # Default configuration - enable all components
       services.nixmox.media = {
-        jellyfin.enable = true;
-        sonarr.enable = true;
-        radarr.enable = true;
-        prowlarr.enable = true;
+        jellyfin.enable = false;
+        sonarr.enable = false;
+        radarr.enable = false;
+        prowlarr.enable = false;
         transmission.enable = true;
       };
     }

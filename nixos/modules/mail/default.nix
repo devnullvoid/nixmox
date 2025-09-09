@@ -149,21 +149,21 @@ in {
     };
 
     # Caddy service configuration for Roundcube
-    services.nixmox.caddyServiceConfigs.mail = mkIf cfg.roundcube.enable {
-      extraConfig = ''
-        ${cfg.domain} {
-          reverse_proxy localhost:80
+    # services.nixmox.caddyServiceConfigs.mail = mkIf cfg.roundcube.enable {
+    #   extraConfig = ''
+    #     ${cfg.domain} {
+    #       reverse_proxy localhost:80
           
-          # Security headers
-          header {
-            X-Content-Type-Options nosniff
-            X-Frame-Options DENY
-            X-XSS-Protection "1; mode=block"
-            Strict-Transport-Security "max-age=31536000; includeSubDomains"
-          }
-        }
-      '';
-    };
+    #       # Security headers
+    #       header {
+    #         X-Content-Type-Options nosniff
+    #         X-Frame-Options DENY
+    #         X-XSS-Protection "1; mode=block"
+    #         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    #       }
+    #     }
+    #   '';
+    # };
 
     # Default mail accounts (can be overridden)
     services.nixmox.mail.accounts = {

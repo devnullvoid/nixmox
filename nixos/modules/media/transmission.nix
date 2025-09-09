@@ -41,6 +41,7 @@ in {
         rpc-bind-address = "0.0.0.0";
         rpc-port = cfg.port;
         rpc-whitelist-enabled = false; # Disable whitelist for Caddy access
+        rpc-host-whitelist = "transmission.nixmox.lan,localhost,127.0.0.1"; # Allow our domain and localhost
         
         # Download settings
         download-dir = cfg.downloadDir;
@@ -51,10 +52,8 @@ in {
         peer-port = 51413;
         peer-port-random-enabled = false;
         
-        # Security settings
-        rpc-authentication-required = true;
-        rpc-username = "transmission";
-        rpc-password-file = config.sops.secrets."media/transmission_password".path;
+        # Security settings - disable RPC auth since we're using Caddy forward auth
+        rpc-authentication-required = false;
         
         # Performance settings
         cache-size-mb = 4;
@@ -85,13 +84,7 @@ in {
       "d ${mediaCfg.logDir} 0755 transmission transmission"
     ];
 
-    # SOPS secrets for Transmission
-    sops.secrets."media/transmission_password" = {
-      sopsFile = ../../../secrets/default.yaml;
-      owner = "transmission";
-      group = "transmission";
-      mode = "0400";
-    };
+    # No SOPS secrets needed since we're using Caddy forward auth
 
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {
