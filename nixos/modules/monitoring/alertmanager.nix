@@ -33,8 +33,8 @@ in {
     services.prometheus.alertmanager = {
       enable = true;
 
-      # Listen on loopback only (behind Caddy)
-      listenAddress = "127.0.0.1";
+      # Listen on all interfaces (behind Caddy)
+      listenAddress = "0.0.0.0";
       port = cfg.port;
 
       # Basic configuration (manifest-driven)

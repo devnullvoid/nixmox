@@ -255,7 +255,7 @@ in {
                       header_up X-Forwarded-Proto https
                       header_up X-Forwarded-Host {host}
                       header_up X-Forwarded-For {remote}
-                      ${config.services.nixmox.caddyServiceConfigs.${serviceName}.proxyConfig or ""}
+                      ${config.services.nixmox.caddyServiceConfigs.${proxyName}.proxyConfig or ""}
                     }
                   ''}
                 }
