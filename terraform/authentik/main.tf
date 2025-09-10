@@ -42,6 +42,7 @@ locals {
   
   # Parse JSON strings back to objects
   oidc_apps = jsondecode(local.manifest.oidc_apps)
+  proxy_apps = jsondecode(local.manifest.proxy_apps)
   ldap_app = jsondecode(local.manifest.ldap_app)
   radius_app = jsondecode(local.manifest.radius_app)
   outpost_config = jsondecode(local.manifest.outpost_config)
@@ -69,6 +70,7 @@ module "authentik_manifest" {
   authentik_insecure = true
 
   oidc_apps      = local.manifest.oidc_apps
+  proxy_apps     = local.manifest.proxy_apps
   ldap_app       = local.manifest.ldap_app
   radius_app     = local.manifest.radius_app
   outpost_config = local.manifest.outpost_config

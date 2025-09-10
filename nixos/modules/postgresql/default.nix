@@ -55,6 +55,16 @@ let
     }
   ) flattenedDbRequirements;
   
+  # Fix database names to match user names for services that expect this
+  # This is needed for nixos-mailserver which expects database name to match user name
+  fixedDatabases = builtins.mapAttrs (dbKey: dbConfig:
+    if dbKey == "mail-mail" then
+      # For mail service, use the user name as the database name
+      dbConfig // { name = dbKey; }
+    else
+      dbConfig
+  ) manifestDatabases;
+  
   # Generate user configurations from manifest
   manifestUsers = builtins.mapAttrs (dbKey: dbConfig:
     {
@@ -66,7 +76,7 @@ let
   ) flattenedDbRequirements;
   
   # Merge manifest values with manual overrides (manual takes precedence)
-  finalDatabases = manifestDatabases // cfg.databases;
+  finalDatabases = fixedDatabases // cfg.databases;
   finalUsers = manifestUsers // cfg.users;
 in {
   options.services.nixmox.postgresql = {

@@ -16,8 +16,8 @@ let
   proxyConfig = serviceConfig.interface.proxy or {};
 in {
   options.services.nixmox.mail = {
-    enable = mkEnableOption "Mail server using NixOS Mailserver";
-    
+    enable = mkEnableOption "Basic SMTP relay with Mailrise notification forwarding";
+
     domain = mkOption {
       type = types.str;
       default = proxyConfig.domain or "mail.nixmox.lan";
@@ -30,155 +30,158 @@ in {
       description = "Primary domain for mail (from manifest network config)";
     };
 
-    # Mail accounts configuration
-    accounts = mkOption {
-      type = types.attrsOf (types.submodule {
-        options = {
-          hashedPassword = mkOption {
-            type = types.str;
-            description = "Hashed password for the mail account";
-          };
-          aliases = mkOption {
-            type = types.listOf types.str;
-            default = [];
-            description = "Email aliases for this account";
-          };
-        };
-      });
-      default = {};
-      description = "Mail accounts configuration";
+    # SMTP relay configuration
+    relayHost = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "SMTP relay host for outbound mail (e.g., smtp.gmail.com)";
     };
 
-    # Roundcube webmail configuration
-    roundcube = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable Roundcube webmail interface";
+    relayPort = mkOption {
+      type = types.int;
+      default = 587;
+      description = "SMTP relay port";
+    };
+
+    relayUser = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "SMTP relay username";
+    };
+
+    relayPasswordFile = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Path to file containing SMTP relay password";
+    };
+
+    # Mailrise notification forwarding
+    mailrise = {
+      enable = mkEnableOption "Mailrise notification forwarding";
+
+      port = mkOption {
+        type = types.int;
+        default = 8025;
+        description = "Port for Mailrise SMTP server";
+      };
+
+      configFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Path to Mailrise configuration file (YAML format).
+          Example configuration:
+          ---
+          urls:
+            # Send all emails to Discord
+            "*": "discord://token@channel"
+            # Send specific sender emails to Slack
+            "alert@myserver.com": "slack://token@channel"
+            # Send emails to multiple services
+            "backup@myserver.com": ["discord://...", "slack://..."]
+        '';
       };
     };
   };
 
   config = mkIf cfg.enable {
-    # Import NixOS Mailserver
-    imports = [
-      (builtins.fetchTarball {
-        url = "https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/archive/nixos-25.05/nixos-mailserver-nixos-25.05.tar.gz";
-        sha256 = "0000000000000000000000000000000000000000000000000000";
-      })
-    ];
+    # Install mailrise package if enabled
+    environment.systemPackages = lib.optional cfg.mailrise.enable pkgs.mailrise;
 
-    # NixOS Mailserver configuration
-    mailserver = {
+    # Basic Postfix SMTP relay configuration
+    services.postfix = {
       enable = true;
-      fqdn = cfg.domain;
-      domains = [ cfg.primaryDomain ];
-      
-      # Use internal CA certificates
-      certificateScheme = "manual";
-      certificateFile = "/etc/ssl/certs/wildcard.crt";
-      keyFile = "/etc/ssl/private/wildcard.key";
-      
-      # Login accounts - will be populated from SOPS secrets
-      loginAccounts = builtins.mapAttrs (email: account: {
-        hashedPasswordFile = account.hashedPassword;
-        aliases = account.aliases;
-      }) cfg.accounts;
-      
-      # Enable additional features
-      enableImap = true;
-      enablePop3 = false;
-      enableSubmission = true;
-      enableSubmissions = true;
-      enableManageSieve = true;
-      enableImapSieve = true;
-      
-      # Security settings
-      virusScanning = true;
-      virusScanningDaemon = "clamav";
-      
-      # Spam filtering
-      enableSpamAssassin = true;
-      enableRspamd = true;
-      
-      # DKIM signing
-      enableDKIM = true;
-      dkimSelector = "mail";
-      
-      # Full text search
-      enableFTS = true;
-      
-      # Webmail (Roundcube)
-      enableRoundcube = cfg.roundcube.enable;
-      roundcubePlugins = [
-        "password"
-        "managesieve"
-        "archive"
-        "zipdownload"
-      ];
-      
-      # Roundcube configuration
-      roundcubeExtraConfig = ''
-        $config['product_name'] = 'NixMox Mail';
-        $config['support_url'] = 'https://${cfg.domain}/support';
-        $config['skin'] = 'elastic';
-        $config['default_host'] = 'ssl://${cfg.domain}';
-        $config['default_port'] = 993;
-        $config['imap_cache'] = 'db';
-        $config['messages_cache'] = 'db';
-        $config['enable_installer'] = false;
-        $config['log_driver'] = 'file';
-        $config['log_date_format'] = 'Y-m-d H:i:s';
-      '';
+      hostname = cfg.domain;
+      domain = cfg.primaryDomain;
+
+      # Basic SMTP relay configuration
+      relayHost = mkIf (cfg.relayHost != null) cfg.relayHost;
+      relayPort = cfg.relayPort;
+
+      # SASL authentication for relay
+      saslAuthEnable = cfg.relayUser != null;
+      # saslPasswordFile = mkIf (cfg.relayPasswordFile != null) cfg.relayPasswordFile;
+
+      # Basic configuration
+      config = {
+        myorigin = cfg.primaryDomain;
+        mydestination = [ cfg.domain cfg.primaryDomain "localhost" ];
+
+        # Allow relaying from local network
+        mynetworks = [ "127.0.0.0/8" "192.168.99.0/24" "::1/128" ];
+
+        # Basic security
+        smtp_tls_security_level = "may";
+        smtp_tls_loglevel = "1";
+        smtp_sasl_security_options = "noanonymous";
+
+        # Disable local delivery for relay-only setup
+        local_recipient_maps = "";
+        local_transport = "error:local delivery disabled";
+      };
+
+      # Master daemon configuration
+      masterConfig = {
+        smtp = {
+          type = "inet";
+          private = false;
+          command = "smtpd";
+        };
+        submission = {
+          type = "inet";
+          private = false;
+          command = "smtpd";
+          args = [ "-o" "smtpd_tls_security_level=encrypt" "-o" "smtpd_sasl_auth_enable=yes" ];
+        };
+      };
     };
 
-    # Firewall rules for mail services
+    # Mailrise for notification forwarding
+    systemd.services.mailrise = mkIf cfg.mailrise.enable {
+      description = "Mailrise SMTP to Apprise notification gateway";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+
+      serviceConfig = {
+        ExecStart = "${pkgs.mailrise}/bin/mailrise --config ${cfg.mailrise.configFile} --port ${toString cfg.mailrise.port}";
+        Restart = "always";
+        User = "mailrise";
+        Group = "mailrise";
+        WorkingDirectory = "/var/lib/mailrise";
+        StateDirectory = "mailrise";
+        StateDirectoryMode = "0750";
+      };
+    };
+
+    # Create mailrise user
+    users.users.mailrise = mkIf cfg.mailrise.enable {
+      isSystemUser = true;
+      group = "mailrise";
+      home = "/var/lib/mailrise";
+      createHome = true;
+    };
+
+    users.groups.mailrise = mkIf cfg.mailrise.enable {};
+
+    # Firewall rules for SMTP relay
     networking.firewall = {
       allowedTCPPorts = [
         25   # SMTP
         587  # Submission
-        465  # SMTPS
-        143  # IMAP
-        993  # IMAPS
-        110  # POP3 (if enabled)
-        995  # POP3S (if enabled)
-        4190 # ManageSieve
-        80   # HTTP (for Roundcube)
-        443  # HTTPS (for Roundcube)
-      ];
+      ] ++ (lib.optional cfg.mailrise.enable cfg.mailrise.port); # Mailrise port if enabled
     };
 
-    # Caddy service configuration for Roundcube
-    # services.nixmox.caddyServiceConfigs.mail = mkIf cfg.roundcube.enable {
-    #   extraConfig = ''
-    #     ${cfg.domain} {
-    #       reverse_proxy localhost:80
-          
-    #       # Security headers
-    #       header {
-    #         X-Content-Type-Options nosniff
-    #         X-Frame-Options DENY
-    #         X-XSS-Protection "1; mode=block"
-    #         Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    #       }
-    #     }
-    #   '';
-    # };
-
-    # Default mail accounts (can be overridden)
-    services.nixmox.mail.accounts = {
-      "admin@${cfg.primaryDomain}" = {
-        hashedPassword = config.sops.secrets."mail/admin_password".path;
-        aliases = [ "postmaster@${cfg.primaryDomain}" "abuse@${cfg.primaryDomain}" ];
+    # SOPS secrets for relay authentication
+    sops.secrets = mkIf (cfg.relayPasswordFile != null) {
+      "mail/relay_password" = {
+        sopsFile = ../../secrets/default.yaml;
+        owner = "root";
+        group = "root";
+        mode = "0400";
       };
     };
 
-    # SOPS secrets for mail accounts
-    sops.secrets."mail/admin_password" = {
-      sopsFile = ../../secrets/default.yaml;
-      owner = "dovecot2";
-      group = "dovecot2";
-      mode = "0400";
-    };
+    # Override relay password file if SOPS secret exists
+    services.postfix.saslPasswordFile = mkIf (cfg.relayPasswordFile != null) config.sops.secrets."mail/relay_password".path;
   };
-} 
+}

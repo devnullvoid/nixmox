@@ -13,9 +13,236 @@ let
   authentikConfig = manifest.core_services.authentik or {};
   authentikDomain = cfg.authentikDomain or (authentikConfig.hostname or "authentik") + "." + baseDomain;
   authentikUpstream = cfg.authentikUpstream or (authentikConfig.ip or "192.168.99.12") + ":9000";
+
+  # Helper function to get service config from manifest
+  getServiceConfig = serviceName: 
+    manifest.services.${serviceName} or manifest.core_services.${serviceName} or {};
+  
+  # Helper function to build service proxy configuration
+  mkServiceConfig = serviceName: serviceConfig:
+    let
+      # Get proxy configuration from manifest
+      proxy = serviceConfig.interface.proxy or {};
+      # Get authentication configuration from manifest
+      auth = serviceConfig.interface.auth or {};
+      
+      # Check if this is a multi-proxy service (proxy is an attrset with multiple entries)
+      isMultiProxy = proxy != {} && builtins.isAttrs proxy && !(proxy ? domain);
+      
+      # For single-proxy services, use the existing logic
+      singleProxyResult = if !isMultiProxy then
+        let
+          # Determine auth modes based on manifest
+          useForwardAuth = (auth.type or "") == "forward_auth";
+          useOidc = (auth.type or "") == "oidc" && (auth.provider or "") == "authentik";
+          
+          # Parse upstream field to extract host and port
+          parseUpstream = upstream:
+            if upstream == "" then
+              { host = serviceConfig.hostname; port = 80; }
+            else
+              let
+                parts = lib.splitString ":" upstream;
+                host = lib.head parts;
+                port = if lib.length parts > 1 then lib.toInt (lib.elemAt parts 1) else 80;
+              in
+              { host = host; port = port; };
+          
+          upstreamInfo = parseUpstream (proxy.upstream or "");
+          
+          # Get backend from manifest (prefer proxy.upstream, fallback to hostname:port)
+          backend = upstreamInfo.host;
+          
+          # Get domain from manifest
+          domain = proxy.domain or "${serviceName}.${baseDomain}";
+          
+          # Get port from manifest (prefer parsed upstream port, fallback to proxy.port, then default to 80)
+          port = upstreamInfo.port;
+          
+          # Determine if we should skip default proxy based on manifest path configuration
+          skipDefaultProxy = (proxy.path or "/") != "/";
+          
+          # Resolve forward_auth upstream (defaults to authentik IP:9000 from manifest if available)
+          authentikCore = manifest.core_services.authentik or {};
+          forwardAuthUpstream = (auth.forward_auth_upstream or "http://${(authentikCore.ip or "")}${lib.optionalString (authentikCore ? ip) ":9000"}");
+          
+          # Common security headers for all services
+          securityHeaders = ''
+            # Security headers
+            header {
+              X-Content-Type-Options nosniff
+              X-Frame-Options SAMEORIGIN
+              X-XSS-Protection "1; mode=block"
+              Referrer-Policy strict-origin-when-cross-origin
+              # Remove server header
+              -Server
+            }
+          '';
+          
+          # Generate extra config based on auth requirements
+          extraConfig = if useForwardAuth then ''
+            # Forward auth via Authentik (using embedded outpost)
+            route {
+              # Always forward outpost path to actual outpost
+              reverse_proxy /outpost.goauthentik.io/* ${forwardAuthUpstream}
+              
+              # Forward authentication to outpost
+              forward_auth ${forwardAuthUpstream} {
+                uri /outpost.goauthentik.io/auth/caddy
+                
+                # Copy headers from Authentik (capitalization is important)
+                copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Entitlements X-Authentik-Email X-Authentik-Name X-Authentik-Uid X-Authentik-Jwt X-Authentik-Meta-Jwks X-Authentik-Meta-Outpost X-Authentik-Meta-Provider X-Authentik-Meta-App X-Authentik-Meta-Version
+                
+                # Trust private ranges (should probably be set to the outpost's IP)
+                trusted_proxies private_ranges
+              }
+            }
+            ${securityHeaders}
+          '' else ''
+            # Service without forward auth (OIDC or no auth)
+            ${securityHeaders}
+          '';
+          
+          # Add path-based routing for services that need it
+          pathBasedRouting = if skipDefaultProxy && (proxy.path or "/") != "/" then ''
+            # Handle path-based routing with redirect and proxy
+            # Redirect root and non-service paths to the service path
+            @notService {
+              not path ${proxy.path}*
+            }
+            redir @notService ${proxy.path}
+            
+            # Proxy everything to upstream
+            reverse_proxy ${backend}:${toString port} {
+              flush_interval -1
+            }
+          '' else "";
+          
+          # Combine extra config with path-based routing
+          finalExtraConfig = extraConfig + pathBasedRouting;
+        in {
+          domain = domain;
+          backend = backend;
+          port = port;
+          enableAuth = useOidc || useForwardAuth;
+          skipDefaultProxy = skipDefaultProxy;
+          extraConfig = finalExtraConfig;
+        }
+      else null;
+    in singleProxyResult;
+  
+  # Generate services configuration from manifest
+  servicesConfig = builtins.mapAttrs mkServiceConfig (
+    # Combine core services and application services
+    (manifest.core_services or {}) // (manifest.services or {})
+  );
+  
+  # Filter out null results (multi-proxy services)
+  filteredServicesConfig = lib.filterAttrs (name: value: value != null) servicesConfig;
+  
+  # Generate multi-proxy services configuration
+  multiProxyServicesConfig = builtins.mapAttrs (serviceName: serviceConfig:
+    let
+      proxy = serviceConfig.interface.proxy or {};
+      
+      # Check if this is a multi-proxy service
+      isMultiProxy = proxy != {} && builtins.isAttrs proxy && !(proxy ? domain);
+      
+      # Parse upstream field to extract host and port
+      parseUpstream = upstream:
+        if upstream == "" then
+          { host = serviceConfig.hostname; port = 80; }
+        else
+          let
+            parts = lib.splitString ":" upstream;
+            host = lib.head parts;
+            port = if lib.length parts > 1 then lib.toInt (lib.elemAt parts 1) else 80;
+          in
+          { host = host; port = port; };
+      
+      # Generate proxy configurations for each entry
+      proxyConfigs = if isMultiProxy then
+        builtins.mapAttrs (proxyName: proxyEntry:
+          let
+            upstreamInfo = parseUpstream (proxyEntry.upstream or "");
+            
+            # Get service-specific Caddy configuration if available
+            serviceCaddyConfig = config.services.nixmox.caddyServiceConfigs.${proxyName} or {};
+            serviceExtraConfig = serviceCaddyConfig.extraConfig or "";
+            
+            # Get auth configuration from individual proxy entry
+            proxyAuth = proxyEntry.auth or {};
+            
+            # Check if this service uses forward auth or OIDC
+            useForwardAuth = (proxyAuth.type or "") == "forward_auth";
+            useOidc = (proxyAuth.type or "") == "oidc";
+            
+            # Resolve forward_auth upstream (defaults to authentik IP:9000 from manifest if available)
+            authentikCore = manifest.core_services.authentik or {};
+            forwardAuthUpstream = (proxyAuth.forward_auth_upstream or "http://${(authentikCore.ip or "")}${lib.optionalString (authentikCore ? ip) ":9000"}");
+            
+            # Common security headers for all services
+            securityHeaders = ''
+              # Security headers
+              header {
+                X-Content-Type-Options nosniff
+                X-Frame-Options SAMEORIGIN
+                X-XSS-Protection "1; mode=block"
+                Referrer-Policy strict-origin-when-cross-origin
+                # Remove server header
+                -Server
+              }
+            '';
+            
+            # Generate extra config based on auth requirements
+            authExtraConfig = if useForwardAuth then ''
+              # Forward auth via Authentik (using embedded outpost)
+              route {
+                # Always forward outpost path to actual outpost
+                reverse_proxy /outpost.goauthentik.io/* ${forwardAuthUpstream}
+                
+                # Forward authentication to outpost
+                forward_auth ${forwardAuthUpstream} {
+                  uri /outpost.goauthentik.io/auth/caddy
+                  
+                  # Copy headers from Authentik (capitalization is important)
+                  copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Entitlements X-Authentik-Email X-Authentik-Name X-Authentik-Uid X-Authentik-Jwt X-Authentik-Meta-Jwks X-Authentik-Meta-Outpost X-Authentik-Meta-Provider X-Authentik-Meta-App X-Authentik-Meta-Version
+                  
+                  # Trust private ranges (should probably be set to the outpost's IP)
+                  trusted_proxies private_ranges
+                }
+              }
+              ${securityHeaders}
+            '' else ''
+              # Service without forward auth (OIDC or no auth)
+              ${securityHeaders}
+            '';
+            
+            # Use auth config if forward auth is enabled, otherwise use service-specific config, otherwise use default
+            extraConfig = if useForwardAuth then authExtraConfig else if serviceExtraConfig != "" then serviceExtraConfig else authExtraConfig;
+          in {
+            domain = proxyEntry.domain;
+            path = proxyEntry.path or "/";
+            upstream = proxyEntry.upstream;
+            extraConfig = extraConfig;
+            skipDefaultProxy = false;
+            # Pass through auth configuration
+            auth = proxyEntry.auth or {};
+          }
+        ) proxy
+      else {};
+    in {
+      proxies = proxyConfigs;
+    }
+  ) (
+    # Only process services that have multi-proxy configurations
+    lib.filterAttrs (serviceName: serviceConfig:
+      let proxy = serviceConfig.interface.proxy or {};
+      in proxy != {} && builtins.isAttrs proxy && !(proxy ? domain)
+    ) (manifest.core_services or {}) // (manifest.services or {})
+  );
 in {
   imports = [
-    ./services.nix
     ../shared/internal-ca.nix
   ];
 
@@ -64,20 +291,6 @@ in {
       };
     };
 
-
-
-    # Authentik configuration
-    # authentikDomain = mkOption {
-    #   type = types.str;
-    #   default = "authentik.nixmox.lan";
-    #   description = "Authentik domain for forward auth";
-    # };
-
-    # authentikUpstream = mkOption {
-    #   type = types.str;
-    #   default = "authentik.nixmox.lan:9000";
-    #   description = "Authentik upstream for forward auth";
-    # };
 
     # Service definitions (legacy single-proxy format)
     services = mkOption {
@@ -147,6 +360,11 @@ in {
                   default = false;
                   description = "Skip the automatic reverse proxy configuration";
                 };
+                auth = mkOption {
+                  type = types.attrs;
+                  default = {};
+                  description = "Authentication configuration for this proxy entry";
+                };
               };
             });
             description = "Multiple proxy configurations for this service";
@@ -161,6 +379,13 @@ in {
   };
 
   config = mkIf cfg.enable {
+    # Configure all services to be proxied through Caddy
+    # Services are now generated from the manifest instead of hard-coded
+    services.nixmox.caddy.services = filteredServicesConfig;
+    
+    # Configure multi-proxy services
+    services.nixmox.caddy.multiProxyServices = multiProxyServicesConfig;
+
     # Caddy service configuration
     services.caddy = {
       enable = true;
@@ -228,50 +453,43 @@ in {
         ${builtins.concatStringsSep "\n\n" (
           builtins.attrValues (builtins.mapAttrs (serviceName: serviceConfig:
             builtins.concatStringsSep "\n\n" (
-              builtins.attrValues (builtins.mapAttrs (proxyName: proxy: ''
-                ${proxy.domain} {
-                  # Use our wildcard certificate for all services
-                  ${lib.optionalString cfg.useInternalCa 
-                    "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
-                  
-                  # Per-domain structured JSON logging
-                  log {
-                    output file /var/log/caddy/${proxy.domain}.log {
-                      roll_size 100MiB
-                      roll_keep 5
-                      roll_keep_for 100d
+               builtins.attrValues (builtins.mapAttrs (proxyName: proxy: ''
+                  ${proxy.domain} {
+                    # Use our wildcard certificate for all services
+                    ${lib.optionalString cfg.useInternalCa 
+                      "tls /var/lib/shared-certs/wildcard-nixmox-lan.crt /var/lib/shared-certs/wildcard-nixmox-lan.key"}
+                    
+                    # Per-domain structured JSON logging
+                    log {
+                      output file /var/log/caddy/${proxy.domain}.log {
+                        roll_size 100MiB
+                        roll_keep 5
+                        roll_keep_for 100d
+                      }
+                      format json
+                      level INFO
                     }
-                    format json
-                    level INFO
+                    
+                    ${proxy.extraConfig}
+                    
+                    # Basic reverse proxy configuration
+                    ${lib.optionalString (!(proxy.skipDefaultProxy or false)) ''
+                      reverse_proxy ${proxy.upstream} {
+                        header_up Host {host}
+                        header_up X-Forwarded-Proto https
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-For {remote}
+                        ${config.services.nixmox.caddyServiceConfigs.${proxyName}.proxyConfig or ""}
+                      }
+                    ''}
                   }
-                  
-                  ${lib.optionalString (proxy.extraConfig != "") 
-                    proxy.extraConfig}
-                  
-                  # Basic reverse proxy configuration
-                  ${lib.optionalString (!(proxy.skipDefaultProxy or false)) ''
-                    reverse_proxy ${proxy.upstream} {
-                      header_up Host {host}
-                      header_up X-Forwarded-Proto https
-                      header_up X-Forwarded-Host {host}
-                      header_up X-Forwarded-For {remote}
-                      ${config.services.nixmox.caddyServiceConfigs.${proxyName}.proxyConfig or ""}
-                    }
-                  ''}
-                }
-              '') serviceConfig.proxies)
+                ''
+              ) serviceConfig.proxies)
             )
           ) cfg.multiProxyServices)
         )}
       '';
-      
-      # Ensure reloads that expect /etc/caddy/Caddyfile succeed by providing a symlink
-      # to the generated config in the Nix store.
-      # Some tooling or manual `systemctl reload caddy` may trigger Caddy to read
-      # from /etc/caddy/Caddyfile.
-      # This keeps both start and reload paths consistent.
-
-    };
+          };
 
     # Provide /etc/caddy/Caddyfile pointing at the generated config
     environment.etc."caddy/Caddyfile".source = config.services.caddy.configFile;
@@ -284,16 +502,6 @@ in {
         2019 # Caddy admin API (for metrics)
       ];
     };
-
-    # Caddy Exporter for monitoring (commented out - not available in current NixOS)
-    # services.prometheus.exporters.caddy = {
-    #   enable = true;
-    #   port = 2019;
-    #   # Caddy metrics endpoint (from globalConfig above)
-    #   caddyConfigPath = "/etc/caddy/caddy_config";
-    # };
-
-
 
     # Systemd service configuration
     systemd.services.caddy = {

@@ -425,50 +425,81 @@
           # transmission doesn't need a database
         };
         
-        # Authentication configuration for media services
-        auth = {
-          type = "oidc";
-          provider = "authentik";
-          oidc = {
-            client_type = "confidential";
-            redirect_uris = [ 
-              "https://jellyfin.nixmox.lan/oidc/callback"
-              "https://sonarr.nixmox.lan/oidc/callback" 
-              "https://radarr.nixmox.lan/oidc/callback"
-              "https://prowlarr.nixmox.lan/oidc/callback"
-            ];
-            scopes = [ "openid" "email" "profile" ];
-            username_claim = "preferred_username";
-            groups_claim = "groups";
-          };
-        };
-        
-        # Multi-proxy configuration for media services
+        # Multi-proxy configuration for media services with per-service auth
         proxy = {
           jellyfin = {
             domain = "jellyfin.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:8096";
+            auth = {
+              type = "oidc";
+              provider = "authentik";
+              oidc = {
+                client_type = "confidential";
+                redirect_uris = [ "https://jellyfin.nixmox.lan/oidc/callback" ];
+                scopes = [ "openid" "email" "profile" ];
+                username_claim = "preferred_username";
+                groups_claim = "groups";
+              };
+            };
           };
           sonarr = {
             domain = "sonarr.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:8989";
+            auth = {
+              type = "oidc";
+              provider = "authentik";
+              oidc = {
+                client_type = "confidential";
+                redirect_uris = [ "https://sonarr.nixmox.lan/oidc/callback" ];
+                scopes = [ "openid" "email" "profile" ];
+                username_claim = "preferred_username";
+                groups_claim = "groups";
+              };
+            };
           };
           radarr = {
             domain = "radarr.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:7878";
+            auth = {
+              type = "oidc";
+              provider = "authentik";
+              oidc = {
+                client_type = "confidential";
+                redirect_uris = [ "https://radarr.nixmox.lan/oidc/callback" ];
+                scopes = [ "openid" "email" "profile" ];
+                username_claim = "preferred_username";
+                groups_claim = "groups";
+              };
+            };
           };
           prowlarr = {
             domain = "prowlarr.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:9696";
+            auth = {
+              type = "oidc";
+              provider = "authentik";
+              oidc = {
+                client_type = "confidential";
+                redirect_uris = [ "https://prowlarr.nixmox.lan/oidc/callback" ];
+                scopes = [ "openid" "email" "profile" ];
+                username_claim = "preferred_username";
+                groups_claim = "groups";
+              };
+            };
           };
           transmission = {
             domain = "transmission.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:9091";
+            auth = {
+              type = "forward_auth";
+              provider = "authentik";
+              forward_auth_upstream = "192.168.99.12:9000";
+            };
           };
         };
         
@@ -483,7 +514,7 @@
     };
 
     mail = {
-      enable = true;
+      enable = false;
       ip = "192.168.99.19";
       hostname = "mail.nixmox.lan";
       vmid = 910;
@@ -496,27 +527,11 @@
       onboot = true;
       start = true;
       depends_on = [ "postgresql" "caddy" "authentik" ];
-      ports = [ 25 587 465 993 995 ];
+      ports = [ 25 587 ];  # Basic SMTP ports only
       interface = {
-        auth = {
-          type = "oidc";
-          provider = "authentik";
-          oidc = {
-            client_type = "confidential";
-            redirect_uris = [ "https://mail.nixmox.lan/oidc/callback" ];
-            scopes = [ "openid" "email" "profile" ];
-            username_claim = "preferred_username";
-            groups_claim = "groups";
-          };
-        };
-        proxy = {
-          domain = "mail.nixmox.lan";
-          path = "/";
-          upstream = "192.168.99.19:8080";
-        };
         health = {
-          startup = "systemctl is-active --quiet postfix && systemctl is-active --quiet dovecot";
-          liveness = "systemctl is-active --quiet postfix && systemctl is-active --quiet dovecot";
+          startup = "systemctl is-active --quiet postfix";
+          liveness = "systemctl is-active --quiet postfix";
           interval = 30;
           timeout = 60;
           retries = 3;

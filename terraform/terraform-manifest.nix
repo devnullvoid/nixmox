@@ -73,6 +73,34 @@ let
     (config.interface.auth.type or "") == "oidc"
   ) (builtins.attrNames allServices))));
 
+  # Generate Proxy provider configurations from manifest
+  generateProxyApps = builtins.toJSON (builtins.listToAttrs (builtins.concatMap (name: 
+    let config = allServices.${name}; in
+    builtins.map (proxyName: {
+      name = "${name}-${proxyName}";
+      value = let 
+        proxyConfig = config.interface.proxy.${proxyName};
+        serviceDomain = proxyConfig.domain or "${proxyName}.nixmox.lan";
+      in {
+        name = "${name}-${proxyName}";
+        domain = serviceDomain;
+        external_host = "https://${serviceDomain}";
+        launch_url = "https://${serviceDomain}";
+        open_in_new_tab = true;
+      };
+    }) (builtins.filter (proxyName:
+      let proxyConfig = config.interface.proxy.${proxyName} or {}; in
+      (proxyConfig.auth or {}).type or "" == "forward_auth"
+    ) (builtins.attrNames (config.interface.proxy or {})))
+  ) (builtins.filter (name:
+    let config = allServices.${name} or {}; in
+    (config.interface.proxy or null) != null &&
+    (builtins.any (proxyName: 
+      let proxyConfig = config.interface.proxy.${proxyName} or {}; in
+      (proxyConfig.auth or {}).type or "" == "forward_auth"
+    ) (builtins.attrNames (config.interface.proxy or {})))
+  ) (builtins.attrNames allServices))));
+
   # Generate outpost configuration from manifest
   generateOutpostConfig = builtins.toJSON {
     ldap = if network ? outposts && network.outposts ? ldap then network.outposts.ldap else {};
@@ -106,6 +134,7 @@ in {
 
   # Authentik configurations
   oidc_apps = generateOIDCApps;
+  proxy_apps = generateProxyApps;
   outpost_config = generateOutpostConfig;
 
   # LDAP and RADIUS app configurations

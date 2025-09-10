@@ -205,52 +205,8 @@ in {
       };
     };
 
-    # Authentication configuration
-    auth = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable OIDC authentication for media services";
-      };
-
-      provider = mkOption {
-        type = types.str;
-        default = serviceConfig.interface.auth.provider or "authentik";
-        description = "Authentication provider (from manifest)";
-      };
-
-      oidc = {
-        clientType = mkOption {
-          type = types.str;
-          default = serviceConfig.interface.auth.oidc.client_type or "confidential";
-          description = "OIDC client type (from manifest)";
-        };
-
-        redirectUris = mkOption {
-          type = types.listOf types.str;
-          default = serviceConfig.interface.auth.oidc.redirect_uris or [];
-          description = "OIDC redirect URIs (from manifest)";
-        };
-
-        scopes = mkOption {
-          type = types.listOf types.str;
-          default = serviceConfig.interface.auth.oidc.scopes or [ "openid" "email" "profile" ];
-          description = "OIDC scopes (from manifest)";
-        };
-
-        usernameClaim = mkOption {
-          type = types.str;
-          default = serviceConfig.interface.auth.oidc.username_claim or "preferred_username";
-          description = "OIDC username claim (from manifest)";
-        };
-
-        groupsClaim = mkOption {
-          type = types.str;
-          default = serviceConfig.interface.auth.oidc.groups_claim or "groups";
-          description = "OIDC groups claim (from manifest)";
-        };
-      };
-    };
+    # Authentication is now handled per-proxy in the manifest
+    # No global auth configuration needed
   };
 
   config = mkIf cfg.enable (

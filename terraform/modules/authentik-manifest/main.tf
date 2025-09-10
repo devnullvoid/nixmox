@@ -35,6 +35,11 @@ variable "oidc_apps" {
   type        = string
 }
 
+variable "proxy_apps" {
+  description = "Proxy application configurations from manifest"
+  type        = string
+}
+
 variable "ldap_app" {
   description = "LDAP application configuration from manifest"
   type        = string
@@ -65,6 +70,7 @@ variable "secrets_data" {
 # Local values
 locals {
   oidc_apps_data = jsondecode(var.oidc_apps)
+  proxy_apps_data = jsondecode(var.proxy_apps)
   ldap_app_data = jsondecode(var.ldap_app)
   radius_app_data = jsondecode(var.radius_app)
   outpost_config_data = jsondecode(var.outpost_config)
@@ -322,6 +328,58 @@ resource "authentik_application" "oidc_apps" {
   meta_launch_url   = each.value.launch_url
   open_in_new_tab   = each.value.open_in_new_tab
 }
+
+# Generate Proxy providers for each forward auth service
+resource "authentik_provider_proxy" "proxy_apps" {
+  for_each = local.proxy_apps_data
+
+  name               = "${each.value.name} Proxy"
+  external_host      = each.value.external_host
+  mode               = "forward_single"
+  authorization_flow = data.authentik_flow.provider_authorize_implicit.id
+  invalidation_flow  = data.authentik_flow.default_invalidation.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Generate applications for each Proxy service
+resource "authentik_application" "proxy_apps" {
+  for_each = local.proxy_apps_data
+
+  name              = each.value.name
+  slug              = each.value.name
+  protocol_provider = authentik_provider_proxy.proxy_apps[each.key].id
+
+  lifecycle {
+    prevent_destroy = true
+  }
+  meta_launch_url   = each.value.launch_url
+  open_in_new_tab   = each.value.open_in_new_tab
+}
+
+# Data source to dynamically discover embedded outpost ID
+data "external" "embedded_outpost_id" {
+  program = ["bash", "../../scripts/get-embedded-outpost-id.sh"]
+}
+
+# Embedded Proxy outpost (manage existing one)
+resource "authentik_outpost" "embedded" {
+  name = "authentik Embedded Outpost"
+  type = "proxy"
+
+  protocol_providers = [
+    for provider in authentik_provider_proxy.proxy_apps : provider.id
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes = [config]
+  }
+}
+
+
 
 # Generate LDAP application
 resource "authentik_application" "ldap_app" {
