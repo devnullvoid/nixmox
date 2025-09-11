@@ -69,5 +69,31 @@ in {
         cfg.port  # Jellyfin backend (behind Caddy)
       ];
     };
+
+    # Caddy configuration for Jellyfin
+    services.nixmox.caddyServiceConfigs = {
+      jellyfin = {
+        extraConfig = ''
+          # Jellyfin-specific headers
+          header {
+            # Enable CORS
+            Access-Control-Allow-Origin "*"
+            Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+            Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+            
+            # Security headers
+            X-Content-Type-Options nosniff
+            X-Frame-Options DENY
+            X-XSS-Protection "1; mode=block"
+          }
+          
+          # Handle preflight requests
+          @options {
+            method OPTIONS
+          }
+          respond @options 200
+        '';
+      };
+    };
   };
 }

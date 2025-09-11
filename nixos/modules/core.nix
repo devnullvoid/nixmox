@@ -32,25 +32,6 @@ with lib;
       description = "Base domain for NixMox services";
     };
 
-    # Global Caddy service configurations provided by other modules
-    caddyServiceConfigs = mkOption {
-      type = types.attrsOf (types.submodule {
-        options = {
-          extraConfig = mkOption {
-            type = types.str;
-            default = "";
-            description = "Service-specific Caddy configuration to be included in the main Caddyfile";
-          };
-          proxyConfig = mkOption {
-            type = types.str;
-            default = "";
-            description = "Service-specific reverse proxy configuration";
-          };
-        };
-      });
-      default = {};
-      description = "Service-specific Caddy configurations provided by other modules";
-    };
   };
 
   # Common configuration

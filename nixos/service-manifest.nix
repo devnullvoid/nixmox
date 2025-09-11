@@ -398,29 +398,26 @@
       interface = {
         # Multiple database configuration for media services
         dbs = {
-          jellyfin = {
-            host = "192.168.99.11";
-            name = "jellyfin";
-            owner = "jellyfin";
-            port = 5432;
-          };
           sonarr = {
             host = "192.168.99.11";
             name = "sonarr";
             owner = "sonarr";
             port = 5432;
+            additionaldbs = [ "sonarr-log" ];
           };
           radarr = {
             host = "192.168.99.11";
             name = "radarr";
             owner = "radarr";
             port = 5432;
+            additionaldbs = [ "radarr-log" ];
           };
           prowlarr = {
             host = "192.168.99.11";
             name = "prowlarr";
             owner = "prowlarr";
             port = 5432;
+            additionaldbs = [ "prowlarr-log" ];
           };
           # transmission doesn't need a database
         };
@@ -442,21 +439,35 @@
                 groups_claim = "groups";
               };
             };
+            extra_config = ''
+              # Jellyfin-specific headers
+              header {
+                # Enable CORS
+                Access-Control-Allow-Origin "*"
+                Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+                Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+                
+                # Security headers
+                X-Content-Type-Options nosniff
+                X-Frame-Options DENY
+                X-XSS-Protection "1; mode=block"
+              }
+              
+              # Handle preflight requests
+              @options {
+                method OPTIONS
+              }
+              respond @options 200
+            '';
           };
           sonarr = {
             domain = "sonarr.nixmox.lan";
             path = "/";
             upstream = "192.168.99.17:8989";
             auth = {
-              type = "oidc";
+              type = "forward_auth";
               provider = "authentik";
-              oidc = {
-                client_type = "confidential";
-                redirect_uris = [ "https://sonarr.nixmox.lan/oidc/callback" ];
-                scopes = [ "openid" "email" "profile" ];
-                username_claim = "preferred_username";
-                groups_claim = "groups";
-              };
+              forward_auth_upstream = "192.168.99.12:9000";
             };
           };
           radarr = {
@@ -464,15 +475,9 @@
             path = "/";
             upstream = "192.168.99.17:7878";
             auth = {
-              type = "oidc";
+              type = "forward_auth";
               provider = "authentik";
-              oidc = {
-                client_type = "confidential";
-                redirect_uris = [ "https://radarr.nixmox.lan/oidc/callback" ];
-                scopes = [ "openid" "email" "profile" ];
-                username_claim = "preferred_username";
-                groups_claim = "groups";
-              };
+              forward_auth_upstream = "192.168.99.12:9000";
             };
           };
           prowlarr = {
@@ -480,15 +485,9 @@
             path = "/";
             upstream = "192.168.99.17:9696";
             auth = {
-              type = "oidc";
+              type = "forward_auth";
               provider = "authentik";
-              oidc = {
-                client_type = "confidential";
-                redirect_uris = [ "https://prowlarr.nixmox.lan/oidc/callback" ];
-                scopes = [ "openid" "email" "profile" ];
-                username_claim = "preferred_username";
-                groups_claim = "groups";
-              };
+              forward_auth_upstream = "192.168.99.12:9000";
             };
           };
           transmission = {

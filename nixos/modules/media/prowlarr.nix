@@ -5,6 +5,9 @@ with lib;
 let
   cfg = config.services.nixmox.media.prowlarr;
   mediaCfg = config.services.nixmox.media;
+  
+  # Get database configuration from manifest
+  dbConfig = manifest.services.media.interface.dbs.prowlarr or {};
 in {
   options.services.nixmox.media.prowlarr = {
     enable = mkEnableOption "Prowlarr indexer management";
@@ -30,19 +33,19 @@ in {
       openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
-      settings = mkIf (mediaCfg.databases.prowlarr.type == "postgresql") {
+      settings = mkIf (dbConfig != {}) {
         Database = {
           Provider = "PostgreSQL";
-          Host = mediaCfg.databases.prowlarr.host;
-          Port = mediaCfg.databases.prowlarr.port;
-          Name = mediaCfg.databases.prowlarr.name;
-          Username = mediaCfg.databases.prowlarr.user;
+          Host = dbConfig.host;
+          Port = dbConfig.port;
+          Name = dbConfig.name;
+          Username = dbConfig.owner;
           Password = "file://${config.sops.secrets."media/prowlarr/database_password".path}";
         };
       };
     };
 
-    # SOPS secrets for Prowlarr database
+    # SOPS secrets for Prowlarr databases
     sops.secrets."media/prowlarr/database_password" = {
       sopsFile = ../../../secrets/default.yaml;
       owner = "prowlarr";
@@ -50,11 +53,24 @@ in {
       mode = "0400";
     };
 
+
+
+
+
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {
       allowedTCPPorts = [
         cfg.port  # Prowlarr backend (behind Caddy)
       ];
+    };
+  };
+  
+  # Export database requirements for filesystem-based discovery
+  databaseRequirements = mkIf cfg.enable {
+    "prowlarr-log" = {
+      name = "prowlarr-log";
+      owner = "prowlarr";
+      extensions = [];
     };
   };
 }

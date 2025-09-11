@@ -5,6 +5,9 @@ with lib;
 let
   cfg = config.services.nixmox.media.sonarr;
   mediaCfg = config.services.nixmox.media;
+  
+  # Get database configuration from manifest
+  dbConfig = manifest.services.media.interface.dbs.sonarr or {};
 in {
   options.services.nixmox.media.sonarr = {
     enable = mkEnableOption "Sonarr TV show management";
@@ -30,25 +33,50 @@ in {
       openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
-      settings = mkIf (mediaCfg.databases.sonarr.type == "postgresql") {
+      settings = mkIf (dbConfig != {}) {
         Database = {
           Provider = "PostgreSQL";
-          Host = mediaCfg.databases.sonarr.host;
-          Port = mediaCfg.databases.sonarr.port;
-          Name = mediaCfg.databases.sonarr.name;
-          Username = mediaCfg.databases.sonarr.user;
+          Host = dbConfig.host;
+          Port = dbConfig.port;
+          Name = dbConfig.name;
+          Username = dbConfig.owner;
           Password = "file://${config.sops.secrets."media/sonarr/database_password".path}";
         };
       };
     };
 
-    # SOPS secrets for Sonarr database
+    # SOPS secrets for Sonarr databases
     sops.secrets."media/sonarr/database_password" = {
       sopsFile = ../../../secrets/default.yaml;
       owner = "sonarr";
       group = "sonarr";
       mode = "0400";
     };
+
+    # Declare additional database requirements for Sonarr (same pattern as Caddy)
+    services.nixmox.postgresqlServiceConfigs.sonarr = {
+      additionalDatabases = {
+        log = {
+          name = "sonarr-log";
+          owner = "sonarr";
+          extensions = [];
+        };
+      };
+    };
+  };
+  
+  # Export database requirements for filesystem-based discovery
+  databaseRequirements = mkIf cfg.enable {
+    "sonarr-log" = {
+      name = "sonarr-log";
+      owner = "sonarr";
+      extensions = [];
+    };
+  };
+
+
+
+
 
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {

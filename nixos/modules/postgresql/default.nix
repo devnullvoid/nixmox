@@ -8,52 +8,46 @@ let
   # Get all services from manifest (core + application services)
   allServices = (manifest.core_services or {}) // (manifest.services or {});
   
-  # Extract database requirements from services that have interface.db
-  # Support both single db (interface.db) and multiple dbs (interface.dbs)
-  databaseRequirements = builtins.mapAttrs (serviceName: serviceConfig:
+  # Extract additional databases from manifest
+  # Services can declare additional databases in their interface.dbs.{service}.additionaldbs
+  additionalDatabases = builtins.foldl' (acc: serviceName:
     let
-      dbInterface = serviceConfig.interface.db or {};
-      dbsInterface = serviceConfig.interface.dbs or {};
-      
-      # Check if this service has multiple databases (dbs) or single database (db)
-      hasMultipleDbs = dbsInterface != {};
-      hasSingleDb = dbInterface != {};
-      
-      # For single db, convert to the new format
-      singleDbConfig = if hasSingleDb then {
-        "${serviceName}" = dbInterface;
-      } else {};
-      
-      # For multiple dbs, use as-is
-      multipleDbsConfig = if hasMultipleDbs then dbsInterface else {};
-      
-      # Merge both configurations
-      allDbConfigs = singleDbConfig // multipleDbsConfig;
+      service = allServices.${serviceName} or {};
+      serviceDbs = service.interface.dbs or {};
     in
-      allDbConfigs
-  ) (lib.filterAttrs (name: config: 
-    builtins.hasAttr "db" (config.interface or {}) || builtins.hasAttr "dbs" (config.interface or {})
-  ) allServices);
+      acc // (builtins.foldl' (dbAcc: dbName:
+        let
+          dbConfig = serviceDbs.${dbName} or {};
+          additionalDbs = dbConfig.additionaldbs or [];
+        in
+          dbAcc // (builtins.foldl' (addAcc: addDbName:
+            addAcc // {
+              "${addDbName}" = {
+                name = addDbName;
+                owner = dbConfig.owner or dbName;
+                extensions = [];
+              };
+            }
+          ) {} additionalDbs)
+      ) {} (builtins.attrNames serviceDbs))
+  ) {} (builtins.attrNames allServices);
   
-  # Flatten the nested database requirements into a single level
-  flattenedDbRequirements = lib.foldl' (acc: serviceName: 
+  # Extract database requirements directly from manifest
+  # Collect all database configurations from all services
+  manifestDatabases = builtins.foldl' (acc: serviceName:
     let
-      serviceDbConfigs = databaseRequirements.${serviceName} or {};
+      service = allServices.${serviceName} or {};
+      serviceDbs = service.interface.dbs or {};
     in
-      acc // (lib.mapAttrs' (dbName: dbConfig: {
-        name = "${serviceName}-${dbName}";
-        value = dbConfig;
-      }) serviceDbConfigs)
-  ) {} (builtins.attrNames databaseRequirements);
+      acc // (builtins.mapAttrs (dbName: dbConfig: {
+        name = dbConfig.name or dbName;
+        owner = dbConfig.owner or dbName;
+        extensions = dbConfig.extensions or [];
+      }) serviceDbs)
+  ) {} (builtins.attrNames allServices);
   
-  # Generate database configurations from manifest
-  manifestDatabases = builtins.mapAttrs (dbKey: dbConfig:
-    {
-      name = dbConfig.name or dbKey;
-      owner = dbConfig.owner or dbKey;
-      extensions = dbConfig.extensions or [];
-    }
-  ) flattenedDbRequirements;
+  # Merge manifest databases with automatically created additional databases
+  allManifestDatabases = manifestDatabases // additionalDatabases;
   
   # Fix database names to match user names for services that expect this
   # This is needed for nixos-mailserver which expects database name to match user name
@@ -63,9 +57,9 @@ let
       dbConfig // { name = dbKey; }
     else
       dbConfig
-  ) manifestDatabases;
+  ) allManifestDatabases;
   
-  # Generate user configurations from manifest
+  # Generate user configurations from manifest (including log databases)
   manifestUsers = builtins.mapAttrs (dbKey: dbConfig:
     {
       name = dbConfig.owner or dbKey;
@@ -73,7 +67,7 @@ let
       databases = [ (dbConfig.name or dbKey) ];
       superuser = dbConfig.superuser or false;
     }
-  ) flattenedDbRequirements;
+  ) allManifestDatabases;
   
   # Merge manifest values with manual overrides (manual takes precedence)
   finalDatabases = fixedDatabases // cfg.databases;

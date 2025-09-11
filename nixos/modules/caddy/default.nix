@@ -170,6 +170,9 @@ let
             serviceCaddyConfig = config.services.nixmox.caddyServiceConfigs.${proxyName} or {};
             serviceExtraConfig = serviceCaddyConfig.extraConfig or "";
             
+            # Get extra config from manifest
+            manifestExtraConfig = proxyEntry.extra_config or "";
+            
             # Get auth configuration from individual proxy entry
             proxyAuth = proxyEntry.auth or {};
             
@@ -218,8 +221,11 @@ let
               ${securityHeaders}
             '';
             
-            # Use auth config if forward auth is enabled, otherwise use service-specific config, otherwise use default
-            extraConfig = if useForwardAuth then authExtraConfig else if serviceExtraConfig != "" then serviceExtraConfig else authExtraConfig;
+            # Combine manifest extra config with auth config
+            combinedExtraConfig = manifestExtraConfig + authExtraConfig;
+            
+            # Use auth config if forward auth is enabled, otherwise use service-specific config, otherwise use combined config
+            extraConfig = if useForwardAuth then authExtraConfig else if serviceExtraConfig != "" then serviceExtraConfig else combinedExtraConfig;
           in {
             domain = proxyEntry.domain;
             path = proxyEntry.path or "/";
