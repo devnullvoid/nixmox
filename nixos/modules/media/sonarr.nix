@@ -4,7 +4,6 @@ with lib;
 
 let
   cfg = config.services.nixmox.media.sonarr;
-  mediaCfg = config.services.nixmox.media;
   
   # Get database configuration from manifest
   dbConfig = manifest.services.media.interface.dbs.sonarr or {};
@@ -20,7 +19,7 @@ in {
 
     dataDir = mkOption {
       type = types.str;
-      default = "${mediaCfg.dataDir}/sonarr";
+      default = "/var/lib/sonarr";
       description = "Sonarr data directory";
     };
   };
@@ -33,50 +32,33 @@ in {
       openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
-      settings = mkIf (dbConfig != {}) {
-        Database = {
-          Provider = "PostgreSQL";
+      settings = {
+        # Authentication settings (always applied)
+        Auth = {
+          Enabled = true;
+          Method = "basic";
+          Required = true;
+        };
+      } // mkIf (dbConfig != {}) {
+        Postgres = {
           Host = dbConfig.host;
           Port = dbConfig.port;
-          Name = dbConfig.name;
-          Username = dbConfig.owner;
-          Password = "file://${config.sops.secrets."media/sonarr/database_password".path}";
+          User = dbConfig.owner;
+          Password = "admin123";
+          MainDb = dbConfig.name;
+          LogDb = "${dbConfig.name}-log";
         };
       };
     };
 
     # SOPS secrets for Sonarr databases
-    sops.secrets."media/sonarr/database_password" = {
-      sopsFile = ../../../secrets/default.yaml;
-      owner = "sonarr";
-      group = "sonarr";
-      mode = "0400";
-    };
-
-    # Declare additional database requirements for Sonarr (same pattern as Caddy)
-    services.nixmox.postgresqlServiceConfigs.sonarr = {
-      additionalDatabases = {
-        log = {
-          name = "sonarr-log";
-          owner = "sonarr";
-          extensions = [];
-        };
-      };
-    };
-  };
-  
-  # Export database requirements for filesystem-based discovery
-  databaseRequirements = mkIf cfg.enable {
-    "sonarr-log" = {
-      name = "sonarr-log";
-      owner = "sonarr";
-      extensions = [];
-    };
-  };
-
-
-
-
+    # Temporarily disabled due to timing issue with user creation
+    # sops.secrets."media/sonarr/database_password" = {
+    #   sopsFile = ../../../secrets/default.yaml;
+    #   owner = "sonarr";
+    #   group = "sonarr";
+    #   mode = "0400";
+    # };
 
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {

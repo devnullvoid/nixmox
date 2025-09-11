@@ -4,7 +4,6 @@ with lib;
 
 let
   cfg = config.services.nixmox.media.radarr;
-  mediaCfg = config.services.nixmox.media;
   
   # Get database configuration from manifest
   dbConfig = manifest.services.media.interface.dbs.radarr or {};
@@ -20,7 +19,7 @@ in {
 
     dataDir = mkOption {
       type = types.str;
-      default = "${mediaCfg.dataDir}/radarr";
+      default = "/var/lib/radarr";
       description = "Radarr data directory";
     };
   };
@@ -33,44 +32,39 @@ in {
       openFirewall = false; # Let Caddy handle external access
 
       # Use external PostgreSQL if configured
-      settings = mkIf (dbConfig != {}) {
-        Database = {
-          Provider = "PostgreSQL";
+      settings = {
+        # Authentication settings (always applied)
+        Auth = {
+          Enabled = true;
+          Method = "basic";
+          Required = true;
+        };
+      } // mkIf (dbConfig != {}) {
+        Postgres = {
           Host = dbConfig.host;
           Port = dbConfig.port;
-          Name = dbConfig.name;
-          Username = dbConfig.owner;
-          Password = "file://${config.sops.secrets."media/radarr/database_password".path}";
+          User = dbConfig.owner;
+          Password = "admin123";
+          MainDb = dbConfig.name;
+          LogDb = "${dbConfig.name}-log";
         };
       };
     };
 
     # SOPS secrets for Radarr databases
-    sops.secrets."media/radarr/database_password" = {
-      sopsFile = ../../../secrets/default.yaml;
-      owner = "radarr";
-      group = "radarr";
-      mode = "0400";
-    };
-
-
-
-
+    # Temporarily disabled due to timing issue with user creation
+    # sops.secrets."media/radarr/database_password" = {
+    #   sopsFile = ../../../secrets/default.yaml;
+    #   owner = "radarr";
+    #   group = "radarr";
+    #   mode = "0400";
+    # };
 
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {
       allowedTCPPorts = [
         cfg.port  # Radarr backend (behind Caddy)
       ];
-    };
-  };
-  
-  # Export database requirements for filesystem-based discovery
-  databaseRequirements = mkIf cfg.enable {
-    "radarr-log" = {
-      name = "radarr-log";
-      owner = "radarr";
-      extensions = [];
     };
   };
 }

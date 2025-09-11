@@ -339,6 +339,11 @@ resource "authentik_provider_proxy" "proxy_apps" {
   authorization_flow = data.authentik_flow.provider_authorize_implicit.id
   invalidation_flow  = data.authentik_flow.default_invalidation.id
 
+  # Enable HTTP Basic authentication only for *arr services (not transmission)
+  # basic_auth_enabled = each.key != "media-transmission"
+  # basic_auth_username_attribute = each.key != "media-transmission" ? "arr_user" : null
+  # basic_auth_password_attribute = each.key != "media-transmission" ? "arr_password" : null
+
   lifecycle {
     prevent_destroy = true
   }
@@ -358,6 +363,20 @@ resource "authentik_application" "proxy_apps" {
   meta_launch_url   = each.value.launch_url
   open_in_new_tab   = each.value.open_in_new_tab
 }
+
+# Create "Arr Users" group for HTTP Basic authentication
+# resource "authentik_group" "arr_users" {
+#   name = "Arr Users"
+  
+#   attributes = jsonencode({
+#     arr_user     = "admin"
+#     arr_password = "admin123"
+#   })
+
+#   lifecycle {
+#     prevent_destroy = true
+#   }
+# }
 
 # Data source to dynamically discover embedded outpost ID
 data "external" "embedded_outpost_id" {
