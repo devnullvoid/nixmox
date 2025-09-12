@@ -188,7 +188,7 @@ in {
           acc // singleDbSecrets // multipleDbsSecrets
       ) {} (builtins.attrNames dbServices);
 
-              # Add pgAdmin password and OIDC client secret
+              # Add pgAdmin password, OIDC client secret, and admin user password
         pgAdminSecrets = {
           "postgresql/pgadmin_password" = {
             owner = "pgadmin";
@@ -199,6 +199,12 @@ in {
             owner = "pgadmin";
             group = "pgadmin";
             mode = "0400";
+          };
+          "postgresql/admin_password" = {
+            owner = "postgres";
+            group = "postgres";
+            mode = "0400";
+            restartUnits = [ "postgresql-set-passwords.service" ];
           };
         };
         in
@@ -225,7 +231,7 @@ in {
           OAUTH2_AUTO_CREATE_USER = True
           OAUTH2_CONFIG = [ {
               "OAUTH2_NAME": "authentik",
-              "OAUTH2_DISPLAY_NAME": "Login with Authentik",
+              "OAUTH2_DISPLAY_NAME": "Authentik",
               "OAUTH2_CLIENT_ID": "${manifest.core_services.postgresql.interface.auth.oidc.client_id}",
               "OAUTH2_CLIENT_SECRET": "${config.sops.placeholder."postgresql/oidc_client_secret"}",
               "OAUTH2_TOKEN_URL": "https://${manifest.core_services.authentik.interface.proxy.domain}/application/o/token/",
@@ -315,11 +321,20 @@ in {
       # Create databases from manifest + manual overrides
       ensureDatabases = mapAttrsToList (name: db: db.name) finalDatabases;
 
-      # Create users from manifest + manual overrides
-      ensureUsers = mapAttrsToList (name: user: {
+      # Create users from manifest + manual overrides + static admin user
+      ensureUsers = (mapAttrsToList (name: user: {
         name = user.name;
         ensureDBOwnership = true;
-      }) finalUsers;
+      }) finalUsers) ++ [{
+        name = "admin";
+        ensureDBOwnership = false;
+        ensureClauses = {
+          superuser = true;
+          createdb = true;
+          createrole = true;
+          login = true;
+        };
+      }];
       
       initialScript = pkgs.writeText "init.sql" ''
         -- Create users and databases dynamically
@@ -419,6 +434,22 @@ in {
           set -e
           
           echo "Setting passwords for all database users..."
+          
+          # Set password for admin user
+          ADMIN_SECRET_PATH="/run/secrets/postgresql/admin_password"
+          if [ -f "$ADMIN_SECRET_PATH" ]; then
+            echo "Setting password for admin user..."
+            ADMIN_PASSWORD=$(tr -d '\n' < "$ADMIN_SECRET_PATH")
+            echo "Admin password length: $(printf %s "$ADMIN_PASSWORD" | wc -c)"
+
+            echo "Executing: ALTER USER admin WITH PASSWORD '***';"
+            ADMIN_SQL_CMD="ALTER USER admin WITH PASSWORD '$ADMIN_PASSWORD';"
+            ${pkgs.postgresql_16}/bin/psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U postgres -d postgres -c "$ADMIN_SQL_CMD"
+
+            echo "Password set successfully for admin user"
+          else
+            echo "Warning: Admin password secret not found at $ADMIN_SECRET_PATH"
+          fi
           
           # Set passwords for all database users from SOPS secrets
           # Dynamically discover services with database configurations from manifest
