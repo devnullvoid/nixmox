@@ -51,14 +51,12 @@ in {
       };
     };
 
-    # SOPS secrets for Sonarr databases
-    # Temporarily disabled due to timing issue with user creation
-    # sops.secrets."media/sonarr/database_password" = {
-    #   sopsFile = ../../../secrets/default.yaml;
-    #   owner = "sonarr";
-    #   group = "sonarr";
-    #   mode = "0400";
-    # };
+    sops.secrets."media/sonarr/database_password" = {
+      sopsFile = ../../../secrets/default.yaml;
+      owner = "sonarr";
+      group = "sonarr";
+      mode = "0400";
+    };
 
     # Firewall rules - only allow local access since we're behind Caddy
     networking.firewall = {
